@@ -36,7 +36,7 @@
 
 ## Recent Significant Changes
 *   Project Initialization (INIT-001) (6/5/2025) - Initial setup of documentation.
-*   Basic Project Scaffold (INIT-002) (6/5/2025) - Frontend (Next.js) and Backend (FastAPI) "Hello World" applications established.
+*   Project Reset & Re-Scaffold (6/5/2025) - Removed initial scaffold due to a Git submodule conflict. Re-scaffolded frontend and backend with a clean Git history, ensuring the monorepo is correctly tracked.
 
 ## Links to other relevant documentation
 *   `cline_docs/projectRoadmap.md`

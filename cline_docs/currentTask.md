@@ -25,66 +25,25 @@
         *   (To be detailed when this task becomes active.)
 
 ## Discovered During Work:
-*   ### Fix: `GIT-002` - Remove Nested Git Repository from Frontend
-    *   #### Detailed Description & Business Context:
-        The `frontend/` directory contained its own nested `.git` repository, causing the main project's Git repository to treat it as a submodule rather than tracking its individual files. This was the root cause of changes within `frontend/` not being detected. The fix involved removing the `frontend/.git` directory and re-adding the `frontend/` directory to the main repository's index.
-    *   #### Acceptance Criteria:
-        *   The `frontend/.git` directory has been removed.
-        *   The main project's Git repository now tracks individual files within the `frontend/` directory.
-        *   Changes to files like `frontend/src/app/page.tsx` are now correctly detected by Git.
-    *   #### Status: Done (6/5/2025)
-*   ### Fix: `GIT-001` - Correct Monorepo `.gitignore` for Frontend
-    *   #### Detailed Description & Business Context:
-        The root `.gitignore` file was incorrectly configured, leading to Git ignoring changes within the `frontend/` subdirectory. The Node.js/Next.js specific ignore rules were not prefixed with `frontend/`, causing them to apply globally instead of specifically to the frontend project. This fix involved updating the `.gitignore` to correctly scope these rules.
-    *   #### Acceptance Criteria:
-        *   The root `.gitignore` now correctly ignores `node_modules/`, `.next/`, `out/`, `build/`, and other Node.js/Next.js artifacts specifically within the `frontend/` directory.
-        *   Git now properly tracks changes to source files within `frontend/`.
-    *   #### Status: Done (6/5/2025)
+*   (None)
 
 ## Task Backlog:
 *   (To be populated as project progresses)
 
 ## Recently Completed Tasks:
-*   ### Task ID / Name: `INIT-002.1` - Configure Monorepo Git Management
-    *   #### Detailed Description & Business Context:
-        This task involved consolidating the `.gitignore` files and establishing the project root as the Git repository for the monorepo, ensuring proper ignore rules for both frontend and backend.
-    *   #### Acceptance Criteria:
-        *   `frontend/.gitignore` has been removed.
-        *   The root `.gitignore` contains comprehensive ignore rules for both Next.js frontend and Python/FastAPI backend.
-        *   `cline_docs/codebaseSummary.md` has been updated to reflect the monorepo structure and root Git repository.
-    *   #### Notes on Completion:
-        *   During subsequent work, it was discovered that `frontend/.gitignore` was still present and needed to be manually removed (Fix: `GIT-001` was applied to the root `.gitignore` and this file was removed).
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Milestone 1: Project Initialization & Documentation Setup
-        *   Milestone 2: Basic Project Scaffold (Refinement)
-    *   #### Status: Done (6/5/2025)
-    *   #### Detailed Next Steps for Implementation (Cline's plan for `INIT-002.1`):
-        *   (Completed)
 *   ### Task ID / Name: `INIT-002` - Scaffold Initial Project Structure
     *   #### Detailed Description & Business Context:
         Set up the basic directory structure for the Next.js frontend and FastAPI backend. Initialize project files (e.g., `package.json`, `requirements.txt`), and set up basic "Hello World" endpoints for both frontend and backend to ensure the initial setup is working. This task lays the foundational codebase for subsequent feature development.
+    *   #### Notes on Completion:
+        *   The initial scaffold had a Git submodule conflict. The project state was reset, and the frontend and backend were re-scaffolded correctly on 6/5/2025.
     *   #### Acceptance Criteria:
         *   Root project directory contains `frontend/` and `backend/` subdirectories.
-        *   `frontend/` is initialized as a Next.js project (e.g., using `create-next-app` with TypeScript, Tailwind CSS, App Router, src directory, and import alias `@/*`).
-        *   `backend/` is set up for a FastAPI project with a basic `main.py` and `requirements.txt`.
-        *   A simple "Hello World" page is accessible on the Next.js dev server (e.g., `http://localhost:3000`).
-        *   A simple "Hello World" endpoint is accessible on the FastAPI dev server (e.g., `http://localhost:8000/`).
-        *   Basic root `.gitignore` file is present, covering Node.js and Python project artifacts.
+        *   `frontend/` is initialized as a Next.js project without a nested Git repository.
+        *   `backend/` is set up for a FastAPI project.
+        *   The root Git repository correctly tracks all files in `frontend/` and `backend/`.
     *   #### Link to projectRoadmap.md goal(s):
         *   Milestone 2: Basic Project Scaffold (Next.js Frontend, FastAPI Backend)
-        *   Foundation for all primary goals.
     *   #### Status: Done (6/5/2025)
-    *   #### Detailed Next Steps for Implementation (Cline's plan for `INIT-002`):
-        1.  Confirm/decide on specific versions for Next.js, Node.js, Python, FastAPI if not already specified or defaulted in `techStack.md`.
-        2.  Create `frontend/` directory in the project root.
-        3.  Propose and seek approval for the command: `npx create-next-app@latest frontend --typescript --tailwind --eslint --app --src-dir --import-alias "@/*"`.
-        4.  Create `backend/` directory in the project root.
-        5.  Inside `backend/`, create `main.py` with a basic FastAPI app and a "Hello World" GET endpoint at `/`.
-        6.  Inside `backend/`, create `requirements.txt` listing `fastapi` and `uvicorn[standard]`.
-        7.  Create a `.gitignore` file in the project root with standard ignores for `node_modules/`, `.next/`, `__pycache__/`, `.venv/`, etc.
-        8.  (After setup) Provide instructions to the user on how to run the frontend and backend dev servers to verify the "Hello World" implementations.
-        9.  Update `cline_docs/codebaseSummary.md` with the new directory structure.
-        10. Update `cline_docs/currentTask.md` to mark `INIT-002` as 'In Progress' or 'Done'.
 *   ### Task ID / Name: `INIT-001` - Project Initialization and Documentation Setup
     *   #### Detailed Description & Business Context:
         Based on the information provided in the "Initiate New Project" prompt, this task was to:
