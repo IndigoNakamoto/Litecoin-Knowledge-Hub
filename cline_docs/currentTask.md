@@ -25,7 +25,21 @@
         *   (To be detailed when this task becomes active.)
 
 ## Discovered During Work:
-*   (None yet)
+*   ### Fix: `GIT-002` - Remove Nested Git Repository from Frontend
+    *   #### Detailed Description & Business Context:
+        The `frontend/` directory contained its own nested `.git` repository, causing the main project's Git repository to treat it as a submodule rather than tracking its individual files. This was the root cause of changes within `frontend/` not being detected. The fix involved removing the `frontend/.git` directory and re-adding the `frontend/` directory to the main repository's index.
+    *   #### Acceptance Criteria:
+        *   The `frontend/.git` directory has been removed.
+        *   The main project's Git repository now tracks individual files within the `frontend/` directory.
+        *   Changes to files like `frontend/src/app/page.tsx` are now correctly detected by Git.
+    *   #### Status: Done (6/5/2025)
+*   ### Fix: `GIT-001` - Correct Monorepo `.gitignore` for Frontend
+    *   #### Detailed Description & Business Context:
+        The root `.gitignore` file was incorrectly configured, leading to Git ignoring changes within the `frontend/` subdirectory. The Node.js/Next.js specific ignore rules were not prefixed with `frontend/`, causing them to apply globally instead of specifically to the frontend project. This fix involved updating the `.gitignore` to correctly scope these rules.
+    *   #### Acceptance Criteria:
+        *   The root `.gitignore` now correctly ignores `node_modules/`, `.next/`, `out/`, `build/`, and other Node.js/Next.js artifacts specifically within the `frontend/` directory.
+        *   Git now properly tracks changes to source files within `frontend/`.
+    *   #### Status: Done (6/5/2025)
 
 ## Task Backlog:
 *   (To be populated as project progresses)
@@ -38,6 +52,8 @@
         *   `frontend/.gitignore` has been removed.
         *   The root `.gitignore` contains comprehensive ignore rules for both Next.js frontend and Python/FastAPI backend.
         *   `cline_docs/codebaseSummary.md` has been updated to reflect the monorepo structure and root Git repository.
+    *   #### Notes on Completion:
+        *   During subsequent work, it was discovered that `frontend/.gitignore` was still present and needed to be manually removed (Fix: `GIT-001` was applied to the root `.gitignore` and this file was removed).
     *   #### Link to projectRoadmap.md goal(s):
         *   Milestone 1: Project Initialization & Documentation Setup
         *   Milestone 2: Basic Project Scaffold (Refinement)

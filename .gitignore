@@ -78,19 +78,18 @@ __pypackages__/
 .env.production.local
 
 # Node.js
-node_modules/
-.next/
-out/
-build/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
+frontend/node_modules/
+frontend/out/
+frontend/build/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/package-lock.json
+frontend/yarn.lock
+frontend/pnpm-lock.yaml
 # Next.js specific
-.next/
-next-env.d.ts
+frontend/.next/
+frontend/next-env.d.ts
 
 # macOS
 .DS_Store
