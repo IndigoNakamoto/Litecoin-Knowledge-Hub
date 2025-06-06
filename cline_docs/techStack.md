@@ -14,6 +14,11 @@
     *   Google Text Embedding (specifically `text-embedding-004`)
     *   Libraries for interacting with MongoDB (e.g., `pymongo`, `motor`)
     *   Libraries for RAG pipeline: Langchain (chosen - core packages: `langchain`, `langchain-core`, `langchain-community`)
+    *   `requests`: For making HTTP requests to external APIs (e.g., Citeio for YouTube data).
+    *   `tweepy`: For interacting with the Twitter (X) API.
+    *   `GitPython`: For cloning and interacting with Git repositories (e.g., GitHub).
+    *   `beautifulsoup4`: For parsing HTML and XML documents (e.g., web scraping).
+    *   `lxml`: A fast XML and HTML parser, often used as a backend for BeautifulSoup.
 
 ## Database
 *   **Type:** MongoDB

@@ -6,7 +6,7 @@ A RAG (Retrieval-Augmented Generation) Chatbot for Litecoin users is an AI-power
 **Target Users/Audience:** Litecoin users (novice and experienced), Cryptocurrency enthusiasts, Developers building on Litecoin, Potential adopters seeking reliable information about Litecoin’s features, transactions, or market trends.
 
 ## Project Status
-The project is currently in the **Core RAG Pipeline Implementation** phase (Milestone 3). We are actively working on `RAG-001: Implement Data Ingestion and MongoDB Vector Store Setup`, which is a critical step towards building our knowledge base for the RAG chatbot.
+The project is currently in the **Core RAG Pipeline Implementation** phase (Milestone 3). The multi-source data ingestion framework has been successfully implemented, and we are now focusing on the core retrieval and generation mechanisms.
 
 ## Key Features
 
@@ -43,11 +43,11 @@ Provides quick access to snippets from Litecoin developer documentation, links t
 ### In Progress Milestones
 
 #### Milestone 3: Core RAG Pipeline Implementation
-*   **Description:** This milestone focuses on building the foundational Retrieval-Augmented Generation (RAG) pipeline. This includes setting up the Langchain framework, integrating with MongoDB Atlas for vector search, configuring the Google Text Embedding model, and implementing the initial data ingestion process.
-*   **Key Tasks:** Set up Langchain project structure, Integrate Google Text Embedding 004 model, Configure MongoDB Atlas Vector Search for vector storage and retrieval, Develop initial data ingestion scripts for basic text data, Implement the core retrieval mechanism, Set up the LLM integration for generation.
-*   **Status:** In Progress (Initial Langchain setup completed)
+*   **Description:** This milestone focuses on building the foundational Retrieval-Augmented Generation (RAG) pipeline. This includes setting up the Langchain framework, integrating with MongoDB Atlas for vector search, configuring the Google Text Embedding model, and implementing a robust, multi-source data ingestion framework.
+*   **Key Tasks:** Set up Langchain project structure, Integrate Google Text Embedding 004 model, Configure MongoDB Atlas Vector Search for vector storage and retrieval, Develop initial data ingestion scripts for basic text data, Implement multi-source data ingestion framework (YouTube, Twitter, GitHub, Web Articles), Refactor `ingest_data.py` into a source router, Implement the core retrieval mechanism, Set up the LLM integration for generation.
+*   **Status:** In Progress (Multi-source Data Ingestion & Langchain Setup Complete; Focusing on Retrieval & Generation)
 *   **Dependencies:** Milestone 1, Milestone 2
-*   **Estimated Time:** 40 hours (1 hour so far)
+*   **Estimated Time:** 40 hours (Estimated 20 hours so far)
 
 ### Upcoming Milestones
 
@@ -88,7 +88,7 @@ Provides quick access to snippets from Litecoin developer documentation, links t
 
 ## Technology Stack
 *   **Frontend:** Next.js, Tailwind CSS
-*   **Backend:** Python, FastAPI, Langchain (`langchain`, `langchain-core`, `langchain-community`), Google Text Embedding (`text-embedding-004`), MongoDB libraries (`pymongo`, `motor`)
+*   **Backend:** Python, FastAPI, Langchain (`langchain`, `langchain-core`, `langchain-community`), Google Text Embedding (`text-embedding-004`), MongoDB libraries (`pymongo`, `motor`), `requests`, `tweepy`, `GitPython`, `beautifulsoup4`, `lxml`
 *   **Database:** MongoDB (for vector storage and general data)
 *   **Deployment:** Vercel (for frontend)
 
@@ -175,6 +175,57 @@ This document provides instructions to run the Next.js frontend and FastAPI back
     ```json
     {"message":"Hello World"}
     ```
+
+### Running Data Ingestion
+
+The `ingest_data.py` script has been refactored to support multiple data sources. You can specify the source type and identifier using command-line arguments.
+
+1.  **Navigate to the backend directory:**
+    ```bash
+    cd backend
+    ```
+
+2.  **Activate your virtual environment** (if you haven't already):
+    *   On macOS/Linux:
+        ```bash
+        source venv/bin/activate
+        ```
+    *   On Windows:
+        ```bash
+        .\venv\Scripts\activate
+        ```
+
+3.  **Ensure MongoDB Atlas Vector Search index is set up** as per `user_instructions/setup_mongodb_vector_index.md`.
+
+4.  **Run the ingestion script with desired source:**
+
+    *   **Litecoin Docs (Sample):**
+        ```bash
+        python ingest_data.py --source_type litecoin_docs --source_identifier data_ingestion/sample_litecoin_docs.md
+        ```
+    *   **YouTube (via Citeio API):**
+        ```bash
+        python ingest_data.py --source_type youtube --source_identifier "https://www.youtube.com/watch?v=your_video_id"
+        ```
+        (Replace `your_video_id` with an actual YouTube video ID)
+    *   **Twitter (X) Posts:**
+        ```bash
+        python ingest_data.py --source_type twitter --source_identifier "litecoin,satoshi"
+        ```
+        (Replace `litecoin,satoshi` with comma-separated Twitter handles)
+    *   **GitHub Repository (Markdown files):**
+        ```bash
+        python ingest_data.py --source_type github --source_identifier "https://github.com/litecoin-project/litecoin"
+        ```
+        (Replace with a valid GitHub repository URL)
+    *   **Web Article:**
+        ```bash
+        python ingest_data.py --source_type web_article --source_identifier "https://litecoin.com/en/"
+        ```
+        (Replace with a valid web article URL)
+
+5.  **Verify:**
+    Confirm the script runs successfully and data is populated in your MongoDB Atlas collection.
 
 If you encounter any issues, please check the terminal output for error messages.
 
