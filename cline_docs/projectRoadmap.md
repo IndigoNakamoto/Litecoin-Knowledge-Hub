@@ -62,10 +62,10 @@ This focus on specialized, real-time, and accurate data is the core differentiat
 *   (Further details as features involving sensitive data are defined)
 
 ## Major Milestones & Tentative Timelines
-*   **Milestone 1:** Project Initialization & Documentation Setup (Current)
-*   **Milestone 2:** Basic Project Scaffold (Next.js Frontend, FastAPI Backend)
-*   **Milestone 3:** Core RAG Pipeline Implementation (Data Ingestion, Embedding, Retrieval, Generation)
-*   **Milestone 4:** MVP Feature 1 Implementation (Litecoin Basics & FAQ)
+*   **Milestone 1:** Project Initialization & Documentation Setup (Completed)
+*   **Milestone 2:** Basic Project Scaffold (Next.js Frontend, FastAPI Backend) (Completed)
+*   **Milestone 3:** Core RAG Pipeline Implementation (Data Ingestion, Embedding, Retrieval, Generation) (Completed)
+*   **Milestone 4:** MVP Feature 1 Implementation (Litecoin Basics & FAQ) (Current)
 *   **Milestone 5:** MVP Feature 2 Implementation (Transaction & Block Explorer)
 *   (Timelines to be determined)
 
@@ -78,6 +78,17 @@ This focus on specialized, real-time, and accurate data is the core differentiat
 *   (For the project/major phases - to be defined)
 
 ## Log of Completed Major Milestones/Phases
-*   Milestone 1: Project Initialization & Documentation Setup - Completed 6/5/2025
-*   Milestone 2: Basic Project Scaffold (Next.js Frontend, FastAPI Backend) - Completed 6/5/2025
-*   Milestone 3: Core RAG Pipeline Implementation (Multi-source data ingestion framework completed on 6/5/2025; Retrieval component completed on 6/6/2025; Generation component completed on 6/6/2025 - Core RAG pipeline is now functional)
+*   **Milestone 1: Project Initialization & Documentation Setup** - Completed 6/5/2025
+    *   Initial `cline_docs` created and populated.
+*   **Milestone 2: Basic Project Scaffold (Next.js Frontend, FastAPI Backend)** - Completed 6/5/2025
+    *   Frontend (Next.js) and Backend (FastAPI) directory structures established.
+    *   Basic "Hello World" functionality confirmed for both.
+*   **Milestone 3: Core RAG Pipeline Implementation** - Completed 6/6/2025
+    *   **Data Ingestion Framework:** Implemented and tested multi-source data loaders (Markdown, GitHub, Web).
+    *   **Embedding:** Integrated Google Text Embedding 004.
+    *   **Vector Store:** Set up and integrated MongoDB Atlas Vector Search.
+    *   **Retrieval:** Implemented document retrieval based on similarity search.
+    *   **Generation:** Integrated Langchain with `ChatGoogleGenerativeAI` (gemini-pro) to generate answers from retrieved context.
+    *   **API:** `/api/v1/chat` endpoint created and functional, returning both the generated answer and source documents for transparency.
+    *   **Testing:** Standalone test script (`backend/test_rag_pipeline.py`) created to validate the end-to-end pipeline.
+    *   The core RAG pipeline is now functional and capable of ingesting data, retrieving relevant chunks, and generating answers with source attribution.

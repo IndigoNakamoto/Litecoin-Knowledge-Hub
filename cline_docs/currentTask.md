@@ -1,10 +1,32 @@
 # Current Task: Litecoin RAG Chat
 
 ## Current Sprint/Iteration Goal
-*   Core RAG Pipeline Implementation.
+*   **Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)**
 
 ## Active Task(s):
+*   ### Task ID / Name: `M4-FAQ-001` - Gather and Ingest Data for Litecoin Basics & FAQ
+    *   #### Detailed Description & Business Context:
+        To implement the "Litecoin Basics & FAQ" feature, the RAG pipeline needs to be populated with relevant knowledge. This task involves identifying reliable sources for Litecoin fundamental information (e.g., official Litecoin websites, reputable crypto wikis, introductory articles) and ingesting this data into the MongoDB vector store.
+    *   #### Acceptance Criteria:
+        1.  Identify at least 3-5 high-quality, publicly accessible data sources for Litecoin basics and FAQs.
+        2.  For each source, determine the best ingestion method (e.g., `web` loader for articles, `markdown` loader if content can be converted).
+        3.  Successfully run the `ingest_data.py` script for each identified source.
+        4.  Verify that the data from these sources is present in the MongoDB vector store.
+        5.  Document the chosen sources and any specific ingestion notes in this task's "Notes on Completion".
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)
+    *   #### Status: To Do
+    *   #### Plan:
+        *   Research and identify suitable data sources.
+        *   Prepare data if necessary (e.g., convert to Markdown).
+        *   Use `ingest_data.py` to load data.
+        *   Verify ingestion in MongoDB.
+    *   #### Estimated Effort: (To be determined)
+    *   #### Assigned To: (To be determined)
+    *   #### Priority: High
 
+## Task Backlog:
+*   (Placeholder for future tasks related to Milestone 4 or other features)
 
 ## Discovered During Work:
 *   The data ingestion script depends on a manually created Vector Search Index in MongoDB Atlas. Added a user instruction guide and updated the task steps to reflect this dependency.

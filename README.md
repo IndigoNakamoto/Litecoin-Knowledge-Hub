@@ -6,7 +6,9 @@ A RAG (Retrieval-Augmented Generation) Chatbot for Litecoin users is an AI-power
 **Target Users/Audience:** Litecoin users (novice and experienced), Cryptocurrency enthusiasts, Developers building on Litecoin, Potential adopters seeking reliable information about Litecoin’s features, transactions, or market trends.
 
 ## Project Status
-The project is currently in the **Core RAG Pipeline Implementation** phase (Milestone 3). The multi-source data ingestion framework and the core retrieval mechanism have been successfully implemented and tested. We are now focusing on the generation component.
+The project has successfully completed the **Core RAG Pipeline Implementation** (Milestone 3). The core RAG pipeline is now functional, capable of ingesting data from multiple sources, retrieving relevant information, and generating answers with source attribution.
+
+The project is currently focused on **Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)**.
 
 ## Key Features
 
@@ -29,8 +31,8 @@ This project is organized into several key milestones. For detailed information 
 | :---: | :--- | :--- |
 | ✅ | [Milestone 1: Project Initialization](./cline_docs/milestones/milestone_1_project_initialization.md) | Initial project setup and core documentation. |
 | ✅ | [Milestone 2: Basic Project Scaffold](./cline_docs/milestones/milestone_2_basic_project_scaffold.md) | Scaffolding for the Next.js frontend and FastAPI backend. |
-| ⏳ | [Milestone 3: Core RAG Pipeline](./cline_docs/milestones/milestone_3_core_rag_pipeline.md) | Implementation of the core data ingestion, retrieval, and generation pipeline. |
-| 📝 | [Milestone 4: Litecoin Basics & FAQ](./cline_docs/milestones/milestone_4_litecoin_basics_faq.md) | Implementing the first core feature for basic questions. |
+| ✅ | [Milestone 3: Core RAG Pipeline](./cline_docs/milestones/milestone_3_core_rag_pipeline.md) | Implementation of the core data ingestion, retrieval, and generation pipeline. |
+| ⏳ | [Milestone 4: Litecoin Basics & FAQ](./cline_docs/milestones/milestone_4_litecoin_basics_faq.md) | Implementing the first core feature for basic questions. |
 | 📝 | [Milestone 5: Transaction & Block Explorer](./cline_docs/milestones/milestone_5_transaction_block_explorer.md) | Feature for looking up transaction and block details. |
 | 📝 | [Milestone 6: Market Data & Insights](./cline_docs/milestones/milestone_6_market_data_insights.md) | Feature for delivering real-time market data. |
 | 📝 | [Milestone 7: Developer Documentation](./cline_docs/milestones/milestone_7_developer_documentation.md) | Feature for providing access to developer resources. |
