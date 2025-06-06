@@ -68,4 +68,3 @@ A RAG (Retrieval-Augmented Generation) Chatbot for Litecoin users is an AI-power
 ## Log of Completed Major Milestones/Phases
 *   Milestone 1: Project Initialization & Documentation Setup - Completed 6/5/2025
 *   Milestone 2: Basic Project Scaffold (Next.js Frontend, FastAPI Backend) - Completed 6/5/2025
-*   Milestone 3: Core RAG Pipeline Implementation (Initial Langchain setup completed via INIT-003 on 6/5/2025)

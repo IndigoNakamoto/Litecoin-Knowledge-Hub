@@ -1,10 +1,31 @@
 # Current Task: Litecoin RAG Chat
 
 ## Current Sprint/Iteration Goal
-*   Project Initialization and Foundational Setup.
+*   Core RAG Pipeline Implementation.
 
 ## Active Task(s):
-*   (None currently active)
+*   ### Task ID / Name: `RAG-001` - Implement Data Ingestion and MongoDB Vector Store Setup
+    *   #### Detailed Description & Business Context:
+        This task focuses on setting up the foundational components for data ingestion and vector storage within our RAG pipeline. We will identify initial data sources for Litecoin information, develop modules to ingest and process this data, generate embeddings using Google Text Embedding 004, and store these embeddings in MongoDB Atlas Vector Search. This is a critical step towards building our knowledge base for the RAG chatbot.
+    *   #### Acceptance Criteria:
+        1.  A new directory `backend/data_ingestion/` is created.
+        2.  `pymongo` and `langchain-google-genai` are added to `backend/requirements.txt`.
+        3.  `backend/data_ingestion/litecoin_docs_loader.py` is created with a function to load sample Litecoin documentation (e.g., from a local markdown file or a small, static text).
+        4.  `backend/data_ingestion/embedding_processor.py` is created to handle text splitting and generate embeddings using Google Text Embedding 004.
+        5.  `backend/data_ingestion/vector_store_manager.py` is created to manage connections to MongoDB Atlas and insert/retrieve vector embeddings.
+        6.  A standalone script `backend/ingest_data.py` is created to orchestrate the data loading, embedding, and storage process.
+        7.  The ingestion script runs successfully without errors and populates the MongoDB Atlas collection with embedded data.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 3: Core RAG Pipeline Implementation (Data Ingestion, Embedding, Retrieval, Generation)
+    *   #### Status: In Progress
+    *   #### Plan:
+        1.  Create `backend/data_ingestion` directory.
+        2.  Add `pymongo` and `langchain-google-genai` to `backend/requirements.txt`.
+        3.  Create `backend/data_ingestion/litecoin_docs_loader.py` with a simple function to load text.
+        4.  Create `backend/data_ingestion/embedding_processor.py` to split text and generate embeddings.
+        5.  Create `backend/data_ingestion/vector_store_manager.py` to connect to MongoDB and insert embeddings.
+        6.  Create `backend/ingest_data.py` to run the ingestion process.
+        7.  Update `cline_docs/codebaseSummary.md` to reflect new modules.
 
 ## Discovered During Work:
 *   (None)

@@ -6,6 +6,7 @@
 *   `frontend/`: Contains the Next.js application.
     *   `src/`: Main source code for the Next.js application (using App Router).
 *   `backend/`: Contains the FastAPI application.
+    *   `data_ingestion/`: Contains modules for data loading, embedding, and vector store management.
     *   `main.py`: Main FastAPI application file.
     *   `requirements.txt`: Python dependencies.
     *   `rag_pipeline.py`: Encapsulates Langchain-related logic for the RAG pipeline.
@@ -16,6 +17,10 @@
 ## Key Modules/Components & Their Responsibilities
 *   `backend/rag_pipeline.py`: Contains the core logic for the RAG (Retrieval-Augmented Generation) pipeline, including the definition and orchestration of Langchain chains.
 *   `backend/main.py`: The main entry point for the FastAPI backend, responsible for defining API endpoints and handling incoming requests.
+*   `backend/data_ingestion/litecoin_docs_loader.py`: Responsible for loading raw text data from various Litecoin-related sources.
+*   `backend/data_ingestion/embedding_processor.py`: Handles text splitting and generates vector embeddings using Google Text Embedding 004.
+*   `backend/data_ingestion/vector_store_manager.py`: Manages connections to MongoDB Atlas and facilitates the insertion and retrieval of vector embeddings.
+*   `backend/ingest_data.py`: A standalone script to orchestrate the data ingestion process.
 
 ## Core Data Models & Entities
 *   (Not yet established - will likely include models for Litecoin data, user queries, RAG sources, etc.)
