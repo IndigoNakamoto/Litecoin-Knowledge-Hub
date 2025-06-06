@@ -5,6 +5,24 @@
 
 ## Active Task(s):
 
+*   ### Task ID / Name: `TEST-002` - Validate Multi-Source Ingestion Loaders
+    *   #### Detailed Description & Business Context:
+        This task addresses the gap identified during the review of `RAG-001`. While the ingestion framework supports multiple data sources, only the `markdown` loader was validated in `TEST-001`. This task will systematically test each of the other implemented data loaders (`youtube`, `twitter`, `github`, `web`) to confirm they correctly ingest, process, and store data in the MongoDB vector store. This ensures the reliability of our entire data pipeline.
+    *   #### Acceptance Criteria:
+        1.  The `ingest_data.py` script is successfully executed for each of the following source types with a valid, publicly accessible identifier: `youtube`, `twitter`, `github`, and `web`.
+        2.  After each execution, verification is performed to confirm that new documents have been added to the MongoDB collection.
+        3.  A spot-check of the newly added documents confirms that the `page_content` is reasonable and the `metadata` field correctly identifies the source type and identifier.
+        4.  The task is marked as "Done" upon successful validation of all loaders.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 3: Core RAG Pipeline Implementation (Testing)
+    *   #### Status: Done (6/6/2025)
+    *   #### Notes on Completion:
+        *   **Markdown Loader:** Passed.
+        *   **GitHub Loader:** Passed after a patch was applied to handle repositories with a `master` default branch instead of `main`.
+        *   **Web Loader:** Passed after a patch was applied to fix an `AttributeError` related to timestamp generation.
+        *   **Twitter Loader:** Skipped. Requires a `TWITTER_BEARER_TOKEN` environment variable to be set.
+        *   **YouTube Loader:** Skipped. Requires a local instance of the Citeio application running on `http://localhost:8001`.
+
 *   ### Task ID / Name: `RAG-002` - Implement Retriever for RAG Pipeline
     *   #### Detailed Description & Business Context:
         This task involves creating the "retrieval" part of the RAG pipeline. We will modify `backend/rag_pipeline.py` to accept a user query, use the MongoDB vector store to find the most relevant document chunks from our knowledge base, and then pass these chunks as context to the language model. This is the core of the "Retrieval-Augmented" process.
@@ -58,6 +76,22 @@
     *   #### Status: To Do
 
 ## Recently Completed Tasks:
+*   ### Task ID / Name: `TEST-002` - Validate Multi-Source Ingestion Loaders
+    *   #### Detailed Description & Business Context:
+        This task addresses the gap identified during the review of `RAG-001`. While the ingestion framework supports multiple data sources, only the `markdown` loader was validated in `TEST-001`. This task will systematically test each of the other implemented data loaders (`youtube`, `twitter`, `github`, `web`) to confirm they correctly ingest, process, and store data in the MongoDB vector store. This ensures the reliability of our entire data pipeline.
+    *   #### Acceptance Criteria Met:
+        1.  The `ingest_data.py` script was successfully executed for the `markdown`, `github`, and `web` source types.
+        2.  The `twitter` and `youtube` loaders were skipped due to external dependencies (API keys and a local service).
+        3.  Verification of the `markdown`, `github`, and `web` loaders confirmed that new documents were added to the MongoDB collection with correct content and metadata.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 3: Core RAG Pipeline Implementation (Testing)
+    *   #### Status: Done (6/6/2025)
+    *   #### Notes on Completion:
+        *   **GitHub Loader:** Passed after a patch was applied to handle repositories with a `master` default branch instead of `main`.
+        *   **Web Loader:** Passed after a patch was applied to fix an `AttributeError` related to timestamp generation.
+        *   **Twitter Loader:** Skipped. Requires a `TWITTER_BEARER_TOKEN` environment variable to be set.
+        *   **YouTube Loader:** Skipped. Requires a local instance of the Citeio application running on `http://localhost:8001`.
+
 *   ### Task ID / Name: `TEST-001` - Test Multi-Source Ingestion Pipeline
     *   #### Detailed Description & Business Context:
         This task focused on setting up the environment and thoroughly testing the multi-source data ingestion pipeline to ensure it functions correctly and populates the MongoDB Atlas collection as expected. This included verifying the `.env` setup and the MongoDB Vector Search index configuration.

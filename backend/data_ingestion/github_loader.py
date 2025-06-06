@@ -6,13 +6,13 @@ from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from typing import List, Dict
 
-def load_github_repo_data(repo_url: str, branch: str = "main") -> List[Dict]:
+def load_github_repo_data(repo_url: str) -> List[Dict]:
     """
     Clones a GitHub repository, processes its Markdown files, and returns their content.
+    It tries to clone the 'main' branch first, and falls back to 'master' if 'main' is not found.
 
     Args:
         repo_url: The URL of the GitHub repository.
-        branch: The branch to clone. Defaults to "main".
 
     Returns:
         A list of dictionaries, where each dictionary contains the content
@@ -20,12 +20,30 @@ def load_github_repo_data(repo_url: str, branch: str = "main") -> List[Dict]:
     """
     temp_dir = None
     documents = []
+    branches_to_try = ["main", "master"]
+    
     try:
         # Reason: Create a temporary directory to clone the repository into.
         temp_dir = tempfile.mkdtemp()
-        print(f"Cloning {repo_url} into {temp_dir}...")
-        Repo.clone_from(repo_url, temp_dir, branch=branch)
-        print("Repository cloned successfully.")
+        
+        cloned_successfully = False
+        for branch in branches_to_try:
+            try:
+                print(f"Attempting to clone branch '{branch}' from {repo_url} into {temp_dir}...")
+                Repo.clone_from(repo_url, temp_dir, branch=branch)
+                print(f"Repository cloned successfully from branch '{branch}'.")
+                cloned_successfully = True
+                break # Exit the loop on successful clone
+            except GitCommandError as e:
+                print(f"Could not clone branch '{branch}': {e}. Trying next branch...")
+                # Clean up the directory for the next attempt
+                if os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir)
+                temp_dir = tempfile.mkdtemp()
+
+        if not cloned_successfully:
+            print(f"Error: Could not clone from any of the default branches: {branches_to_try}")
+            return []
 
         # Reason: Walk through the cloned repository and load Markdown files.
         for root, _, files in os.walk(temp_dir):
@@ -44,8 +62,6 @@ def load_github_repo_data(repo_url: str, branch: str = "main") -> List[Dict]:
                     except Exception as e:
                         print(f"Error loading file {file_path}: {e}")
 
-    except GitCommandError as e:
-        print(f"Git command error: {e}")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
     finally:

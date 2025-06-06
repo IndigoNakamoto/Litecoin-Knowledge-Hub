@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 from typing import Dict
+import time # Reason: Import the time module for timestamp generation.
 
 def load_web_article_data(url: str) -> Dict:
     """
@@ -41,7 +42,7 @@ def load_web_article_data(url: str) -> Dict:
             "metadata": {
                 "source_url": url,
                 "title": title,
-                "retrieval_date": requests.utils.time.strftime("%Y-%m-%dT%H:%M:%SZ", requests.utils.time.gmtime())
+                "retrieval_date": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             }
         }
     except requests.exceptions.RequestException as e:
