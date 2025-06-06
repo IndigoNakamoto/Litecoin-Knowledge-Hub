@@ -85,6 +85,18 @@
     *   #### Status: To Do
 
 ## Recently Completed Tasks:
+*   ### Task ID / Name: `DOCS-002` - Create Reference Documentation Folder
+    *   #### Detailed Description & Business Context:
+        Created a dedicated folder at the project root to store external documentation for frameworks, services, and APIs used in the project. This improved organization and provided a centralized reference point for developers.
+    *   #### Acceptance Criteria Met:
+        1.  A new directory `reference_docs/` was created at the project root.
+        2.  Subdirectories were created within `reference_docs/` for `nextjs`, `fastapi`, `mongodb`, `langchain`, and `google_ai`.
+        3.  A `.gitkeep` file was added to each new subdirectory to ensure they are tracked by Git.
+        4.  `cline_docs/codebaseSummary.md` was updated to include the new `reference_docs/` directory in its overview.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 1: Project Initialization & Documentation Setup (Ongoing documentation maintenance)
+    *   #### Status: Done (6/6/2025)
+
 *   ### Task ID / Name: `INGEST-001`: Create YouTube Data Loader via Citeio Integration
     *   #### Detailed Description & Business Context:
         Developed a `youtube_loader.py` module that interacts with the Citeio application's API to fetch processed YouTube transcripts and topic data.

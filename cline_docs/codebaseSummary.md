@@ -12,6 +12,7 @@
     *   `rag_pipeline.py`: Encapsulates Langchain-related logic for the RAG pipeline.
 *   `cline_docs/`: Contains project documentation.
 *   `cline_agent_workspace/`: Contains agent's operational files.
+*   `reference_docs/`: Contains documentation for frameworks, services, and APIs used in the project.
 *   `user_instructions/`: Contains instructions for the user.
 
 ## Key Modules/Components & Their Responsibilities
