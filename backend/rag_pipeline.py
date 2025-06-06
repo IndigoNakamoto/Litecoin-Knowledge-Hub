@@ -1,11 +1,15 @@
 import os
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnablePassthrough
+from langchain_core.runnables import RunnablePassthrough, RunnableParallel
+from langchain_core.output_parsers import StrOutputParser
 from langchain_mongodb import MongoDBAtlasVectorSearch
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from pymongo import MongoClient
 
 # Constants
+# Ensure GOOGLE_API_KEY is loaded for ChatGoogleGenerativeAI
+if not os.getenv("GOOGLE_API_KEY"):
+    raise ValueError("GOOGLE_API_KEY environment variable not set!")
 MONGO_URI = os.getenv("MONGO_URI")
 DB_NAME = "litecoin_rag_db"
 COLLECTION_NAME = "litecoin_docs"
@@ -38,20 +42,50 @@ async def retrieve_documents(query: str):
         search_type="similarity",
         search_kwargs={"k": 5}  # Retrieve top 5 most similar documents
     )
-    
     retrieved_docs = await retriever.ainvoke(query)
-    
     return retrieved_docs
 
-def get_placeholder_chain():
+# Initialize LLM
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-preview-05-20", temperature=0.7)
+
+# Define the RAG prompt template
+RAG_PROMPT_TEMPLATE = """
+You are an assistant for question-answering tasks. Use the following pieces of retrieved context to augment your answer the question.
+If you don't know the answer, just say that you don't know. Keep the answer concise.
+
+Question: {question}
+Context: {context}
+
+Answer:
+"""
+
+rag_prompt = ChatPromptTemplate.from_template(RAG_PROMPT_TEMPLATE)
+
+def format_docs(docs):
+    return "\n\n".join(doc.page_content for doc in docs)
+
+async def get_rag_chain():
     """
-    Returns a simple, placeholder Langchain chain.
-    
-    This chain takes a query, passes it through, and formats a basic response.
+    Constructs and returns an asynchronous RAG chain.
+    The chain retrieves documents, formats them with the query,
+    passes to the LLM, and parses the output.
     """
-    prompt = ChatPromptTemplate.from_template("Received query: {query} - Langchain placeholder response.")
+    retriever = vector_store.as_retriever(
+        search_type="similarity",
+        search_kwargs={"k": 20} # Retrieve top 3 most similar documents
+    )
+
+    rag_chain_from_docs = (
+        RunnablePassthrough.assign(context=(lambda x: format_docs(x["context"])))
+        | rag_prompt
+        | llm
+        | StrOutputParser()
+    )
+
+    rag_chain_with_source = RunnableParallel(
+        {"context": retriever, "question": RunnablePassthrough()}
+    ).assign(answer=rag_chain_from_docs)
     
-    # Using a simple chain with a passthrough for the query
-    chain = {"query": RunnablePassthrough()} | prompt
-    
-    return chain
+    # The final chain will take a query string and return a dict 
+    # containing the "answer" and the "context" (source documents)
+    return rag_chain_with_source

@@ -5,6 +5,53 @@
 
 ## Active Task(s):
 
+
+## Discovered During Work:
+*   The data ingestion script depends on a manually created Vector Search Index in MongoDB Atlas. Added a user instruction guide and updated the task steps to reflect this dependency.
+
+## Task Backlog:
+
+## Recently Completed Tasks:
+
+*   ### Task ID / Name: `RAG-004` - Enhance RAG Pipeline Output with Source Documents
+    *   #### Detailed Description & Business Context:
+        Modify the RAG pipeline and API to return not just the generated answer, but also the source documents (content and metadata) that were retrieved and used as context by the LLM. This enhances transparency and allows users to verify the information.
+    *   #### Acceptance Criteria:
+        1.  The RAG chain in `backend/rag_pipeline.py` is modified to output both the generated answer and the retrieved source documents.
+        2.  The `/api/v1/chat` endpoint in `backend/main.py` is updated to return a JSON object containing `answer` and a list of `sources` (each with `page_content` and `metadata`).
+        3.  Pydantic models (`SourceDocument`, `ChatResponse`) are defined in `backend/main.py` for the new response structure.
+        4.  The test script `backend/test_rag_pipeline.py` is updated to correctly parse and display the new response format, including the answer and source details.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 3: Core RAG Pipeline Implementation (Enhancement for verifiable trust)
+    *   #### Status: Done (6/6/2025)
+    *   #### Notes on Completion:
+        *   Modified `get_rag_chain` in `backend/rag_pipeline.py` to return the full output dictionary containing `answer` and `context` (source documents).
+        *   Updated `chat_endpoint` in `backend/main.py`:
+            *   Added `SourceDocument` and `ChatResponse` Pydantic models.
+            *   Set `response_model=ChatResponse`.
+            *   Formatted the output to include `answer` and a list of `sources` (transformed from Langchain `Document` objects).
+        *   Updated `backend/test_rag_pipeline.py` to print the answer and source document details from the new response structure.
+        *   All acceptance criteria for RAG-004 have been met.
+
+*   ### Task ID / Name: `TEST-003` - Create Standalone Test Script for RAG Pipeline
+    *   #### Detailed Description & Business Context:
+        Create a standalone Python script (`backend/test_rag_pipeline.py`) to test the end-to-end RAG pipeline. This script will send a sample query to the `/api/v1/chat` endpoint and print the response to verify the pipeline's functionality.
+    *   #### Acceptance Criteria:
+        1.  A new file `backend/test_rag_pipeline.py` is created.
+        2.  The script uses the `requests` library to send a POST request to `http://127.0.0.1:8000/api/v1/chat`.
+        3.  The script sends a predefined query (e.g., "What is Litecoin?").
+        4.  The script prints the query and the JSON response from the server.
+        5.  The script can be executed directly (`python backend/test_rag_pipeline.py`) assuming the backend server is running.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 3: Core RAG Pipeline Implementation (Testing)
+    *   #### Status: Done (6/6/2025)
+    *   #### Notes on Completion:
+        *   Created `backend/test_rag_pipeline.py`.
+        *   The script uses the `requests` library to send a POST request with a sample query ("What is Litecoin?") to `http://127.0.0.1:8000/api/v1/chat`.
+        *   It prints the query and the JSON response from the server.
+        *   The script can be run using `python backend/test_rag_pipeline.py` when the backend server is active.
+        *   All acceptance criteria for TEST-003 have been met.
+
 *   ### Task ID / Name: `RAG-003` - Implement Generator for RAG Pipeline
     *   #### Detailed Description & Business Context:
         This task involves creating the "generation" part of the RAG pipeline. We will modify `backend/rag_pipeline.py` to take the retrieved document chunks, format them into a prompt, and pass them to a Large Language Model (LLM) to generate a coherent and contextually relevant answer to the user's query.
@@ -17,47 +64,19 @@
         6.  The endpoint should return the LLM-generated response as a JSON object (e.g., `{"response": "generated_answer"}`).
     *   #### Link to projectRoadmap.md goal(s):
         *   Milestone 3: Core RAG Pipeline Implementation (Data Ingestion, Embedding, Retrieval, Generation)
-    *   #### Status: To Do
-
-## Discovered During Work:
-*   The data ingestion script depends on a manually created Vector Search Index in MongoDB Atlas. Added a user instruction guide and updated the task steps to reflect this dependency.
-
-## Task Backlog:
-*   ### Task ID / Name: `ARCH-001` - Implement Session Management
-    *   #### Detailed Description & Business Context:
-        Inspired by the "Building a Simple Full Stack RAG-Bot for Enterprises" article, this task focuses on implementing a session management mechanism, such as using a `group_id` or similar identifier, to track user interactions. This will be crucial for maintaining conversation history and laying the groundwork for future multi-user or personalized features, even if the initial MVP uses a shared knowledge base.
-    *   #### Acceptance Criteria:
-        1.  A mechanism for generating and associating a unique session ID (e.g., `group_id`) with each user interaction is implemented in the backend.
-        2.  The session ID is passed between the frontend and backend for each query.
-        3.  The backend can retrieve or store information based on this session ID (e.g., conversation history, if implemented later).
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Milestone 3: Core RAG Pipeline Implementation (Enhancement for scalability)
-    *   #### Status: To Do
-
-*   ### Task ID / Name: `RESEARCH-001` - Research MongoDB Atlas Vector Search Advanced Capabilities
-    *   #### Detailed Description & Business Context:
-        The "Building a Simple Full Stack RAG-Bot for Enterprises" article highlighted Qdrant's multitenancy and binary quantization features for data isolation and performance. This task involves researching how similar capabilities can be achieved or leveraged with MongoDB Atlas Vector Search. This research will inform future architectural decisions regarding data partitioning, security, and performance optimization for our vector store.
-    *   #### Acceptance Criteria:
-        1.  Documentation and examples for achieving data isolation (e.g., multi-tenancy, filtering by metadata) within MongoDB Atlas Vector Search are identified.
-        2.  Information on performance optimization techniques (e.g., indexing strategies, data compression, query optimization) specific to MongoDB Atlas Vector Search is gathered.
-        3.  A brief summary of findings is documented, outlining how these capabilities can be applied to our project.
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Milestone 3: Core RAG Pipeline Implementation (Optimization & Scalability)
-    *   #### Status: To Do
-
-*   ### Task ID / Name: `DOCS-001` - Update Project Documentation
-    *   #### Detailed Description & Business Context:
-        This task involves updating `cline_docs/milestones/milestone_3_core_rag_pipeline.md`, `README.md`, `cline_docs/projectRoadmap.md`, and `cline_docs/techStack.md` to reflect the completion of the multi-source data ingestion framework and ensure all documentation is consistent and up-to-date. This task will be marked as complete only after the ingestion pipeline has been successfully tested.
-    *   #### Acceptance Criteria:
-        1.  `cline_docs/milestones/milestone_3_core_rag_pipeline.md` accurately describes the completed ingestion framework and updated tasks/status.
-        2.  `README.md` reflects the current project status, updated Milestone 3 summary, expanded technology stack, and detailed `ingest_data.py` usage examples.
-        3.  `cline_docs/projectRoadmap.md`'s "Log of Completed Major Milestones" includes the updated status for Milestone 3.
-        4.  `cline_docs/techStack.md` lists all new dependencies (`requests`, `tweepy`, `GitPython`, `beautifulsoup4`, `lxml`) with justifications.
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Milestone 1: Project Initialization & Documentation Setup (Ongoing documentation maintenance)
-    *   #### Status: To Do
-
-## Recently Completed Tasks:
+    *   #### Status: Done (6/6/2025)
+    *   #### Notes on Completion:
+        *   Modified `backend/rag_pipeline.py` to implement a full RAG chain using LangChain Expression Language (LCEL).
+        *   The chain now includes:
+            *   A retriever using `MongoDBAtlasVectorSearch`.
+            *   A prompt template (`RAG_PROMPT_TEMPLATE`) to format the query and context.
+            *   The `ChatGoogleGenerativeAI` model (gemini-pro) as the LLM.
+            *   An output parser (`StrOutputParser`) to get the final string response.
+        *   The `retrieve_documents` function is still present but no longer directly called by the main API; its logic is incorporated into the new `get_rag_chain` function's retriever.
+        *   Removed the `get_placeholder_chain` function.
+        *   Updated `backend/main.py`'s `/api/v1/chat` endpoint to use the new `get_rag_chain` function.
+        *   The endpoint now returns the LLM-generated response in the format `{"response": "generated_answer"}`.
+        *   All acceptance criteria for RAG-003 have been met.
 
 *   ### Task ID / Name: `TEST-002` - Validate Multi-Source Ingestion Loaders
     *   #### Detailed Description & Business Context:
