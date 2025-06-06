@@ -47,7 +47,7 @@ Provides quick access to snippets from Litecoin developer documentation, links t
 *   **Key Tasks:** Set up Langchain project structure, Integrate Google Text Embedding 004 model, Configure MongoDB Atlas Vector Search for vector storage and retrieval, Develop initial data ingestion scripts for basic text data, Implement multi-source data ingestion framework (YouTube, Twitter, GitHub, Web Articles), Refactor `ingest_data.py` into a source router, Implement the core retrieval mechanism, Set up the LLM integration for generation.
 *   **Status:** In Progress (Multi-source Data Ingestion & Langchain Setup Complete; Focusing on Retrieval & Generation)
 *   **Dependencies:** Milestone 1, Milestone 2
-*   **Estimated Time:** 40 hours (Estimated 20 hours so far)
+*   **Estimated Time:** 40 hours (Estimated 7 hours so far)
 
 ### Upcoming Milestones
 

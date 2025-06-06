@@ -14,7 +14,7 @@ This milestone focuses on building the foundational Retrieval-Augmented Generati
 *   [ ] Set up the LLM integration for generation.
 
 ## Estimated Time
-40 hours (Estimated 20 hours so far)
+40 hours (Estimated 7 hours so far)
 
 ## Status
 In Progress (Multi-source Data Ingestion & Langchain Setup Complete; Focusing on Retrieval & Generation)
