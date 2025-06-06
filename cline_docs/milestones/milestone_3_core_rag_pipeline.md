@@ -17,14 +17,14 @@ This milestone focuses on building the foundational Retrieval-Augmented Generati
 
 ## Status
 Completed (6/6/2025)
-    *   **Data Ingestion Framework:** Implemented and tested multi-source data loaders (Markdown, GitHub, Web).
-    *   **Embedding:** Integrated Google Text Embedding 004.
-    *   **Vector Store:** Set up and integrated MongoDB Atlas Vector Search.
-    *   **Retrieval:** Implemented document retrieval based on similarity search.
-    *   **Generation:** Integrated Langchain with `ChatGoogleGenerativeAI` (gemini-pro) to generate answers from retrieved context.
-    *   **API:** `/api/v1/chat` endpoint created and functional, returning both the generated answer and source documents for transparency.
-    *   **Testing:** Standalone test script (`backend/test_rag_pipeline.py`) created to validate the end-to-end pipeline.
-    *   The core RAG pipeline is now functional.
+*   **Data Ingestion Framework:** Implemented and tested multi-source data loaders (Markdown, GitHub, Web).
+*   **Embedding:** Integrated Google Text Embedding 004.
+*   **Vector Store:** Set up and integrated MongoDB Atlas Vector Search.
+*   **Retrieval:** Implemented document retrieval based on similarity search.
+*   **Generation:** Integrated Langchain with `ChatGoogleGenerativeAI` (gemini-pro) to generate answers from retrieved context.
+*   **API:** `/api/v1/chat` endpoint created and functional, returning both the generated answer and source documents for transparency.
+*   **Testing:** Standalone test script (`backend/test_rag_pipeline.py`) created to validate the end-to-end pipeline.
+*   The core RAG pipeline is now functional.
 
 ## Dependencies
 *   Completed: Milestone 1 (Project Initialization & Documentation Setup)
