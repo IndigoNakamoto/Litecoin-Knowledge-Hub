@@ -22,69 +22,24 @@ Delivers real-time Litecoin price information, market capitalization, trading vo
 ### Feature 4: Developer Documentation & Resources
 Provides quick access to snippets from Litecoin developer documentation, links to key resources, and answers to common technical questions for developers building on Litecoin.
 
-## Milestones
+## Project Milestones
+This project is organized into several key milestones. For detailed information on each milestone, please refer to the documents in the `cline_docs/milestones/` directory.
 
-### Completed Milestones - 267 hours (Estimated)
+| Status | Milestone | Description |
+| :---: | :--- | :--- |
+| ✅ | [Milestone 1: Project Initialization](./cline_docs/milestones/milestone_1_project_initialization.md) | Initial project setup and core documentation. |
+| ✅ | [Milestone 2: Basic Project Scaffold](./cline_docs/milestones/milestone_2_basic_project_scaffold.md) | Scaffolding for the Next.js frontend and FastAPI backend. |
+| ⏳ | [Milestone 3: Core RAG Pipeline](./cline_docs/milestones/milestone_3_core_rag_pipeline.md) | Implementation of the core data ingestion, retrieval, and generation pipeline. |
+| 📝 | [Milestone 4: Litecoin Basics & FAQ](./cline_docs/milestones/milestone_4_litecoin_basics_faq.md) | Implementing the first core feature for basic questions. |
+| 📝 | [Milestone 5: Transaction & Block Explorer](./cline_docs/milestones/milestone_5_transaction_block_explorer.md) | Feature for looking up transaction and block details. |
+| 📝 | [Milestone 6: Market Data & Insights](./cline_docs/milestones/milestone_6_market_data_insights.md) | Feature for delivering real-time market data. |
+| 📝 | [Milestone 7: Developer Documentation](./cline_docs/milestones/milestone_7_developer_documentation.md) | Feature for providing access to developer resources. |
+| 📝 | [Milestone 8: Testing, Refinement & Deployment](./cline_docs/milestones/milestone_8_testing_refinement_deployment.md) | Comprehensive testing, optimization, and deployment. |
 
-#### Milestone 1: Project Initialization & Documentation Setup
-*   **Description:** This milestone covered the initial setup of the project, including defining the project scope, objectives, key features, and setting up the core documentation structure in `cline_docs`.
-*   **Key Tasks:** Define Project Scope & Objectives, Outline Key Features & User Stories, Establish Architectural Overview & Patterns, Document Core Technology Decisions, Identify Significant Constraints, Define High-Level Security Requirements, Set up `cline_docs` with `projectRoadmap.md`, `currentTask.md`, `techStack.md`, and `codebaseSummary.md`.
-*   **Status:** Completed (6/5/2025)
-*   **Dependencies:** None
-*   **Estimated Time:** 3 hours
-
-#### Milestone 2: Basic Project Scaffold
-*   **Description:** This milestone involved setting up the basic project structure for both the frontend (Next.js) and backend (Python/FastAPI) components. This included initializing the applications, setting up basic configurations, and ensuring they can run.
-*   **Key Tasks:** Initialize Next.js frontend application, Initialize FastAPI backend application, Set up basic folder structures for both frontend and backend, Configure basic dependencies, Ensure both frontend and backend servers can start.
-*   **Status:** Completed (6/5/2025)
-*   **Dependencies:** Milestone 1
-*   **Estimated Time:** 4 hours
-
-### In Progress Milestones
-
-#### Milestone 3: Core RAG Pipeline Implementation
-*   **Description:** This milestone focuses on building the foundational Retrieval-Augmented Generation (RAG) pipeline. This includes setting up the Langchain framework, integrating with MongoDB Atlas for vector search, configuring the Google Text Embedding model, and implementing a robust, multi-source data ingestion framework.
-*   **Key Tasks:** Set up Langchain project structure, Integrate Google Text Embedding 004 model, Configure MongoDB Atlas Vector Search for vector storage and retrieval, Develop initial data ingestion scripts for basic text data, Implement multi-source data ingestion framework (YouTube, Twitter, GitHub, Web Articles), Refactor `ingest_data.py` into a source router, Implement the core retrieval mechanism, Set up the LLM integration for generation.
-*   **Status:** In Progress (Multi-source Data Ingestion & Langchain Setup Complete; Focusing on Retrieval & Generation)
-*   **Dependencies:** Milestone 1, Milestone 2
-*   **Estimated Time:** 40 hours (Estimated 7 hours so far)
-
-### Upcoming Milestones
-
-#### Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)
-*   **Description:** This milestone focuses on implementing the first core feature: providing answers to fundamental questions about Litecoin. This involves developing the frontend chat interface, integrating it with the RAG backend, and ensuring the RAG pipeline can accurately retrieve and generate responses for basic Litecoin queries. It also includes the curation and ingestion of relevant FAQ data.
-*   **Key Tasks:** Develop the frontend chat UI components, Integrate frontend with the FastAPI backend for query submission and response display, Identify and curate reliable open-source data for Litecoin basics and FAQs, Implement data ingestion for FAQ content into the vector store, Refine RAG pipeline for accurate retrieval and generation of FAQ answers.
-*   **Status:** Planned
-*   **Dependencies:** Milestone 3
-*   **Estimated Time:** 30 hours
-
-#### Milestone 5: MVP Feature 2 Implementation (Transaction & Block Explorer)
-*   **Description:** This milestone focuses on implementing the transaction and block explorer feature. This involves integrating the RAG system with Litecoin blockchain explorers or direct node APIs to retrieve and display detailed information about transactions and blocks. This will require robust data parsing and formatting to present complex blockchain data in an understandable way.
-*   **Key Tasks:** Research and select reliable Litecoin blockchain explorer APIs or consider direct node interaction, Implement backend logic to fetch transaction details by ID (status, confirmations, fees), Implement backend logic to fetch block information by height (timestamp, included transactions), Integrate fetched blockchain data into the RAG pipeline for contextual answers, Develop frontend components to display transaction and block information clearly, Implement input validation for transaction IDs and block heights.
-*   **Status:** Planned
-*   **Dependencies:** Milestone 3, Milestone 4
-*   **Estimated Time:** 50 hours
-
-#### Milestone 6: MVP Feature 3 Implementation (Market Data & Insights)
-*   **Description:** This milestone focuses on implementing the market data and insights feature. This involves integrating the RAG system with reliable cryptocurrency market data APIs to retrieve real-time Litecoin price, market capitalization, and trading volume. The goal is to present this dynamic data clearly and concisely to users.
-*   **Key Tasks:** Research and select reliable cryptocurrency market data APIs (e.g., CoinGecko, CoinMarketCap), Implement backend logic to fetch real-time Litecoin price, Implement backend logic to fetch Litecoin market capitalization and trading volume, Integrate fetched market data into the RAG pipeline for contextual answers, Develop frontend components to display market data effectively, Consider basic chart data integration if feasible within the estimated time.
-*   **Status:** Planned
-*   **Dependencies:** Milestone 3, Milestone 4
-*   **Estimated Time:** 35 hours
-
-#### Milestone 7: MVP Feature 4 Implementation (Developer Documentation & Resources)
-*   **Description:** This milestone focuses on implementing the developer documentation and resources feature. This involves ingesting relevant Litecoin developer documentation into the RAG system, creating a searchable index, and enabling the system to provide accurate code snippets, links to key resources, and answers to common technical questions for developers.
-*   **Key Tasks:** Identify and curate official Litecoin developer documentation and key resources (e.g., GitHub repos, LIPs), Implement data ingestion for developer documentation, potentially handling various formats (Markdown, PDF, etc.), Optimize embedding and retrieval for technical content, including code snippets, Refine RAG pipeline to accurately answer developer-centric queries, Develop frontend components to display technical answers and links clearly.
-*   **Status:** Planned
-*   **Dependencies:** Milestone 3, Milestone 4
-*   **Estimated Time:** 45 hours
-
-#### Milestone 8: Testing, Refinement & Deployment
-*   **Description:** This final MVP milestone focuses on ensuring the quality, performance, and deployability of the Litecoin RAG Chat. It includes comprehensive testing across all implemented features, bug fixing, performance optimizations, security audits, and setting up the continuous integration/continuous deployment (CI/CD) pipeline for production deployment.
-*   **Key Tasks:** Develop and execute unit tests for backend and frontend components, Develop and execute integration tests for the RAG pipeline and API endpoints, Develop and execute end-to-end tests for user flows, Conduct thorough bug fixing and issue resolution, Perform performance profiling and optimization for the RAG pipeline and API, Conduct security audits and implement necessary fixes (e.g., input validation, API key management), Set up CI/CD pipelines for automated testing and deployment, Prepare deployment configurations for Vercel (frontend) and a suitable platform for FastAPI (backend), Finalize documentation and user guides.
-*   **Status:** Planned
-*   **Dependencies:** Milestone 3, Milestone 4, Milestone 5, Milestone 6, Milestone 7
-*   **Estimated Time:** 60 hours
+**Legend:**
+*   ✅: Completed
+*   ⏳: In Progress
+*   📝: Planned
 
 ## Technology Stack
 *   **Frontend:** Next.js, Tailwind CSS
