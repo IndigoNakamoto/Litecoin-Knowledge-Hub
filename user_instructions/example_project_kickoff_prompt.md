@@ -8,7 +8,7 @@ Please begin by processing this initial information to populate the `cline_docs`
 
 ## 1. Project Vision & Core Goal (for `projectRoadmap.md`)
 *   **Brief Description:**  
-A RAG (Retrieval-Augmented Generation) Chatbot for Litecoin users is an AI-powered conversational tool that provides real-time, accurate answers about Litecoin by retrieving relevant data from trusted open-source sources. It solves the problem of misinformation and scattered resources by offering a centralized, reliable way for users to access Litecoin-related information, such as transactions, wallet management, and market insights. This enhances user experience and fosters greater adoption of Litecoin.
+A RAG (Retrieval-Augmented Generation) Chatbot for Litecoin users is an AI-powered conversational tool that provides real-time, accurate answers about Litecoin by retrieving relevant data from verified sources. It solves the problem of misinformation and scattered resources by offering a centralized, reliable way for users to access Litecoin-related information, such as transactions, wallet management, and market insights. This enhances user experience and fosters greater adoption of Litecoin.
 *   **Primary Goal(s):** 
 Deliver accurate, real-time responses to Litecoin-related queries using open-source data like blockchain records, market APIs, and community resources.  
 Simplify user access to Litecoin information, reducing reliance on fragmented or unverified sources.  
