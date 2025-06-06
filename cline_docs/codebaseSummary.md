@@ -8,12 +8,14 @@
 *   `backend/`: Contains the FastAPI application.
     *   `main.py`: Main FastAPI application file.
     *   `requirements.txt`: Python dependencies.
+    *   `rag_pipeline.py`: Encapsulates Langchain-related logic for the RAG pipeline.
 *   `cline_docs/`: Contains project documentation.
 *   `cline_agent_workspace/`: Contains agent's operational files.
 *   `user_instructions/`: Contains instructions for the user.
 
 ## Key Modules/Components & Their Responsibilities
-*   (Not yet established)
+*   `backend/rag_pipeline.py`: Contains the core logic for the RAG (Retrieval-Augmented Generation) pipeline, including the definition and orchestration of Langchain chains.
+*   `backend/main.py`: The main entry point for the FastAPI backend, responsible for defining API endpoints and handling incoming requests.
 
 ## Core Data Models & Entities
 *   (Not yet established - will likely include models for Litecoin data, user queries, RAG sources, etc.)
@@ -22,7 +24,10 @@
 *   (Not yet established - will involve user query -> RAG system -> LLM -> response. Mermaid syntax will be preferred for diagrams when defined.)
 
 ## API Endpoints Overview
-*   (Not yet established - will include endpoints for chat interactions, data ingestion if applicable)
+*   **`POST /api/v1/chat`**:
+    *   **Description**: Receives a user query and processes it through the RAG pipeline.
+    *   **Request Body**: `{"query": "string"}`
+    *   **Response Body**: `{"response": "string"}`
 
 ## External Services & Dependencies
 *   Google Text Embedding API (text-embedding-004)
