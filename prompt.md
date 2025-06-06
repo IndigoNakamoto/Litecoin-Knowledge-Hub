@@ -8,7 +8,7 @@
     *   **Mission:** To build an AI-powered conversational tool that provides real-time, accurate answers about Litecoin by retrieving relevant data from trusted open-source sources.
     *   **Core Problem:** Solve misinformation and scattered resources by offering a centralized, reliable way for users to access Litecoin-related information.
     *   **Key Technologies:** Next.js (Frontend), Python/FastAPI (Backend), Langchain, Google Text Embedding, MongoDB (Vector Search).
-*   **C. Essential Documentation Management:**
+*   **C. Essential Documentation Management (`cline_docs/`):**
     *   You will maintain a `cline_docs` folder in the root directory of the project. These documents are your single source of truth and primary context.
     *   **Order of Operations (Critical):**
         1.  At the beginning of *every* task, or when instructed to 'follow your custom instructions,' you **MUST** read these essential documents in this specific order:
@@ -82,40 +82,44 @@
         *   `## Authentication & Authorization Mechanisms`
         *   `## Recent Significant Changes`
 
-**III. 🧠 DEVELOPMENT WORKFLOW & THINKING PROCESS (RAG-Focused)**
+**III. 🧠 DEVELOPMENT WORKFLOW & THINKING PROCESS**
 
-*   **A. Pre-Task Analysis & Planning (Mandatory Thinking Step):**
-    *   Before writing any code, you **MUST** perform and log the following thinking process in `session_summary.md`.
-        1.  **Understand the Task:** State objective & acceptance criteria from `currentTask.md`.
-        2.  **Contextualize with `projectRoadmap.md`:** How does this task align with project goals?
-        3.  **Review `techStack.md`:** Confirm technology choices.
-        4.  **Analyze `codebaseSummary.md`:** Identify impacts on existing components.
-        5.  **RAG-Specific Analysis (CRITICAL):**
+*   **A. PLAN MODE WORKFLOW:**
+    1.  **Read Essential Documentation:** At the beginning of *every* task, or when instructed to 'follow your custom instructions,' you **MUST** read the `cline_docs` files in the specified order (I.C.1).
+    2.  **Pre-Task Analysis & Planning (Mandatory Thinking Step):** Perform and log the following thinking process in `cline_agent_workspace/session_summary.md`.
+        *   **Understand the Task:** State objective & acceptance criteria from `cline_docs/currentTask.md`.
+        *   **Contextualize with `cline_docs/projectRoadmap.md`:** How does this task align with project goals?
+        *   **Review `cline_docs/techStack.md`:** Confirm technology choices.
+        *   **Analyze `cline_docs/codebaseSummary.md`:** Identify impacts on existing components.
+        *   **RAG-Specific Analysis (CRITICAL):**
             *   **Data Source:** Which data source(s) are relevant? Are they reliable?
             *   **Retrieval:** What is the optimal retrieval strategy? (e.g., vector similarity, metadata filtering, hybrid search). How do we ensure relevance?
             *   **Generation:** How should the retrieved context be presented to the LLM? Craft a preliminary prompt template.
             *   **Evaluation:** How will we measure the accuracy and relevance of the final response?
-        6.  **Solution Design:** Outline implementation approach, considering edge cases.
-        7.  **Security & Performance Review:** Identify vulnerabilities (input validation is key) and performance bottlenecks.
-        8.  **Testing Strategy:** Outline unit, integration, and end-to-end tests. For RAG, this must include tests for retrieval accuracy and response quality.
-        9.  **Detailed Implementation Steps:** Break down the solution into a sequence of coding steps.
-        10. **Documentation Plan:** Which `cline_docs` files will need updates?
+        *   **Solution Design:** Outline implementation approach, considering edge cases.
+        *   **Security & Performance Review:** Identify vulnerabilities (input validation is key) and performance bottlenecks.
+        *   **Testing Strategy:** Outline unit, integration, and end-to-end tests. For RAG, this must include tests for retrieval accuracy and response quality.
+        *   **Detailed Implementation Steps:** Break down the solution into a sequence of coding steps.
+        *   **Documentation Plan:** Which `cline_docs` files will need updates?
+    3.  **Present Plan:** Document your detailed plan in the chat for user review and approval.
+    4.  **No File Modifications:** You are strictly forbidden from creating or modifying any files while in PLAN MODE.
 
-*   **B. Task Execution:**
-    1.  Update `cline_docs/currentTask.md` with your plan and set status to 'In Progress'.
-    2.  Implement the solution step-by-step.
-    3.  **Code Organization:** Adhere to file size limits, modular structure, and precise naming. **NEVER** hardcode credentials.
-    4.  **Write Tests:** Write tests as you develop.
-    5.  **Inline Comments:** Explain complex logic with `# Reason:` or `// Reason:`.
-    6.  **Track Discoveries:** Log new tasks or bugs in `cline_docs/currentTask.md`.
-
-*   **C. Post-Task Review & Documentation (Mandatory Thinking Step):**
-    *   After completing coding, perform and log the following thinking process in `session_summary.md`.
-        1.  **Verify Functionality:** Confirm feature works and tests pass.
-        2.  **Code Review (Self-Review):** Check against standards for clarity, security, and performance.
-        3.  **Impact Analysis:** How does this change affect `codebaseSummary.md` and `techStack.md`?
-        4.  **Documentation Updates:** Update all relevant `cline_docs` and the root `README.md` if necessary.
-        5.  **Propose `cline_docs` Changes:** List all proposed changes in `session_summary.md`.
+*   **B. ACT MODE WORKFLOW:**
+    1.  **Follow Established Plans:** Execute the plan approved in PLAN MODE.
+    2.  **Task Execution:**
+        *   Update `cline_docs/currentTask.md` with your plan and set status to 'In Progress'.
+        *   Implement the solution step-by-step.
+        *   **Code Organization:** Adhere to file size limits, modular structure, and precise naming. **NEVER** hardcode credentials.
+        *   **Write Tests:** Write tests as you develop.
+        *   **Inline Comments:** Explain complex logic with `# Reason:` or `// Reason:`.
+        *   **Track Discoveries:** Log new tasks or bugs in `cline_docs/currentTask.md`.
+    3.  **Post-Task Review & Documentation (Mandatory Thinking Step):** After completing coding, perform and log the following thinking process in `cline_agent_workspace/session_summary.md`.
+        *   **Verify Functionality:** Confirm feature works and tests pass.
+        *   **Code Review (Self-Review):** Check against standards for clarity, security, and performance.
+        *   **Impact Analysis:** How does this change affect `cline_docs/codebaseSummary.md` and `cline_docs/techStack.md`?
+        *   **Documentation Updates:** Update all relevant `cline_docs` and the root `README.md` if necessary.
+        *   **Propose `cline_docs` Changes:** List all proposed changes in `cline_agent_workspace/session_summary.md`.
+    4.  **Update `.clinerules`:** When new project patterns or requirements emerge that should be consistently enforced, update `.clinerules` to encode these patterns. (Note: You don't need to read `.clinerules` as they are automatically part of your instructions).
 
 **IV. 🤖 AI BEHAVIORAL GUIDELINES (General Conduct)**
 
@@ -130,4 +134,4 @@
     *   Provide clear, concise updates.
     *   Place user-facing instructions in the `user_instructions` folder.
 *   **D. Continuous Improvement (Self-Reflection):**
-    *   After each task, reflect on efficiency and challenges in `session_summary.md`.
+    *   After each task, reflect on efficiency and challenges in `cline_agent_workspace/session_summary.md`.

@@ -21,15 +21,28 @@
     *   #### Next Steps (User Action):
         1.  Create `backend/.env` from the `.env.example` file.
         2.  Populate `backend/.env` with your `MONGO_URI` and `GOOGLE_API_KEY`.
-        3.  Install dependencies: `pip install -r backend/requirements.txt`.
-        4.  Run the ingestion script: `python backend/ingest_data.py`.
-        5.  Confirm the script runs successfully and data is populated in MongoDB.
+        3.  **Crucially, set up the MongoDB Atlas Vector Search index by following the guide: [`user_instructions/setup_mongodb_vector_index.md`](../user_instructions/setup_mongodb_vector_index.md). The ingestion script will fail without this.**
+        4.  Install dependencies: `pip install -r backend/requirements.txt`.
+        5.  Run the ingestion script: `python backend/ingest_data.py`.
+        6.  Confirm the script runs successfully and data is populated in MongoDB.
 
 ## Discovered During Work:
-*   (None)
+*   The data ingestion script depends on a manually created Vector Search Index in MongoDB Atlas. Added a user instruction guide and updated the task steps to reflect this dependency.
 
 ## Task Backlog:
-*   (To be populated as project progresses)
+*   ### Task ID / Name: `RAG-002` - Implement Retriever for RAG Pipeline
+    *   #### Detailed Description & Business Context:
+        This task involves creating the "retrieval" part of the RAG pipeline. We will modify `backend/rag_pipeline.py` to accept a user query, use the MongoDB vector store to find the most relevant document chunks from our knowledge base, and then pass these chunks as context to the language model. This is the core of the "Retrieval-Augmented" process.
+    *   #### Acceptance Criteria:
+        1.  Create a new function in `backend/rag_pipeline.py` that takes a user query as input.
+        2.  The function should initialize the `MongoDBAtlasVectorSearch` store.
+        3.  The function should perform a similarity search on the vector store using the user's query to retrieve relevant documents.
+        4.  The retrieved documents should be formatted and returned.
+        5.  The `/api/v1/chat` endpoint in `backend/main.py` should be updated to call this new retrieval function.
+        6.  For now, the endpoint can return the retrieved documents directly as a JSON response for testing purposes.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 3: Core RAG Pipeline Implementation (Data Ingestion, Embedding, Retrieval, Generation)
+    *   #### Status: To Do
 
 ## Recently Completed Tasks:
 *   ### Task ID / Name: `INIT-003` - Basic Langchain Setup in Backend
