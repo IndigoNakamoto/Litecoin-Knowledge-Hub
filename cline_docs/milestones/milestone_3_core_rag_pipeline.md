@@ -13,7 +13,7 @@ This milestone focuses on building the foundational Retrieval-Augmented Generati
 *   [ ] **Generation:** Set up the LLM integration to generate responses based on retrieved context.
 
 ## Estimated Time
-40 hours (Estimated 7 hours so far)
+40 hours (Estimated 10 hours so far)
 
 ## Status
 In Progress (Data Ingestion and Vector Store setup complete and tested. Next steps: Retrieval and Generation.)
