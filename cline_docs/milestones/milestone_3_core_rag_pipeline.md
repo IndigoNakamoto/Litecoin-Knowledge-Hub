@@ -9,14 +9,14 @@ This milestone focuses on building the foundational Retrieval-Augmented Generati
 *   [x] **Vector Store:** Configure MongoDB Atlas Vector Search for storage (requires account and index setup).
 *   [x] **Data Ingestion (Development):** Implement multi-source data ingestion framework (YouTube, Twitter, GitHub, Web Articles) and refactor `ingest_data.py` into a source router.
 *   [x] **Data Ingestion (Testing):** Test the multi-source ingestion pipeline to ensure data is correctly processed and stored in MongoDB.
-*   [ ] **Retrieval:** Implement the core retrieval mechanism to perform similarity searches on the vector store.
+*   [x] **Retrieval:** Implement the core retrieval mechanism to perform similarity searches on the vector store. (Completed 6/6/2025 - Fixed collection name mismatch)
 *   [ ] **Generation:** Set up the LLM integration to generate responses based on retrieved context.
 
 ## Estimated Time
-40 hours (Estimated 10 hours so far)
+40 hours (Estimated 12 hours so far)
 
 ## Status
-In Progress (Data Ingestion and Vector Store setup complete and tested. Next steps: Retrieval and Generation.)
+In Progress (Data Ingestion, Vector Store setup, and Retrieval complete and tested. Next step: Generation.)
 
 ## Dependencies
 *   Completed: Milestone 1 (Project Initialization & Documentation Setup)
@@ -28,5 +28,5 @@ In Progress (Data Ingestion and Vector Store setup complete and tested. Next ste
 *   [x] MongoDB Atlas Vector Search is configured and accessible from the backend (requires account and index setup).
 *   [x] The `ingest_data.py` script can be called with arguments for different data sources.
 *   [x] The `ingest_data.py` script runs successfully without errors and populates the MongoDB collection with embedded data.
-*   [ ] A user query can successfully retrieve relevant document chunks from the vector store.
+*   [x] A user query can successfully retrieve relevant document chunks from the vector store. (Verified 6/6/2025)
 *   [ ] The full pipeline can generate a coherent response using the LLM based on the retrieved documents.

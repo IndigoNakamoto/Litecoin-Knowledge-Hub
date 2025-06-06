@@ -1,6 +1,11 @@
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from pydantic import BaseModel
-from rag_pipeline import get_placeholder_chain
+
+# Load environment variables from .env file
+load_dotenv()
+
+from rag_pipeline import retrieve_documents
 
 app = FastAPI()
 
@@ -13,7 +18,12 @@ def read_root():
 
 @app.post("/api/v1/chat")
 async def chat_endpoint(request: ChatRequest):
-    chain = get_placeholder_chain()
-    response = await chain.ainvoke(request.query)
-    # The response from the prompt template is a ChatPromptValue, we need to extract the string
-    return {"response": response.to_string()}
+    """
+    Endpoint to handle chat queries.
+    Retrieves relevant documents from the vector store based on the user's query.
+    """
+    retrieved_docs = await retrieve_documents(request.query)
+    
+    # For now, return the retrieved documents directly for testing
+    # We will later pass these to a language model to generate a response
+    return {"retrieved_documents": retrieved_docs}

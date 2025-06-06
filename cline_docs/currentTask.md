@@ -35,6 +35,25 @@
         6.  For now, the endpoint can return the retrieved documents directly as a JSON response for testing purposes.
     *   #### Link to projectRoadmap.md goal(s):
         *   Milestone 3: Core RAG Pipeline Implementation (Data Ingestion, Embedding, Retrieval, Generation)
+    *   #### Status: Done (6/6/2025)
+    *   #### Notes on Completion:
+        *   Created a `retrieve_documents` function in `backend/rag_pipeline.py` that connects to the MongoDB Atlas Vector Store and performs a similarity search.
+        *   Updated the `/api/v1/chat` endpoint in `backend/main.py` to call this new function.
+        *   The endpoint now returns the retrieved documents as a JSON response, fulfilling the acceptance criteria for testing the retrieval step in isolation.
+        *   **Fix (6/6/2025):** Corrected `COLLECTION_NAME` in `backend/rag_pipeline.py` from `"docs"` to `"litecoin_docs"` to match the ingestion setup, resolving an issue where no documents were being retrieved.
+
+*   ### Task ID / Name: `RAG-003` - Implement Generator for RAG Pipeline
+    *   #### Detailed Description & Business Context:
+        This task involves creating the "generation" part of the RAG pipeline. We will modify `backend/rag_pipeline.py` to take the retrieved document chunks, format them into a prompt, and pass them to a Large Language Model (LLM) to generate a coherent and contextually relevant answer to the user's query.
+    *   #### Acceptance Criteria:
+        1.  Modify the `retrieve_documents` function (or create a new one) in `backend/rag_pipeline.py` to include the generation step.
+        2.  Initialize a suitable LLM from Langchain (e.g., `ChatGoogleGenerativeAI`).
+        3.  Create a prompt template that incorporates the retrieved documents and the user's query.
+        4.  Construct a Langchain chain that passes the query to the retriever, then the retrieved documents and query to the prompt template, and finally to the LLM.
+        5.  The `/api/v1/chat` endpoint in `backend/main.py` should be updated to call this new RAG chain.
+        6.  The endpoint should return the LLM-generated response as a JSON object (e.g., `{"response": "generated_answer"}`).
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 3: Core RAG Pipeline Implementation (Data Ingestion, Embedding, Retrieval, Generation)
     *   #### Status: To Do
 
 ## Discovered During Work:
