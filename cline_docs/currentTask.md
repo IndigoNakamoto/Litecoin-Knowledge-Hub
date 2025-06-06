@@ -4,20 +4,6 @@
 *   Core RAG Pipeline Implementation.
 
 ## Active Task(s):
-*   ### Task ID / Name: `RAG-001` - Implement Data Ingestion and MongoDB Vector Store Setup
-    *   #### Detailed Description & Business Context:
-        This task focused on setting up the foundational components for data ingestion and vector storage within our RAG pipeline. This included identifying initial data sources for Litecoin information, developing modules to ingest and process this data, generating embeddings using Google Text Embedding 004, and storing these embeddings in MongoDB Atlas Vector Search. The multi-source ingestion framework is now complete in terms of code, but requires environment setup and testing.
-    *   #### Acceptance Criteria:
-        1.  A new directory `backend/data_ingestion/` is created.
-        2.  `pymongo` and `langchain-google-genai` are added to `backend/requirements.txt`.
-        3.  `backend/data_ingestion/litecoin_docs_loader.py` is created with a function to load sample Litecoin documentation (e.g., from a local markdown file or a small, static text).
-        4.  `backend/data_ingestion/embedding_processor.py` is created to handle text splitting and generate embeddings using Google Text Embedding 004.
-        5.  `backend/data_ingestion/vector_store_manager.py` is created to manage connections to MongoDB Atlas and insert/retrieve vector embeddings.
-        6.  A standalone script `backend/ingest_data.py` is created to orchestrate the data loading, embedding, and storage process, now supporting multiple sources via command-line arguments.
-        7.  The ingestion script runs successfully without errors and populates the MongoDB Atlas collection with embedded data from various sources.
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Milestone 3: Core RAG Pipeline Implementation (Data Ingestion, Embedding, Retrieval, Generation)
-    *   #### Status: Development Complete - Ready for Testing
 
 *   ### Task ID / Name: `RAG-002` - Implement Retriever for RAG Pipeline
     *   #### Detailed Description & Business Context:
@@ -71,20 +57,35 @@
         *   Milestone 1: Project Initialization & Documentation Setup (Ongoing documentation maintenance)
     *   #### Status: To Do
 
+## Recently Completed Tasks:
 *   ### Task ID / Name: `TEST-001` - Test Multi-Source Ingestion Pipeline
     *   #### Detailed Description & Business Context:
-        This task focuses on setting up the environment and thoroughly testing the multi-source data ingestion pipeline to ensure it functions correctly and populates the MongoDB Atlas collection as expected. This includes verifying the `.env` setup and the MongoDB Vector Search index configuration.
-    *   #### Acceptance Criteria:
-        1.  The `backend/.env` file is correctly created and populated with `MONGO_URI` and `GOOGLE_API_KEY`.
-        2.  The MongoDB Atlas Vector Search index is properly configured as per `user_instructions/setup_mongodb_vector_index.md`.
-        3.  All backend dependencies are installed (`pip install -r backend/requirements.txt`).
-        4.  The `ingest_data.py` script runs successfully for at least one source (e.g., `litecoin_docs`) without errors.
-        5.  Data is confirmed to be populated in the MongoDB Atlas collection after ingestion.
+        This task focused on setting up the environment and thoroughly testing the multi-source data ingestion pipeline to ensure it functions correctly and populates the MongoDB Atlas collection as expected. This included verifying the `.env` setup and the MongoDB Vector Search index configuration.
+    *   #### Acceptance Criteria Met:
+        1.  The `backend/.env` file was correctly created and populated with `MONGO_URI` and `GOOGLE_API_KEY`.
+        2.  The MongoDB Atlas Vector Search index was properly configured as per `user_instructions/setup_mongodb_vector_index.md`.
+        3.  All backend dependencies were installed (`pip install -r backend/requirements.txt`).
+        4.  The `ingest_data.py` script ran successfully for the `markdown` source without errors.
+        5.  Data was confirmed to be populated in the MongoDB Atlas collection after ingestion.
     *   #### Link to projectRoadmap.md goal(s):
         *   Milestone 3: Core RAG Pipeline Implementation (Testing)
-    *   #### Status: To Do
+    *   #### Status: Done (6/6/2025)
 
-## Recently Completed Tasks:
+    *   ### Task ID / Name: `RAG-001` - Implement Data Ingestion and MongoDB Vector Store Setup
+    *   #### Detailed Description & Business Context:
+        This task focused on setting up the foundational components for data ingestion and vector storage within our RAG pipeline. This included identifying initial data sources for Litecoin information, developing modules to ingest and process this data, generating embeddings using Google Text Embedding 004, and storing these embeddings in MongoDB Atlas Vector Search. The multi-source ingestion framework is now complete in terms of code, but requires environment setup and testing.
+    *   #### Acceptance Criteria:
+        1.  A new directory `backend/data_ingestion/` is created.
+        2.  `pymongo` and `langchain-google-genai` are added to `backend/requirements.txt`.
+        3.  `backend/data_ingestion/litecoin_docs_loader.py` is created with a function to load sample Litecoin documentation (e.g., from a local markdown file or a small, static text).
+        4.  `backend/data_ingestion/embedding_processor.py` is created to handle text splitting and generate embeddings using Google Text Embedding 004.
+        5.  `backend/data_ingestion/vector_store_manager.py` is created to manage connections to MongoDB Atlas and insert/retrieve vector embeddings.
+        6.  A standalone script `backend/ingest_data.py` is created to orchestrate the data loading, embedding, and storage process, now supporting multiple sources via command-line arguments.
+        7.  The ingestion script runs successfully without errors and populates the MongoDB Atlas collection with embedded data from various sources.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 3: Core RAG Pipeline Implementation (Data Ingestion, Embedding, Retrieval, Generation)
+    *   #### Status: Done (6/6/2025)
+    
 *   ### Task ID / Name: `DOCS-002` - Create Reference Documentation Folder
     *   #### Detailed Description & Business Context:
         Created a dedicated folder at the project root to store external documentation for frameworks, services, and APIs used in the project. This improved organization and provided a centralized reference point for developers.

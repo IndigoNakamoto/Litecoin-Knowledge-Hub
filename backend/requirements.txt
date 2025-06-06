@@ -14,3 +14,4 @@ tweepy
 GitPython
 beautifulsoup4
 lxml
+google-generativeai

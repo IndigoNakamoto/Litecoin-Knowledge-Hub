@@ -6,7 +6,7 @@ from data_ingestion.youtube_loader import load_youtube_data # Reason: Import new
 from data_ingestion.twitter_loader import load_twitter_posts # Reason: Import new Twitter loader.
 from data_ingestion.github_loader import load_github_repo_data # Reason: Import new GitHub loader.
 from data_ingestion.web_article_loader import load_web_article_data # Reason: Import new Web Article loader.
-from data_ingestion.embedding_processor import process_and_embed_documents
+from data_ingestion.embedding_processor import process_documents
 from data_ingestion.vector_store_manager import insert_documents_to_vector_store
 from langchain_core.documents import Document # Reason: Import Document for consistent handling.
 
@@ -66,9 +66,9 @@ def main(source_type: str, source_identifier: str):
 
     print(f"Loaded {len(documents)} document(s).")
 
-    print("Splitting documents into smaller chunks and generating embeddings...")
-    processed_docs = process_and_embed_documents(documents)
-    print(f"Split documents into {len(processed_docs)} chunks and generated embeddings.")
+    print("Splitting documents into smaller chunks...")
+    processed_docs = process_documents(documents)
+    print(f"Split documents into {len(processed_docs)} chunks.")
 
     print(f"Inserting documents into MongoDB collection '{collection_name}' in db '{db_name}'...")
     insert_documents_to_vector_store(processed_docs, collection_name)

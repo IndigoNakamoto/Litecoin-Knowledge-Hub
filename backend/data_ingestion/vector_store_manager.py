@@ -2,9 +2,8 @@ import os
 from typing import List
 from pymongo import MongoClient
 from langchain_core.documents import Document
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_mongodb import MongoDBAtlasVectorSearch
-
+from .embedding_processor import get_embedding_client
 def get_vector_store(collection_name: str, db_name: str = "litecoin_rag_db"):
     """
     Initializes and returns the MongoDB Atlas Vector Search instance.
@@ -26,7 +25,7 @@ def get_vector_store(collection_name: str, db_name: str = "litecoin_rag_db"):
     # Reason: Initializing the Google Generative AI Embeddings model.
     # This is the same model used in the embedding processor and is required
     # by the vector store to create embeddings for queries.
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-004")
+    embeddings = get_embedding_client()
 
     # Reason: Using MongoDBAtlasVectorSearch to interact with the vector store.
     # This class handles the logic of creating and querying vector embeddings
@@ -52,14 +51,14 @@ def insert_documents_to_vector_store(docs: List[Document], collection_name: str)
 if __name__ == '__main__':
     from dotenv import load_dotenv
     from litecoin_docs_loader import load_litecoin_docs
-    from embedding_processor import process_and_embed_documents
+    from embedding_processor import process_documents
 
     load_dotenv()
 
     # Example usage:
-    file_path = "backend/data_ingestion/sample_litecoin_docs.md"
+    file_path = "sample_litecoin_docs.md"
     collection_name = "litecoin_docs"
     
     documents = load_litecoin_docs(file_path)
-    processed_docs = process_and_embed_documents(documents)
+    processed_docs = process_documents(documents)
     insert_documents_to_vector_store(processed_docs, collection_name)
