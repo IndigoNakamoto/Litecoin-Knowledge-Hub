@@ -3,3 +3,9 @@ uvicorn[standard]
 langchain
 langchain-core
 langchain-community
+pymongo
+langchain-google-genai
+python-dotenv
+langchain-mongodb
+unstructured
+markdown

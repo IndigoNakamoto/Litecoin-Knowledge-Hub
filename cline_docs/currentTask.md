@@ -17,15 +17,13 @@
         7.  The ingestion script runs successfully without errors and populates the MongoDB Atlas collection with embedded data.
     *   #### Link to projectRoadmap.md goal(s):
         *   Milestone 3: Core RAG Pipeline Implementation (Data Ingestion, Embedding, Retrieval, Generation)
-    *   #### Status: In Progress
-    *   #### Plan:
-        1.  Create `backend/data_ingestion` directory.
-        2.  Add `pymongo` and `langchain-google-genai` to `backend/requirements.txt`.
-        3.  Create `backend/data_ingestion/litecoin_docs_loader.py` with a simple function to load text.
-        4.  Create `backend/data_ingestion/embedding_processor.py` to split text and generate embeddings.
-        5.  Create `backend/data_ingestion/vector_store_manager.py` to connect to MongoDB and insert embeddings.
-        6.  Create `backend/ingest_data.py` to run the ingestion process.
-        7.  Update `cline_docs/codebaseSummary.md` to reflect new modules.
+    *   #### Status: Development Complete - Ready for Testing
+    *   #### Next Steps (User Action):
+        1.  Create `backend/.env` from the `.env.example` file.
+        2.  Populate `backend/.env` with your `MONGO_URI` and `GOOGLE_API_KEY`.
+        3.  Install dependencies: `pip install -r backend/requirements.txt`.
+        4.  Run the ingestion script: `python backend/ingest_data.py`.
+        5.  Confirm the script runs successfully and data is populated in MongoDB.
 
 ## Discovered During Work:
 *   (None)

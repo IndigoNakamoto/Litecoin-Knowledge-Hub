@@ -109,3 +109,6 @@ Temporary Items
 
 # VSCode
 .vscode/
+
+# Backend
+backend/.env

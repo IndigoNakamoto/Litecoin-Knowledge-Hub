@@ -24,7 +24,7 @@ Provides quick access to snippets from Litecoin developer documentation, links t
 
 ## Milestones
 
-### Completed Milestones
+### Completed Milestones - 267 hours (Estimated)
 
 #### Milestone 1: Project Initialization & Documentation Setup
 *   **Description:** This milestone covered the initial setup of the project, including defining the project scope, objectives, key features, and setting up the core documentation structure in `cline_docs`.
