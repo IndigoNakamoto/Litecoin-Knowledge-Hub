@@ -44,7 +44,82 @@
         *   Milestone 3: Core RAG Pipeline Implementation (Data Ingestion, Embedding, Retrieval, Generation)
     *   #### Status: To Do
 
+## New Tasks from Article Analysis:
+*   ### Task ID / Name: `ARCH-001` - Implement Session Management
+    *   #### Detailed Description & Business Context:
+        Inspired by the "Building a Simple Full Stack RAG-Bot for Enterprises" article, this task focuses on implementing a session management mechanism, such as using a `group_id` or similar identifier, to track user interactions. This will be crucial for maintaining conversation history and laying the groundwork for future multi-user or personalized features, even if the initial MVP uses a shared knowledge base.
+    *   #### Acceptance Criteria:
+        1.  A mechanism for generating and associating a unique session ID (e.g., `group_id`) with each user interaction is implemented in the backend.
+        2.  The session ID is passed between the frontend and backend for each query.
+        3.  The backend can retrieve or store information based on this session ID (e.g., conversation history, if implemented later).
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 3: Core RAG Pipeline Implementation (Enhancement for scalability)
+    *   #### Status: To Do
+
+*   ### Task ID / Name: `RESEARCH-001` - Research MongoDB Atlas Vector Search Advanced Capabilities
+    *   #### Detailed Description & Business Context:
+        The "Building a Simple Full Stack RAG-Bot for Enterprises" article highlighted Qdrant's multitenancy and binary quantization features for data isolation and performance. This task involves researching how similar capabilities can be achieved or leveraged with MongoDB Atlas Vector Search. This research will inform future architectural decisions regarding data partitioning, security, and performance optimization for our vector store.
+    *   #### Acceptance Criteria:
+        1.  Documentation and examples for achieving data isolation (e.g., multi-tenancy, filtering by metadata) within MongoDB Atlas Vector Search are identified.
+        2.  Information on performance optimization techniques (e.g., indexing strategies, data compression, query optimization) specific to MongoDB Atlas Vector Search is gathered.
+        3.  A brief summary of findings is documented, outlining how these capabilities can be applied to our project.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 3: Core RAG Pipeline Implementation (Optimization & Scalability)
+    *   #### Status: To Do
+
 ## Recently Completed Tasks:
+*   ### Task ID / Name: `INGEST-001`: Create YouTube Data Loader via Citeio Integration
+    *   #### Detailed Description & Business Context:
+        Developed a `youtube_loader.py` module that interacts with the Citeio application's API to fetch processed YouTube transcripts and topic data.
+    *   #### Acceptance Criteria Met:
+        1.  `requests` was added to `backend/requirements.txt`.
+        2.  `backend/data_ingestion/youtube_loader.py` was created with a function to load data from Citeio API.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 3: Core RAG Pipeline Implementation (Data Ingestion)
+    *   #### Status: Done (6/5/2025)
+
+*   ### Task ID / Name: `INGEST-002`: Create X (Twitter) Data Loader
+    *   #### Detailed Description & Business Context:
+        Developed a `twitter_loader.py` module to fetch recent posts from specified Twitter handles using the Twitter API.
+    *   #### Acceptance Criteria Met:
+        1.  `tweepy` was added to `backend/requirements.txt`.
+        2.  `backend/data_ingestion/twitter_loader.py` was created with a function to load Twitter posts.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 3: Core RAG Pipeline Implementation (Data Ingestion)
+    *   #### Status: Done (6/5/2025)
+
+*   ### Task ID / Name: `INGEST-003`: Create GitHub Repository Loader
+    *   #### Detailed Description & Business Context:
+        Developed a `github_loader.py` module to clone GitHub repositories and process their Markdown files.
+    *   #### Acceptance Criteria Met:
+        1.  `GitPython` was added to `backend/requirements.txt`.
+        2.  `backend/data_ingestion/github_loader.py` was created with a function to load GitHub repository data.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 3: Core RAG Pipeline Implementation (Data Ingestion)
+    *   #### Status: Done (6/5/2025)
+
+*   ### Task ID / Name: `INGEST-004`: Create Web Article Loader
+    *   #### Detailed Description & Business Context:
+        Developed a `web_article_loader.py` module to fetch and parse main content from news articles and blog posts.
+    *   #### Acceptance Criteria Met:
+        1.  `beautifulsoup4` and `lxml` were added to `backend/requirements.txt`.
+        2.  `backend/data_ingestion/web_article_loader.py` was created with a function to load web article data.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 3: Core RAG Pipeline Implementation (Data Ingestion)
+    *   #### Status: Done (6/5/2025)
+
+*   ### Task ID / Name: `ARCH-002`: Refactor `ingest_data.py` into a Source Router
+    *   #### Detailed Description & Business Context:
+        Refactored the `backend/ingest_data.py` script to act as a router, dynamically calling the appropriate loader based on the input source type and identifier.
+    *   #### Acceptance Criteria Met:
+        1.  `backend/ingest_data.py` was modified to import new loaders.
+        2.  The `main` function in `backend/ingest_data.py` was updated to accept `source_type` and `source_identifier` arguments.
+        3.  Conditional logic was added to call the correct loader based on `source_type`.
+        4.  The script now uses `argparse` for command-line arguments.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 3: Core RAG Pipeline Implementation (Data Ingestion)
+    *   #### Status: Done (6/5/2025)
+
 *   ### Task ID / Name: `INIT-003` - Basic Langchain Setup in Backend
     *   #### Detailed Description & Business Context:
         This task involves integrating Langchain into the FastAPI backend. We will add Langchain as a dependency and create a foundational structure for our RAG pipeline. This includes setting up a new API endpoint (e.g., `/api/v1/chat`) that can receive a user query. For now, this endpoint will use a very basic Langchain chain (e.g., a prompt template and a placeholder component) to process the query and return a placeholder response. This initial step verifies that Langchain is correctly integrated and operational within our backend environment before we build out the more complex data ingestion, embedding, retrieval, and generation components.

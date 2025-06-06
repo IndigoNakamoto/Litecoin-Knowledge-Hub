@@ -9,3 +9,8 @@ python-dotenv
 langchain-mongodb
 unstructured
 markdown
+requests
+tweepy
+GitPython
+beautifulsoup4
+lxml
