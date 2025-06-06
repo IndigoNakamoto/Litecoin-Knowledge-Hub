@@ -5,43 +5,6 @@
 
 ## Active Task(s):
 
-*   ### Task ID / Name: `TEST-002` - Validate Multi-Source Ingestion Loaders
-    *   #### Detailed Description & Business Context:
-        This task addresses the gap identified during the review of `RAG-001`. While the ingestion framework supports multiple data sources, only the `markdown` loader was validated in `TEST-001`. This task will systematically test each of the other implemented data loaders (`youtube`, `twitter`, `github`, `web`) to confirm they correctly ingest, process, and store data in the MongoDB vector store. This ensures the reliability of our entire data pipeline.
-    *   #### Acceptance Criteria:
-        1.  The `ingest_data.py` script is successfully executed for each of the following source types with a valid, publicly accessible identifier: `youtube`, `twitter`, `github`, and `web`.
-        2.  After each execution, verification is performed to confirm that new documents have been added to the MongoDB collection.
-        3.  A spot-check of the newly added documents confirms that the `page_content` is reasonable and the `metadata` field correctly identifies the source type and identifier.
-        4.  The task is marked as "Done" upon successful validation of all loaders.
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Milestone 3: Core RAG Pipeline Implementation (Testing)
-    *   #### Status: Done (6/6/2025)
-    *   #### Notes on Completion:
-        *   **Markdown Loader:** Passed.
-        *   **GitHub Loader:** Passed after a patch was applied to handle repositories with a `master` default branch instead of `main`.
-        *   **Web Loader:** Passed after a patch was applied to fix an `AttributeError` related to timestamp generation.
-        *   **Twitter Loader:** Skipped. Requires a `TWITTER_BEARER_TOKEN` environment variable to be set.
-        *   **YouTube Loader:** Skipped. Requires a local instance of the Citeio application running on `http://localhost:8001`.
-
-*   ### Task ID / Name: `RAG-002` - Implement Retriever for RAG Pipeline
-    *   #### Detailed Description & Business Context:
-        This task involves creating the "retrieval" part of the RAG pipeline. We will modify `backend/rag_pipeline.py` to accept a user query, use the MongoDB vector store to find the most relevant document chunks from our knowledge base, and then pass these chunks as context to the language model. This is the core of the "Retrieval-Augmented" process.
-    *   #### Acceptance Criteria:
-        1.  Create a new function in `backend/rag_pipeline.py` that takes a user query as input.
-        2.  The function should initialize the `MongoDBAtlasVectorSearch` store.
-        3.  The function should perform a similarity search on the vector store using the user's query to retrieve relevant documents.
-        4.  The retrieved documents should be formatted and returned.
-        5.  The `/api/v1/chat` endpoint in `backend/main.py` should be updated to call this new retrieval function.
-        6.  For now, the endpoint can return the retrieved documents directly as a JSON response for testing purposes.
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Milestone 3: Core RAG Pipeline Implementation (Data Ingestion, Embedding, Retrieval, Generation)
-    *   #### Status: Done (6/6/2025)
-    *   #### Notes on Completion:
-        *   Created a `retrieve_documents` function in `backend/rag_pipeline.py` that connects to the MongoDB Atlas Vector Store and performs a similarity search.
-        *   Updated the `/api/v1/chat` endpoint in `backend/main.py` to call this new function.
-        *   The endpoint now returns the retrieved documents as a JSON response, fulfilling the acceptance criteria for testing the retrieval step in isolation.
-        *   **Fix (6/6/2025):** Corrected `COLLECTION_NAME` in `backend/rag_pipeline.py` from `"docs"` to `"litecoin_docs"` to match the ingestion setup, resolving an issue where no documents were being retrieved.
-
 *   ### Task ID / Name: `RAG-003` - Implement Generator for RAG Pipeline
     *   #### Detailed Description & Business Context:
         This task involves creating the "generation" part of the RAG pipeline. We will modify `backend/rag_pipeline.py` to take the retrieved document chunks, format them into a prompt, and pass them to a Large Language Model (LLM) to generate a coherent and contextually relevant answer to the user's query.
@@ -95,6 +58,44 @@
     *   #### Status: To Do
 
 ## Recently Completed Tasks:
+
+*   ### Task ID / Name: `TEST-002` - Validate Multi-Source Ingestion Loaders
+    *   #### Detailed Description & Business Context:
+        This task addresses the gap identified during the review of `RAG-001`. While the ingestion framework supports multiple data sources, only the `markdown` loader was validated in `TEST-001`. This task will systematically test each of the other implemented data loaders (`youtube`, `twitter`, `github`, `web`) to confirm they correctly ingest, process, and store data in the MongoDB vector store. This ensures the reliability of our entire data pipeline.
+    *   #### Acceptance Criteria:
+        1.  The `ingest_data.py` script is successfully executed for each of the following source types with a valid, publicly accessible identifier: `youtube`, `twitter`, `github`, and `web`.
+        2.  After each execution, verification is performed to confirm that new documents have been added to the MongoDB collection.
+        3.  A spot-check of the newly added documents confirms that the `page_content` is reasonable and the `metadata` field correctly identifies the source type and identifier.
+        4.  The task is marked as "Done" upon successful validation of all loaders.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 3: Core RAG Pipeline Implementation (Testing)
+    *   #### Status: Done (6/6/2025)
+    *   #### Notes on Completion:
+        *   **Markdown Loader:** Passed.
+        *   **GitHub Loader:** Passed after a patch was applied to handle repositories with a `master` default branch instead of `main`.
+        *   **Web Loader:** Passed after a patch was applied to fix an `AttributeError` related to timestamp generation.
+        *   **Twitter Loader:** Skipped. Requires a `TWITTER_BEARER_TOKEN` environment variable to be set.
+        *   **YouTube Loader:** Skipped. Requires a local instance of the Citeio application running on `http://localhost:8001`.
+
+*   ### Task ID / Name: `RAG-002` - Implement Retriever for RAG Pipeline
+    *   #### Detailed Description & Business Context:
+        This task involves creating the "retrieval" part of the RAG pipeline. We will modify `backend/rag_pipeline.py` to accept a user query, use the MongoDB vector store to find the most relevant document chunks from our knowledge base, and then pass these chunks as context to the language model. This is the core of the "Retrieval-Augmented" process.
+    *   #### Acceptance Criteria:
+        1.  Create a new function in `backend/rag_pipeline.py` that takes a user query as input.
+        2.  The function should initialize the `MongoDBAtlasVectorSearch` store.
+        3.  The function should perform a similarity search on the vector store using the user's query to retrieve relevant documents.
+        4.  The retrieved documents should be formatted and returned.
+        5.  The `/api/v1/chat` endpoint in `backend/main.py` should be updated to call this new retrieval function.
+        6.  For now, the endpoint can return the retrieved documents directly as a JSON response for testing purposes.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 3: Core RAG Pipeline Implementation (Data Ingestion, Embedding, Retrieval, Generation)
+    *   #### Status: Done (6/6/2025)
+    *   #### Notes on Completion:
+        *   Created a `retrieve_documents` function in `backend/rag_pipeline.py` that connects to the MongoDB Atlas Vector Store and performs a similarity search.
+        *   Updated the `/api/v1/chat` endpoint in `backend/main.py` to call this new function.
+        *   The endpoint now returns the retrieved documents as a JSON response, fulfilling the acceptance criteria for testing the retrieval step in isolation.
+        *   **Fix (6/6/2025):** Corrected `COLLECTION_NAME` in `backend/rag_pipeline.py` from `"docs"` to `"litecoin_docs"` to match the ingestion setup, resolving an issue where no documents were being retrieved.
+        
 *   ### Task ID / Name: `TEST-002` - Validate Multi-Source Ingestion Loaders
     *   #### Detailed Description & Business Context:
         This task addresses the gap identified during the review of `RAG-001`. While the ingestion framework supports multiple data sources, only the `markdown` loader was validated in `TEST-001`. This task will systematically test each of the other implemented data loaders (`youtube`, `twitter`, `github`, `web`) to confirm they correctly ingest, process, and store data in the MongoDB vector store. This ensures the reliability of our entire data pipeline.
