@@ -1,3 +1,15 @@
+---
+title: "Advanced Technologies and Innovations in the Litecoin Ecosystem: A Comprehensive Guide for the Litecoin RAG Knowledge Base"
+tags: ["relevant", "keywords", "here"]
+last_updated: "YYYY-MM-DD" # Date of last significant manual update after vetting
+source_type: gemini_deepsearch_generated
+original_deepsearch_query: "Paste the exact DeepSearch query used here"
+vetting_status: draft # Options: draft, pending_review, vetted
+# --- Fields below to be filled by human vetter ---
+# vetter_name: "" # Name or identifier of the person who vetted this article
+# vetting_date: "" # Date (YYYY-MM-DD) when the article was vetted
+---
+
 # **Advanced Technologies and Innovations in the Litecoin Ecosystem: A Comprehensive Guide for the Litecoin RAG Knowledge Base**
 
 ## **I. Introduction**

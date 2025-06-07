@@ -1,3 +1,15 @@
+---
+title: "TITLE PLACEHOLDER"
+tags: ["relevant", "keywords", "here"]
+last_updated: "YYYY-MM-DD" # Date of last significant manual update after vetting
+source_type: deepsearch_generated
+original_deepsearch_query: "Paste the exact DeepSearch query used here"
+vetting_status: draft # Options: draft, pending_review, vetted
+# --- Fields below to be filled by human vetter ---
+# vetter_name: "" # Name or identifier of the person who vetted this article
+# vetting_date: "" # Date (YYYY-MM-DD) when the article was vetted
+---
+
 An analysis of the MimbleWimble CoinSwap proposal reveals a trust-minimized protocol designed to enhance privacy on the Mimblewimble blockchain. The system allows users to obscure the transaction graph by mixing their self-spends through a series of "mixnodes."
 
 ### **Core Functionality**

@@ -1,3 +1,15 @@
+---
+title: TITLE PLACEHOLDER"
+tags: ["relevant", "keywords", "here"]
+last_updated: "YYYY-MM-DD" # Date of last significant manual update after vetting
+source_type: deepsearch_generated
+original_deepsearch_query: "Paste the exact DeepSearch query used here"
+vetting_status: draft # Options: draft, pending_review, vetted
+# --- Fields below to be filled by human vetter ---
+# vetter_name: "" # Name or identifier of the person who vetted this article
+# vetting_date: "" # Date (YYYY-MM-DD) when the article was vetted
+---
+
 # **Best Hardware for Mining Litecoin: A Comprehensive Guide**
 
 *This article provides a comprehensive overview of Litecoin mining hardware, focusing on the essential Application-Specific Integrated Circuit (ASIC) miners required for efficient Scrypt-based cryptocurrency mining. Readers will gain an understanding of the core concepts, learn how to evaluate and select suitable hardware by comparing current models, and explore practical setup and operational considerations. The goal is to empower individuals to make informed decisions when choosing the best Litecoin mining hardware for their specific circumstances in 2024 and beyond.*
