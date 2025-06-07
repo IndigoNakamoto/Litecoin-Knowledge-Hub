@@ -29,7 +29,9 @@
     *   #### Estimated Effort: (To be determined)
     *   #### Assigned To: (To be determined)
     *   #### Priority: High
-    
+
+## Task Backlog:
+
 *   ### Task ID / Name: `M4-FAQ-001` - Gather and Ingest Data for Litecoin Basics & FAQ
     *   #### Detailed Description & Business Context:
         To implement the "Litecoin Basics & FAQ" feature, the RAG pipeline needs to be populated with relevant knowledge. This task involves identifying reliable sources for Litecoin fundamental information (e.g., official Litecoin websites, reputable crypto wikis, introductory articles) and ingesting this data into the MongoDB vector store.
@@ -50,10 +52,7 @@
     *   #### Estimated Effort: (To be determined)
     *   #### Assigned To: (To be determined)
     *   #### Priority: High
-
-## Task Backlog:
-
-
+    
 *   ### Task ID: `M4-UI-001`
     *   #### Name: Develop Frontend Chat UI Components
     *   #### Detailed Description & Business Context:
