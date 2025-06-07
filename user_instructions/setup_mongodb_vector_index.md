@@ -28,29 +28,37 @@ The RAG pipeline uses a collection named `litecoin_docs` within a database named
 4.  **Configure the Index:**
     *   You will be presented with a JSON editor to define the index.
     *   Give your index a name (e.g., `vector_index`).
-    *   Paste the following JSON configuration into the editor. This configuration tells MongoDB how to index the vector embeddings.
+    *   Paste the following JSON configuration into the editor. This configuration tells MongoDB how to index the vector embeddings and ensures other fields like `text` and `metadata` are also stored and indexed.
 
     ```json
     {
+      "name": "vector_index", // Or your preferred index name, ensure it matches MONGO_VECTOR_INDEX_NAME
+      "dynamic": true,       // IMPORTANT: Allows fields not explicitly defined (like 'text' and 'metadata') to be indexed.
       "fields": [
         {
           "type": "vector",
-          "path": "embedding",
-          "numDimensions": 768,
+          "path": "embedding", // Default path for Langchain embeddings
+          "numDimensions": 768, // Must match your embedding model's dimensions (e.g., 768 for text-embedding-004)
           "similarity": "cosine"
-        }
+        },
+        // Optional: Explicitly define metadata fields if you need to perform specific queries/sorts on them.
+        // If "dynamic": true is set, these are not strictly necessary for storage but can optimize searching on these fields.
+        // Example:
+        // {
+        //   "type": "document", // Represents the 'metadata' field which is an object
+        //   "path": "metadata",
+        //   "dynamic": true    // Allows all sub-fields within 'metadata' to be indexed
+        // },
+        // {
+        //   "type": "string",
+        //   "path": "metadata.source", // Example for a specific metadata sub-field
+        //   "analyzer": "lucene.standard" // Choose an appropriate analyzer
+        // }
       ]
     }
     ```
 
     *   **Explanation of the configuration:**
+        *   `"name"`: The name for your search index.
+        *   `"dynamic": true`: This is crucial. It tells Atlas Search to automatically index fields that are not explicitly defined in the `fields` array. This ensures that `text` (page content) and `metadata` (document metadata) are stored and can be retrieved.
         *   `"type": "vector"`: Specifies that this is a vector field.
-        *   `"path": "embedding"`: This must match the field name where Langchain stores the vector embeddings. By default, `langchain-mongodb` uses the field name `embedding`.
-        *   `"numDimensions": 768`: This is the number of dimensions for the `text-embedding-004` model from Google. **This must be exact.**
-        *   `"similarity": "cosine"`: Specifies the similarity metric to use for vector comparisons. Cosine similarity is a standard choice for this type of embedding.
-
-5.  **Review and Create:**
-    *   Click **Next**.
-    *   Review the index configuration and click **Create Search Index**.
-
-The index will now start building. This may take a few minutes. You can monitor the status in the Atlas UI. Once the index is active, you can proceed to run the data ingestion script.

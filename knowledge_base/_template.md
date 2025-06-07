@@ -1,15 +1,10 @@
 ---
-# YAML Frontmatter: Provides critical metadata for search and organization.
-# Ensure all fields are filled accurately.
-
-title: "Your Article Title Here"  # The main, human-readable title of the article.
-tags: ["tag1", "tag2", "relevant-keyword"] # A list of 3-5 relevant keywords. Helps with filtering and finding related content.
-last_updated: "YYYY-MM-DD" # Date of the last significant revision. Use ISO 8601 format.
+title: "Your Article Title Here"
+tags: ["tag1", "tag2", "relevant-keyword"]
+last_updated: "YYYY-MM-DD"
 ---
 
 # Your Article Title Here
-# IMPORTANT: This H1 heading MUST exactly match the 'title' field in the YAML frontmatter above.
-# This is crucial for how our AI understands and categorizes the document.
 
 *This introductory paragraph should provide a brief, high-level summary of the topic. It should clearly state what the reader will learn from this article and why it is important.*
 
@@ -48,16 +43,3 @@ Discuss the broader context and relevance here. This helps the reader understand
 
 ---
 *For more detailed guidelines on formatting and style, please refer to the [Knowledge Base Contribution Guide](../user_instructions/knowledge_base_contribution_guide.md).*
-
----
-**A Note on Structure for AI Processing:**
-Our AI system (RAG) processes this document by breaking it into "chunks" based on its structure (Title -> H1 -> H2 -> H3 -> Paragraphs).
-When you follow this template:
-1.  The **YAML frontmatter** provides high-level metadata.
-2.  The **`# H1 Title`** (matching the YAML `title`) acts as the main identifier.
-3.  **`## H2 Sections`** and **`### H3 Subsections`** create a clear hierarchy.
-4.  **Paragraphs** under these headings form the content chunks.
-
-The AI then prepends this hierarchy to each chunk (e.g., "Title: X\nSection: Y\nSubsection: Z\n\nParagraph content...").
-This rich, structured context allows the AI to find and use your information much more accurately.
-**Please adhere to this structure carefully.**

@@ -25,11 +25,18 @@
         *   ✅ `knowledge_base/` directory created.
         *   ✅ `knowledge_base/_template.md` created.
         *   ✅ `knowledge_base/index.md` created, outlining 50 high-impact articles.
+        *   ✅ Created `knowledge_base/what-is-litecoin.md`.
+        *   ✅ Created `knowledge_base/how-litecoin-differs-from-bitcoin.md`.
+        *   ✅ Created `knowledge_base/understanding-litecoin-wallets.md`.
     *   #### Plan:
         *   ✅ Create `knowledge_base/` directory.
         *   ✅ Create `knowledge_base/_template.md`.
         *   ✅ Create `knowledge_base/index.md` outlining 50 high-impact articles.
-        *   Write the initial 50 FAQ articles in `knowledge_base/` based on the `index.md`. (Starting with the first three: `what-is-litecoin.md`, `how-litecoin-differs-from-bitcoin.md`, `understanding-litecoin-wallets.md`).
+        *   ✅ Write the initial three foundational FAQ articles:
+            *   `knowledge_base/what-is-litecoin.md`
+            *   `knowledge_base/how-litecoin-differs-from-bitcoin.md`
+            *   `knowledge_base/understanding-litecoin-wallets.md`
+        *   **Next step:** Continue writing the remaining 47 FAQ articles in `knowledge_base/` based on the `index.md`.
         *   Update task `M4-FAQ-001` (already done by redefining its scope during the content-first strategy integration).
     *   #### Estimated Effort: (To be determined)
     *   #### Assigned To: (To be determined)
@@ -155,5 +162,95 @@
     *   #### Estimated Effort: (To be determined)
     *   #### Assigned To: (To be determined)
     *   #### Priority: High
+
+## Recently Completed Tasks:
+
+*   ### Task ID: `M3-DOC-001`
+    *   #### Name: Document Metadata Filtering Enhancements
+    *   #### Detailed Description:
+        Update project documentation (`techStack.md`, `codebaseSummary.md`, `projectRoadmap.md`) to reflect the recent implementation of metadata filtering capabilities. This includes noting the metadata flattening behavior of `langchain-mongodb` and providing the correct Atlas Vector Search index definition.
+    *   #### Acceptance Criteria:
+        1.  `techStack.md` is updated with details on metadata handling and the correct Atlas index JSON.
+        2.  `codebaseSummary.md` is updated to reflect changes in `embedding_processor.py` and `vector_store_manager.py`.
+        3.  `projectRoadmap.md` logs the completion of metadata filtering enhancement under Milestone 3.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 3: Core RAG Pipeline Implementation
+    *   #### Status: Done
+    *   #### Plan:
+        *   Update `techStack.md`.
+        *   Update `codebaseSummary.md`.
+        *   Update `projectRoadmap.md`.
+    *   #### Priority: High
+
+
+*   ### Task ID: `M3-RAG-OPT-002`
+    *   #### Name: Implement and Validate Metadata Filtering for RAG
+    *   #### Detailed Description:
+        Enhance the RAG pipeline to support filtering by metadata extracted from document frontmatter. This involves updating the embedding processor to handle new metadata fields (e.g., `author`, `published_at`, `tags`), ensuring these fields are correctly stored in MongoDB, and updating the Atlas Vector Search index definition to allow filtering on these fields. The `langchain-mongodb` library's behavior of flattening metadata into the root of the document was discovered and addressed.
+    *   #### Acceptance Criteria:
+        1.  `embedding_processor.py` correctly parses and converts frontmatter metadata, including `published_at` to `datetime`.
+        2.  `vector_store_manager.py` correctly handles deletion of documents based on flattened metadata.
+        3.  A test case in `test_rag_pipeline.py` validates that `similarity_search` with `pre_filter` correctly retrieves documents based on various metadata criteria (e.g., author, tags).
+        4.  The user is provided with the correct Atlas Vector Search index JSON definition for flattened metadata.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 3: Core RAG Pipeline Implementation
+    *   #### Status: Verified
+    *   #### Progress (as of 2025-06-06):
+        *   ✅ `embedding_processor.py` updated for `published_at` date conversion.
+        *   ✅ `vector_store_manager.py` updated for correct metadata deletion.
+        *   ✅ `test_metadata_filtering` added to `test_rag_pipeline.py` and successfully passed after user updated Atlas index.
+        *   ✅ Correct Atlas Vector Search index definition provided to user.
+    *   #### Discovered During Work:
+        *   `langchain-mongodb` flattens metadata into the root of the MongoDB document.
+        *   The Atlas Vector Search index must define filterable paths at the root level (e.g., `author`, not `metadata.author`).
+    *   #### Plan:
+        *   ✅ Update `embedding_processor.py`.
+        *   ✅ Update `vector_store_manager.py`.
+        *   ✅ Create `sample_for_metadata_test.md`.
+        *   ✅ Add `test_metadata_filtering` to `test_rag_pipeline.py`.
+        *   ✅ Iteratively debugged and fixed test based on pymongo errors and direct DB inspection.
+        *   ✅ Confirmed metadata flattening and provided correct index definition to user.
+        *   ✅ Test passed after user updated index.
+    *   #### Priority: Highest
+
+*   ### Task ID: `M3-TEST-001`
+    *   #### Name: Create Validation Test for Advanced RAG Optimizations
+    *   #### Detailed Description:
+        This task involves creating a new test case within `backend/test_rag_pipeline.py` to specifically validate the recent RAG enhancements. The test will use a controlled, small-scale Markdown document to verify that the hierarchical chunking and asymmetric `task_type` embeddings are functioning as expected and leading to accurate retrieval.
+    *   #### Acceptance Criteria:
+        1.  A new, temporary test file, `backend/data_ingestion/test_data/sample_for_hierarchical_test.md`, will be created with a clear hierarchical structure (titles, sections, subsections).
+        2.  A new test function, `test_hierarchical_chunking_and_retrieval`, will be added to `backend/test_rag_pipeline.py`.
+        3.  The test will programmatically:
+            *   Clear the vector store before starting for a clean base.
+            *   Ingest the `sample_for_hierarchical_test.md` file.
+            *   Verify that the chunks stored in the vector database contain the prepended hierarchical titles (e.g., "Title: Main Title\nSection: Section 1").
+            *   Formulate a specific query that should *only* match a chunk from a deep subsection.
+            *   Assert that the correct, context-rich chunk is retrieved, proving the system's precision.
+        4.  The test must clean up after itself by deleting the temporary test data from the vector store upon completion.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 3: Core RAG Pipeline Implementation (Enhancement Validation)
+    *   #### Status: Verified
+    *   #### Progress (as of 2025-06-06):
+        *   ✅ `backend/data_ingestion/test_data/sample_for_hierarchical_test.md` created.
+        *   ✅ `test_hierarchical_chunking_and_retrieval` function added to `backend/test_rag_pipeline.py` with logic for ingestion, verification, and cleanup.
+    *   #### Discovered During Work:
+        *   **Metadata Persistence Issue (2025-06-06):** The `test_hierarchical_chunking_and_retrieval` test initially failed because document metadata was not being saved to MongoDB in a way that `pymongo.collection.find()` could directly retrieve it as a BSON object.
+        *   **Strategy Update (2025-06-06):** The test was updated to use the main `litecoin_docs` collection.
+        *   **Resolution Steps (2025-06-06):**
+            1.  Updated `backend/data_ingestion/vector_store_manager.py` to explicitly define `text_key="text"` and `metadata_key="metadata"` when initializing `MongoDBAtlasVectorSearch`.
+            2.  Ensured the MongoDB Atlas Vector Search index for the `litecoin_docs` collection used the simple definition (only defining the `embedding` field).
+            3.  Increased `time.sleep()` in `backend/test_rag_pipeline.py` to 60 seconds to allow more time for Atlas indexing.
+        *   **Outcome (2025-06-06):** The `test_hierarchical_chunking_and_retrieval` test now passes its core assertions: the RAG pipeline correctly retrieves context-rich chunks. However, direct inspection of the `metadata` field via `pymongo.collection.find()` in the test script still shows `None`. This suggests `langchain-mongodb` handles metadata internally for its operations, but direct BSON inspection might require a different approach or understanding of how the data is stored/reconstructed by the library. Since the RAG functionality is verified, this direct inspection anomaly is noted but does not block the task's completion.
+    *   #### Plan:
+        *   ✅ Create `backend/data_ingestion/test_data/sample_for_hierarchical_test.md`.
+        *   ✅ Add `test_hierarchical_chunking_and_retrieval` to `backend/test_rag_pipeline.py`.
+        *   ✅ Implement test logic: ingest, verify chunks, query, assert, cleanup.
+        *   ✅ Updated `backend/test_rag_pipeline.py` to use the `litecoin_docs` collection.
+        *   ✅ Updated `backend/data_ingestion/vector_store_manager.py` to explicitly set `text_key` and `metadata_key`.
+        *   ✅ User confirmed Atlas Vector Search index for `litecoin_docs` is using the simple definition.
+        *   ✅ Updated `backend/test_rag_pipeline.py` to increase sleep time to 60s after ingestion.
+        *   ✅ Ran `python backend/test_rag_pipeline.py`. Test assertions for RAG functionality passed. Direct MongoDB inspection of metadata via `pymongo` in the test script still shows `None`, but this does not impede RAG functionality.
+        *   **Task `M3-TEST-001` is now verified and complete.**
+    *   #### Priority: Highest
 
 [View Task Archive](task_archive.md)

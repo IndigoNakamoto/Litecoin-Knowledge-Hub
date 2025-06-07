@@ -32,6 +32,35 @@
     *   Vector storage and search for RAG.
     *   General application data (if needed).
 *   **ORM/ODM:** (To be determined, e.g., Pydantic for FastAPI, `MongoEngine` or direct `pymongo` usage)
+*   **Vector Search Specifics:**
+    *   **Metadata Handling:** When using `langchain-mongodb` (`MongoDBAtlasVectorSearch`), metadata from Langchain `Document` objects (e.g., parsed from Markdown frontmatter) is **flattened** into the root of the MongoDB document. It is *not* stored in a nested `metadata` sub-document. For example, `Document(page_content="...", metadata={"author": "Cline"})` will result in a MongoDB document like `{"text": "...", "embedding": [...], "author": "Cline"}`.
+    *   **Atlas Vector Search Index Definition:** To enable filtering on these flattened metadata fields, the Atlas Vector Search index must define filterable paths at the root level.
+        *   **Correct Index Definition Example (as of 2025-06-06):**
+            ```json
+            {
+              "fields": [
+                {
+                  "type": "vector",
+                  "path": "embedding",
+                  "numDimensions": 768,
+                  "similarity": "cosine"
+                },
+                {
+                  "type": "filter",
+                  "path": "author"
+                },
+                {
+                  "type": "filter",
+                  "path": "published_at"
+                },
+                {
+                  "type": "filter",
+                  "path": "tags"
+                }
+              ]
+            }
+            ```
+        *   Note: The `text_key` (default "text") and `embedding_key` (default "embedding") in `MongoDBAtlasVectorSearch` refer to the fields where the document content and vector embeddings are stored, respectively. The `metadata_key` parameter in `MongoDBAtlasVectorSearch` does *not* cause metadata to be nested under that key in the stored document; metadata is always flattened.
 
 ## DevOps & Infrastructure
 *   **Deployment Environment:** Vercel (primarily for frontend, backend deployment strategy TBD - could be Vercel Functions, or separate service like Google Cloud Run, AWS Lambda, etc.)
