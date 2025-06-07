@@ -5,6 +5,43 @@
 
 ## Active Task(s):
 
+*   ### Task ID: `M4-UI-001`
+    *   #### Name: Develop Frontend Chat UI Components
+    *   #### Detailed Description & Business Context:
+        Create the necessary React components in the Next.js frontend to build the user-facing chat interface. This includes the main chat window, a text input area for user queries, a submission button, and a display area for both the user's questions and the AI's responses (including source documents).
+    *   #### Acceptance Criteria:
+        1.  A reusable `ChatWindow` component is created.
+        2.  An `InputBox` component allows users to type and submit questions.
+        3.  A `Message` component is created to display questions and answers distinctly.
+        4.  The UI is styled using Tailwind CSS to be clean and user-friendly.
+        5.  The component state is managed appropriately (e.g., storing the conversation history).
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)
+    *   #### Status: To Do
+    *   #### Plan: (To be defined)
+    *   #### Estimated Effort: (To be determined)
+    *   #### Assigned To: (To be determined)
+    *   #### Priority: High
+
+*   ### Task ID: `M4-INT-001`
+    *   #### Name: Integrate Frontend with Backend API
+    *   #### Detailed Description & Business Context:
+        Connect the frontend chat interface to the backend `/api/v1/chat` endpoint. This involves handling user input submission, making a POST request to the backend with the query, and then processing and displaying the JSON response (`answer` and `sources`) in the UI.
+    *   #### Acceptance Criteria:
+        1.  Submitting a query in the frontend triggers a POST request to `http://localhost:8000/api/v1/chat`.
+        2.  The `answer` from the API response is displayed in the chat interface.
+        3.  The `sources` from the API response are displayed alongside the answer, showing the origin of the information.
+        4.  Loading and error states are handled gracefully in the UI.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)
+    *   #### Status: To Do
+    *   #### Plan: (To be defined)
+    *   #### Estimated Effort: (To be determined)
+    *   #### Assigned To: (To be determined)
+    *   #### Priority: High
+
+## Task Backlog:
+
 *   ### Task ID: `M4-KB-001`
     *   #### Name: Establish Content Foundation for FAQ Feature
     *   #### Detailed Description & Business Context:
@@ -44,44 +81,7 @@
         *   Update task `M4-FAQ-001` (already done by redefining its scope during the content-first strategy integration).
     *   #### Estimated Effort: (To be determined)
     *   #### Assigned To: (To be determined)
-    *   #### Priority: Highest
-    
-*   ### Task ID: `M4-UI-001`
-    *   #### Name: Develop Frontend Chat UI Components
-    *   #### Detailed Description & Business Context:
-        Create the necessary React components in the Next.js frontend to build the user-facing chat interface. This includes the main chat window, a text input area for user queries, a submission button, and a display area for both the user's questions and the AI's responses (including source documents).
-    *   #### Acceptance Criteria:
-        1.  A reusable `ChatWindow` component is created.
-        2.  An `InputBox` component allows users to type and submit questions.
-        3.  A `Message` component is created to display questions and answers distinctly.
-        4.  The UI is styled using Tailwind CSS to be clean and user-friendly.
-        5.  The component state is managed appropriately (e.g., storing the conversation history).
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)
-    *   #### Status: To Do
-    *   #### Plan: (To be defined)
-    *   #### Estimated Effort: (To be determined)
-    *   #### Assigned To: (To be determined)
-    *   #### Priority: High
-
-## Task Backlog:
-
-*   ### Task ID: `M4-INT-001`
-    *   #### Name: Integrate Frontend with Backend API
-    *   #### Detailed Description & Business Context:
-        Connect the frontend chat interface to the backend `/api/v1/chat` endpoint. This involves handling user input submission, making a POST request to the backend with the query, and then processing and displaying the JSON response (`answer` and `sources`) in the UI.
-    *   #### Acceptance Criteria:
-        1.  Submitting a query in the frontend triggers a POST request to `http://localhost:8000/api/v1/chat`.
-        2.  The `answer` from the API response is displayed in the chat interface.
-        3.  The `sources` from the API response are displayed alongside the answer, showing the origin of the information.
-        4.  Loading and error states are handled gracefully in the UI.
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)
-    *   #### Status: To Do
-    *   #### Plan: (To be defined)
-    *   #### Estimated Effort: (To be determined)
-    *   #### Assigned To: (To be determined)
-    *   #### Priority: High
+    *   #### Priority: Medium 
 
 *   ### Task ID: `M4-E2E-001`
     *   #### Name: End-to-End Testing and Refinement for FAQ Feature
@@ -101,6 +101,23 @@
     *   #### Priority: High
 
 ## Recently Completed Tasks:
+
+*   ### Task ID: `M4-E2E-003`
+    *   #### Name: Re-run End-to-End Test with Clean Collection
+    *   #### Detailed Description & Business Context:
+        Perform a clean run of the full knowledge base ingestion and RAG pipeline validation. This involves clearing the existing vector store, re-ingesting all content from `knowledge_base/articles` and `knowledge_base/deep_research`, and running the end-to-end test suite to ensure the system is functioning correctly from a clean state.
+    *   #### Acceptance Criteria:
+        1.  The MongoDB vector store (`litecoin_docs` collection) is successfully cleared.
+        2.  The `ingest_kb_articles.py` script runs without errors, processing all documents from the knowledge base.
+        3.  The `test_rag_pipeline.py` test suite passes, confirming the RAG pipeline's ability to retrieve information from the newly ingested, comprehensive dataset.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)
+    *   #### Status: Done
+    *   #### Plan:
+        1.  Execute `backend/utils/clear_litecoin_docs_collection.py` to empty the vector store.
+        2.  Execute `backend/api_client/ingest_kb_articles.py` to ingest all knowledge base content.
+        3.  Execute `backend/test_rag_pipeline.py` to validate the pipeline.
+    *   #### Priority: Highest
 
 *   ### Task ID: `M4-E2E-002`
     *   #### Name: Ingest All Knowledge Base Content and Perform RAG Pipeline Test

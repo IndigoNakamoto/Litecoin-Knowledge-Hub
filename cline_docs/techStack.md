@@ -47,7 +47,7 @@
 *   **Vector Search Specifics:**
     *   **Metadata Handling:** When using `langchain-mongodb` (`MongoDBAtlasVectorSearch`), metadata from Langchain `Document` objects (e.g., parsed from Markdown frontmatter) is **flattened** into the root of the MongoDB document. It is *not* stored in a nested `metadata` sub-document. For example, `Document(page_content="...", metadata={"author": "Cline"})` will result in a MongoDB document like `{"text": "...", "embedding": [...], "author": "Cline"}`.
     *   **Atlas Vector Search Index Definition:** To enable filtering on these flattened metadata fields, the Atlas Vector Search index must define filterable paths at the root level.
-        *   **Correct Index Definition Example (as of 2025-06-06):**
+        *   **Recommended Index Definition (as of 2025-06-07):**
             ```json
             {
               "fields": [
@@ -59,15 +59,35 @@
                 },
                 {
                   "type": "filter",
-                  "path": "author"
-                },
-                {
-                  "type": "filter",
-                  "path": "published_at"
+                  "path": "category"
                 },
                 {
                   "type": "filter",
                   "path": "tags"
+                },
+                {
+                  "type": "filter",
+                  "path": "author"
+                },
+                {
+                  "type": "filter",
+                  "path": "source"
+                },
+                {
+                  "type": "filter",
+                  "path": "language"
+                },
+                {
+                  "type": "filter",
+                  "path": "last_updated"
+                },
+                {
+                  "type": "filter",
+                  "path": "vetting_status"
+                },
+                {
+                  "type": "filter",
+                  "path": "source_type"
                 }
               ]
             }

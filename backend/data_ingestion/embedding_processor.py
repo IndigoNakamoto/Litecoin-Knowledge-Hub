@@ -131,18 +131,18 @@ def parse_markdown_hierarchically(content: str, initial_metadata: dict) -> List[
                 content_after_frontmatter = parts[2].lstrip()
                 parsed_frontmatter = yaml.safe_load(frontmatter_str)
                 if isinstance(parsed_frontmatter, dict):
-                    # Reason: Convert published_at to datetime for proper BSON type in MongoDB, enabling date-based queries.
-                    if 'published_at' in parsed_frontmatter:
-                        pub_date = parsed_frontmatter['published_at']
-                        if isinstance(pub_date, str):
+                    # Reason: Convert last_updated to datetime for proper BSON type in MongoDB, enabling date-based queries.
+                    if 'last_updated' in parsed_frontmatter:
+                        last_updated_date = parsed_frontmatter['last_updated']
+                        if isinstance(last_updated_date, str):
                             try:
                                 # Attempt to parse ISO format string into a datetime object
-                                parsed_frontmatter['published_at'] = datetime.datetime.fromisoformat(pub_date.replace('Z', '+00:00'))
+                                parsed_frontmatter['last_updated'] = datetime.datetime.fromisoformat(last_updated_date.replace('Z', '+00:00'))
                             except (ValueError, TypeError) as e:
-                                logger.warning(f"Could not parse 'published_at' date string '{pub_date}' for source: {initial_metadata.get('source', 'Unknown')}. Error: {e}. Keeping as string.")
-                        elif isinstance(pub_date, datetime.date) and not isinstance(pub_date, datetime.datetime):
+                                logger.warning(f"Could not parse 'last_updated' date string '{last_updated_date}' for source: {initial_metadata.get('source', 'Unknown')}. Error: {e}. Keeping as string.")
+                        elif isinstance(last_updated_date, datetime.date) and not isinstance(last_updated_date, datetime.datetime):
                             # Reason: Convert datetime.date to datetime.datetime to prevent BSON encoding errors.
-                            parsed_frontmatter['published_at'] = datetime.datetime.combine(pub_date, datetime.time.min)
+                            parsed_frontmatter['last_updated'] = datetime.datetime.combine(last_updated_date, datetime.time.min)
 
                     current_metadata.update(parsed_frontmatter)
                     if "title" in parsed_frontmatter: # Frontmatter title overrides
