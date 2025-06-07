@@ -344,45 +344,36 @@ def run_original_test():
 
 if __name__ == "__main__":
     print("--- Starting RAG Pipeline Test Script ---")
-    
-    # First, run the metadata filtering test as it cleans up after itself
-    # and uses specific test files.
-    test_metadata_filtering()
 
-    # Now, let's add a direct test of the RAG pipeline with a general query
-    # against the main 'litecoin_docs' collection, where our FAQ content was ingested.
-    print("\n--- Starting Direct RAG Pipeline Query Test for FAQ Content ---")
+    # Test query for content ingested from the deep_research directory
+    print("\n--- Starting Direct RAG Pipeline Query Test for Deep Research Content ---")
     try:
-        print("Initializing RAGPipeline for FAQ test...")
+        print("Initializing RAGPipeline for validation test...")
         # VectorStoreManager will use the default 'litecoin_docs' collection
-        vs_manager_faq = VectorStoreManager() 
-        rag_pipeline_faq = RAGPipeline(vector_store_manager=vs_manager_faq)
+        vs_manager = VectorStoreManager() 
+        rag_pipeline = RAGPipeline(vector_store_manager=vs_manager)
         
-        faq_query = "What is Litecoin?"
-        print(f"Sending query to RAG pipeline: '{faq_query}'")
+        # This query targets content that should only exist in the deep_research articles
+        validation_query = "What is Mimblewimble CoinSwap?"
+        print(f"Sending validation query to RAG pipeline: '{validation_query}'")
         
-        answer, sources = rag_pipeline_faq.query(faq_query)
+        answer, sources = rag_pipeline.query(validation_query)
         
-        print("\n--- Answer from RAG Pipeline (Direct Query) ---")
+        print("\n--- Answer from RAG Pipeline (Validation Query) ---")
         print(answer)
-        print("\n--- Sources (Direct Query) ---")
+        print("\n--- Sources (Validation Query) ---")
         if sources:
             for i, source_doc in enumerate(sources):
                 print(f"\nSource {i+1}:")
-                print(f"  Content: {source_doc.page_content[:300]}...") # Show more content
+                print(f"  Content: {source_doc.page_content[:400]}...")
                 print(f"  Metadata: {source_doc.metadata}")
         else:
-            print("No sources returned for the FAQ query.")
+            print("No sources returned for the validation query. This may indicate an issue with ingestion or retrieval.")
             
     except Exception as e:
         print(f"Error during direct RAG pipeline query test: {e}")
         print(traceback.format_exc())
     finally:
-        print("--- Direct RAG Pipeline Query Test for FAQ Content Finished ---")
-
-    # The original API test can be run if the FastAPI server is active.
-    # print("\n--- Consider running the API test separately if FastAPI server is up: ---")
-    # print("--- python backend/test_rag_pipeline.py (and uncomment run_original_test()) ---")
-    # # run_original_test() 
+        print("--- Direct RAG Pipeline Query Test for Deep Research Content Finished ---")
     
     print("\n--- RAG Pipeline Test Script Finished ---")

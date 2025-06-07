@@ -1,8 +1,8 @@
 import os
 import logging
 import time
+import datetime
 from typing import List
-from datetime import datetime # Added for date parsing
 import yaml # Added for frontmatter parsing
 import re   # Added for regex-based heading parsing
 
@@ -132,12 +132,17 @@ def parse_markdown_hierarchically(content: str, initial_metadata: dict) -> List[
                 parsed_frontmatter = yaml.safe_load(frontmatter_str)
                 if isinstance(parsed_frontmatter, dict):
                     # Reason: Convert published_at to datetime for proper BSON type in MongoDB, enabling date-based queries.
-                    if 'published_at' in parsed_frontmatter and isinstance(parsed_frontmatter['published_at'], str):
-                        try:
-                            # Attempt to parse ISO format string into a datetime object
-                            parsed_frontmatter['published_at'] = datetime.fromisoformat(parsed_frontmatter['published_at'].replace('Z', '+00:00'))
-                        except (ValueError, TypeError) as e:
-                            logger.warning(f"Could not parse 'published_at' date '{parsed_frontmatter['published_at']}' for source: {initial_metadata.get('source', 'Unknown')}. Error: {e}. Keeping as string.")
+                    if 'published_at' in parsed_frontmatter:
+                        pub_date = parsed_frontmatter['published_at']
+                        if isinstance(pub_date, str):
+                            try:
+                                # Attempt to parse ISO format string into a datetime object
+                                parsed_frontmatter['published_at'] = datetime.datetime.fromisoformat(pub_date.replace('Z', '+00:00'))
+                            except (ValueError, TypeError) as e:
+                                logger.warning(f"Could not parse 'published_at' date string '{pub_date}' for source: {initial_metadata.get('source', 'Unknown')}. Error: {e}. Keeping as string.")
+                        elif isinstance(pub_date, datetime.date) and not isinstance(pub_date, datetime.datetime):
+                            # Reason: Convert datetime.date to datetime.datetime to prevent BSON encoding errors.
+                            parsed_frontmatter['published_at'] = datetime.datetime.combine(pub_date, datetime.time.min)
 
                     current_metadata.update(parsed_frontmatter)
                     if "title" in parsed_frontmatter: # Frontmatter title overrides
@@ -178,6 +183,12 @@ def parse_markdown_hierarchically(content: str, initial_metadata: dict) -> List[
         if h3: chunk_metadata['subsection_title'] = h3
         if h4: chunk_metadata['subsubsection_title'] = h4 # Added H4 to metadata
         
+        # Final check to convert any date objects to datetime objects before creating the Document
+        for key, value in chunk_metadata.items():
+            if isinstance(value, datetime.date) and not isinstance(value, datetime.datetime):
+                logger.debug(f"Converting datetime.date to datetime.datetime for key '{key}' in source: {chunk_metadata.get('source', 'Unknown')}")
+                chunk_metadata[key] = datetime.datetime.combine(value, datetime.time.min)
+
         return Document(page_content=page_content, metadata=chunk_metadata)
 
     for line_number, line in enumerate(lines):

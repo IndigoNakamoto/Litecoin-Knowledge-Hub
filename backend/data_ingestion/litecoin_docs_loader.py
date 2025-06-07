@@ -36,7 +36,7 @@ def load_litecoin_docs(path_or_dir: str) -> List[Document]:
             is_deep_research_subdir = current_dir_name == "deep_research"
 
             for filename in filenames:
-                if filename.endswith(".md") and not filename.startswith("_"): # Reason: Ignore templates like _template.md
+                if filename.lower().endswith((".md", ".markdown")) and not filename.startswith("_"): # Reason: Ignore templates and support both extensions
                     file_path = os.path.join(dirpath, filename)
                     # print(f"  Processing markdown file: {file_path}") # Verbose, can be enabled for debugging
                     try:
@@ -54,7 +54,7 @@ def load_litecoin_docs(path_or_dir: str) -> List[Document]:
                         
                     except Exception as e:
                         print(f"    ERROR: Error loading file {file_path} with frontmatter library: {e}")
-    elif os.path.isfile(path_or_dir) and path_or_dir.endswith(".md"):
+    elif os.path.isfile(path_or_dir) and path_or_dir.lower().endswith((".md", ".markdown")):
         print(f"Loading single markdown file: {path_or_dir}")
         try:
             post = frontmatter.load(path_or_dir)
@@ -76,7 +76,7 @@ def load_litecoin_docs(path_or_dir: str) -> List[Document]:
         except Exception as e:
             print(f"    ERROR: Error loading file {path_or_dir} with frontmatter library: {e}")
     else:
-        print(f"Error: '{path_or_dir}' is not a valid .md file or directory. No documents loaded.")
+        print(f"Error: '{path_or_dir}' is not a valid markdown file or directory. No documents loaded.")
 
     return all_docs
 

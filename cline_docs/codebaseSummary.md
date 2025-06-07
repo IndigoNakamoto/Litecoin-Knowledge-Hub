@@ -34,6 +34,7 @@
 *   `backend/data_ingestion/vector_store_manager.py`: Manages connections to MongoDB Atlas. Facilitates the insertion and retrieval of vector embeddings. Handles deletion of documents based on flattened metadata fields (as `langchain-mongodb` stores metadata at the root document level). Contains a `clear_all_documents()` method to empty a collection.
 *   `backend/ingest_data.py`: A standalone script to orchestrate the data ingestion process, primarily focused on processing the **Curated Knowledge Base**.
 *   `backend/utils/clear_litecoin_docs_collection.py`: A utility script to clear all documents from the `litecoin_docs` collection in MongoDB. It uses the `clear_all_documents` method from `VectorStoreManager`.
+*   `backend/api_client/ingest_kb_articles.py`: A client script responsible for orchestrating the ingestion of the entire knowledge base. It interacts with the `/api/v1/sources` endpoints to ensure a clean and complete data ingestion process, including clearing the collection before starting.
 *   `backend/data_models.py`: Contains core Pydantic data models for the application, such as `DataSource` and `DataSourceUpdate`.
 *   `backend/api/v1/sources.py`: Contains the API router and CRUD endpoints for managing data sources. It uses FastAPI's dependency injection to handle database connections and ensures that deleting a data source also removes its associated embeddings from the vector store.
 

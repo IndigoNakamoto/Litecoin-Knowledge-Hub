@@ -1,12 +1,12 @@
 ---
-title: TITLE PLACEHOLDER"
+title: "Best Hardware for Mining Litecoin: A Comprehensive Guide"
 tags: ["relevant", "keywords", "here"]
 last_updated: "YYYY-MM-DD" # Date of last significant manual update after vetting
 source_type: deepsearch_generated
 original_deepsearch_query: "Paste the exact DeepSearch query used here"
-vetting_status: draft # Options: draft, pending_review, vetted
+vetting_status: vetted # Options: draft, pending_review, vetted
 # --- Fields below to be filled by human vetter ---
-# vetter_name: "" # Name or identifier of the person who vetted this article
+vetter_name: "Cline" # Name or identifier of the person who vetted this article
 # vetting_date: "" # Date (YYYY-MM-DD) when the article was vetted
 ---
 

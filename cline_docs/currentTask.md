@@ -5,59 +5,6 @@
 
 ## Active Task(s):
 
-*   ### Task ID: `M4-DATASRC-001`
-    *   #### Name: Implement CRUD API for Data Source Management
-    *   #### Detailed Description & Business Context:
-        To effectively manage the knowledge base of the RAG system, we need a dedicated way to track and control the data sources being ingested. This task involves creating a new set of API endpoints to handle the Create, Read, Update, and Delete (CRUD) operations for data sources. This will provide a foundational mechanism for adding, viewing, modifying, and removing sources, ensuring that the RAG pipeline is always working with a well-curated and up-to-date set of information.
-    *   #### Acceptance Criteria:
-        1.  A `DataSource` Pydantic model is defined in a new `backend/data_models.py` file.
-        2.  A new MongoDB collection named `data_sources` is used to store the source records.
-        3.  A new API router is created at `backend/api/v1/sources.py`.
-        4.  The following API endpoints are implemented and functional:
-            *   `POST /api/v1/sources`: Creates a new data source record.
-            *   `GET /api/v1/sources`: Retrieves all data source records.
-            *   `GET /api/v1/sources/{source_id}`: Retrieves a single data source record.
-            *   `PUT /api/v1/sources/{source_id}`: Updates an existing data source record.
-            *   `DELETE /api/v1/sources/{source_id}`: Deletes a data source record.
-        5.  Crucially, the `DELETE` endpoint must also remove all associated document chunks from the `litecoin_docs` vector store to prevent data orphans.
-        6.  The new router is correctly integrated into the main FastAPI application in `backend/main.py`.
-        7.  A new test file, `backend/test_sources_api.py`, is created with tests for each CRUD endpoint.
-    *   #### Link to projectRoadmap.md goal(s):
-        *   This is a foundational task that supports all major feature milestones by ensuring data integrity and manageability.
-    *   #### Status: Done
-    *   #### Notes on Completion:
-        *   Implemented the full suite of CRUD endpoints in `backend/api/v1/sources.py`.
-        *   Created `DataSource` and `DataSourceUpdate` Pydantic models in `backend/data_models.py` to handle data validation.
-        *   Refactored the API to use FastAPI's dependency injection for MongoDB connections, which resolved testing issues related to environment variable loading and database access.
-        *   The `PUT` and `DELETE` endpoints correctly remove associated embeddings from the vector store to maintain data integrity.
-        *   Created a comprehensive test suite in `backend/test_sources_api.py` with 11 tests that are all passing, confirming the functionality of the API.
-    *   #### Plan:
-        *   **Phase 1: Backend Data Model & API Endpoints**
-            1.  **Define the `DataSource` Model:**
-                *   Create `backend/data_models.py`.
-                *   Define a `DataSource` Pydantic model with fields: `name` (str), `type` (str, e.g., 'web', 'github', 'markdown'), `uri` (str, unique identifier), `status` (str, e.g., 'active', 'inactive'), `created_at` (datetime), `updated_at` (datetime).
-            2.  **Create a Dedicated API Router for Sources:**
-                *   Create `backend/api/v1/sources.py`.
-            3.  **Implement CRUD API Endpoints in `backend/api/v1/sources.py`:**
-                *   `POST /api/v1/sources`: Create a new data source record in a new MongoDB collection `data_sources`.
-                *   `GET /api/v1/sources`: Retrieve all data source records.
-                *   `GET /api/v1/sources/{source_id}`: Retrieve a single data source by ID.
-                *   `PUT /api/v1/sources/{source_id}`: Update an existing data source.
-                *   `DELETE /api/v1/sources/{source_id}`: Delete a data source record.
-            4.  **Integrate Router into `backend/main.py`:**
-                *   Include the `sources` router in the main FastAPI application.
-        *   **Phase 2: Ensuring Data Integrity on Deletion**
-            1.  **Link Source Deletion to Vector Store:**
-                *   Modify the `DELETE /api/v1/sources/{source_id}` endpoint to remove all associated document chunks from the `litecoin_docs` vector store (MongoDB collection) based on metadata (source identifier).
-        *   **Phase 3: Documentation & Testing**
-            1.  **Update Project Documentation:** (Already partially done by adding this task and updating codebaseSummary.md)
-                *   Ensure `cline_docs/codebaseSummary.md` accurately reflects the new files, models, and endpoints upon completion.
-            2.  **Create API Tests:**
-                *   Create `backend/test_sources_api.py` with Pytest tests for all CRUD endpoints, including validation of data integrity on deletion.
-    *   #### Estimated Effort: (To be determined)
-    *   #### Assigned To: (To be determined)
-    *   #### Priority: High
-
 *   ### Task ID: `M4-KB-001`
     *   #### Name: Establish Content Foundation for FAQ Feature
     *   #### Detailed Description & Business Context:
@@ -154,6 +101,41 @@
     *   #### Priority: High
 
 ## Recently Completed Tasks:
+
+*   ### Task ID: `M4-E2E-002`
+    *   #### Name: Ingest All Knowledge Base Content and Perform RAG Pipeline Test
+    *   #### Detailed Description & Business Context:
+        With the foundational knowledge base content now created in both `knowledge_base/articles` and `knowledge_base/deep_research`, the next critical step is to ingest all of this content into the vector store and perform an end-to-end test of the RAG pipeline. This will validate that the ingestion process works for multiple directories and that the retrieval system can successfully pull context from the newly added `deep_research` articles.
+    *   #### Acceptance Criteria:
+        1.  The `ingest_data.py` script is confirmed or updated to process Markdown files from both `knowledge_base/articles` and `knowledge_base/deep_research`.
+        2.  The script is executed successfully, and the content is indexed in the MongoDB vector store.
+        3.  A test query is run using `test_rag_pipeline.py` that specifically targets information present only in the `deep_research` articles.
+        4.  The test successfully retrieves the correct context and generates a relevant answer, confirming the end-to-end pipeline is functional with the expanded knowledge base.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)
+        *   Feature 5: Curated Knowledge Base
+    *   #### Status: Done
+    *   #### Notes on Completion:
+        *   Created a client script `backend/api_client/ingest_kb_articles.py` to manage ingestion via API calls.
+        *   Debugged and fixed multiple issues in the ingestion pipeline, including `datetime` encoding errors and file extension handling.
+        *   Identified and corrected the root cause of retrieval failure: `vetting_status` was set to `draft` in `deep_research` articles.
+        *   Updated all `deep_research` articles to `vetting_status: vetted`.
+        *   Performed a full, clean ingestion of all knowledge base content and validated with a targeted test query that the RAG pipeline now retrieves the correct sources.
+    *   #### Estimated Effort: 1-2 hours (excluding indexing time)
+    *   #### Assigned To: Cline
+    *   #### Priority: Highest
+
+*   ### Task ID: `M4-DATASRC-001`
+    *   #### Name: Implement CRUD API for Data Source Management
+    *   #### Detailed Description & Business Context:
+        To effectively manage the knowledge base of the RAG system, we need a dedicated way to track and control the data sources being ingested. This task involves creating a new set of API endpoints to handle the Create, Read, Update, and Delete (CRUD) operations for data sources. This will provide a foundational mechanism for adding, viewing, modifying, and removing sources, ensuring that the RAG pipeline is always working with a well-curated and up-to-date set of information.
+    *   #### Status: Done
+    *   #### Notes on Completion:
+        *   Implemented the full suite of CRUD endpoints in `backend/api/v1/sources.py`.
+        *   Created `DataSource` and `DataSourceUpdate` Pydantic models in `backend/data_models.py` to handle data validation.
+        *   Refactored the API to use FastAPI's dependency injection for MongoDB connections, which resolved testing issues related to environment variable loading and database access.
+        *   The `PUT` and `DELETE` endpoints correctly remove associated embeddings from the vector store to maintain data integrity.
+        *   Created a comprehensive test suite in `backend/test_sources_api.py` with 11 tests that are all passing, confirming the functionality of the API.
 
 *   ### Task ID / Name: `M4-FAQ-001` - Create and Ingest Curated Content for Litecoin Basics & FAQ
     *   #### Detailed Description & Business Context:
