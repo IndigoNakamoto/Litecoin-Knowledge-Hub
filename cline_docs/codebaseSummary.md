@@ -22,9 +22,12 @@
 *   `backend/data_ingestion/embedding_processor.py`: Handles text splitting and generates vector embeddings using Google Text Embedding 004.
 *   `backend/data_ingestion/vector_store_manager.py`: Manages connections to MongoDB Atlas and facilitates the insertion and retrieval of vector embeddings.
 *   `backend/ingest_data.py`: A standalone script to orchestrate the data ingestion process.
+*   `backend/data_models.py`: (Planned) Will contain core Pydantic data models for the application, such as the `DataSource` model.
+*   `backend/api/v1/sources.py`: (Planned) Will contain the API router and endpoints for managing data sources.
 
 ## Core Data Models & Entities
-*   (Not yet established - will likely include models for Litecoin data, user queries, RAG sources, etc.)
+*   **`DataSource`** (Planned): A Pydantic model to represent a data source for the RAG pipeline. It will include fields like `name`, `type`, `uri`, and `status`.
+*   (Other models for Litecoin data, user queries, etc., will be defined as needed.)
 
 ## Critical Data Flow Diagrams
 *   (Not yet established - will involve user query -> RAG system -> LLM -> response. Mermaid syntax will be preferred for diagrams when defined.)
@@ -33,7 +36,13 @@
 *   **`POST /api/v1/chat`**:
     *   **Description**: Receives a user query and processes it through the RAG pipeline.
     *   **Request Body**: `{"query": "string"}`
-    *   **Response Body**: `{"response": "string"}`
+    *   **Response Body**: `{"answer": "string", "sources": [...]}`
+*   **Data Source Management (Planned):**
+    *   **`POST /api/v1/sources`**: Creates a new data source.
+    *   **`GET /api/v1/sources`**: Retrieves a list of all data sources.
+    *   **`GET /api/v1/sources/{source_id}`**: Retrieves a single data source.
+    *   **`PUT /api/v1/sources/{source_id}`**: Updates a data source.
+    *   **`DELETE /api/v1/sources/{source_id}`**: Deletes a data source and its associated vectorized data.
 
 ## External Services & Dependencies
 *   Google Text Embedding API (text-embedding-004)

@@ -26,6 +26,31 @@
     *   #### Priority: High
 
 ## Task Backlog:
+*   ### Task ID: `M4-DATASRC-001`
+    *   #### Name: Implement CRUD API for Data Source Management
+    *   #### Detailed Description & Business Context:
+        To effectively manage the knowledge base of the RAG system, we need a dedicated way to track and control the data sources being ingested. This task involves creating a new set of API endpoints to handle the Create, Read, Update, and Delete (CRUD) operations for data sources. This will provide a foundational mechanism for adding, viewing, modifying, and removing sources, ensuring that the RAG pipeline is always working with a well-curated and up-to-date set of information.
+    *   #### Acceptance Criteria:
+        1.  A `DataSource` Pydantic model is defined in a new `backend/data_models.py` file.
+        2.  A new MongoDB collection named `data_sources` is used to store the source records.
+        3.  A new API router is created at `backend/api/v1/sources.py`.
+        4.  The following API endpoints are implemented and functional:
+            *   `POST /api/v1/sources`: Creates a new data source record.
+            *   `GET /api/v1/sources`: Retrieves all data source records.
+            *   `GET /api/v1/sources/{source_id}`: Retrieves a single data source record.
+            *   `PUT /api/v1/sources/{source_id}`: Updates an existing data source record.
+            *   `DELETE /api/v1/sources/{source_id}`: Deletes a data source record.
+        5.  Crucially, the `DELETE` endpoint must also remove all associated document chunks from the `litecoin_docs` vector store to prevent data orphans.
+        6.  The new router is correctly integrated into the main FastAPI application in `backend/main.py`.
+        7.  A new test file, `backend/test_sources_api.py`, is created with tests for each CRUD endpoint.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   This is a foundational task that supports all major feature milestones by ensuring data integrity and manageability.
+    *   #### Status: To Do
+    *   #### Plan: (As defined in the approved plan)
+    *   #### Estimated Effort: (To be determined)
+    *   #### Assigned To: (To be determined)
+    *   #### Priority: High
+
 *   ### Task ID: `M4-UI-001`
     *   #### Name: Develop Frontend Chat UI Components
     *   #### Detailed Description & Business Context:
