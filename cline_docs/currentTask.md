@@ -5,6 +5,27 @@
 
 ## Active Task(s):
 
+*   ### Task ID: `UTIL-DB-001`
+    *   #### Name: Create Utility Script to Clear `litecoin_docs` Collection
+    *   #### Detailed Description & Business Context:
+        Provide a straightforward way to clear all documents from the `litecoin_docs` MongoDB collection. This is useful for development and testing, allowing for a clean state before ingesting new data or running tests. The script leverages the existing `clear_all_documents` method in `VectorStoreManager`.
+    *   #### Acceptance Criteria:
+        1.  A new script `backend/utils/clear_litecoin_docs_collection.py` is created.
+        2.  The script imports `VectorStoreManager` and uses its `clear_all_documents` method.
+        3.  The script loads environment variables correctly to ensure DB connection.
+        4.  The script includes a confirmation prompt before deleting data.
+        5.  The script can be run directly from the command line (e.g., `python backend/utils/clear_litecoin_docs_collection.py`).
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Supports general development and testing for all milestones.
+    *   #### Status: Done
+    *   #### Plan:
+        *   ✅ Create `backend/utils/clear_litecoin_docs_collection.py`.
+        *   ✅ Implement logic to load .env, instantiate `VectorStoreManager`, and call `clear_all_documents()`.
+        *   ✅ Add user confirmation prompt.
+    *   #### Estimated Effort: 0.5 hours
+    *   #### Assigned To: Cline
+    *   #### Priority: Medium
+
 *   ### Task ID: `M4-KB-001`
     *   #### Name: Establish Content Foundation for FAQ Feature
     *   #### Detailed Description & Business Context:

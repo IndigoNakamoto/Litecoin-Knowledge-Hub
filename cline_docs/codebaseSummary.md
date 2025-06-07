@@ -7,6 +7,7 @@
     *   `src/`: Main source code for the Next.js application (using App Router).
 *   `backend/`: Contains the FastAPI application.
     *   `data_ingestion/`: Contains modules for data loading, embedding, and vector store management.
+    *   `utils/`: Contains utility scripts.
     *   `main.py`: Main FastAPI application file.
     *   `requirements.txt`: Python dependencies.
     *   `rag_pipeline.py`: Encapsulates Langchain-related logic for the RAG pipeline.
@@ -28,8 +29,9 @@
 *   `backend/main.py`: The main entry point for the FastAPI backend, responsible for defining API endpoints and handling incoming requests.
 *   `backend/data_ingestion/litecoin_docs_loader.py`: Responsible for loading raw text data from Markdown files or directories. It now utilizes the `python-frontmatter` library to accurately parse YAML front matter from these files, ensuring that metadata (like title, tags, custom fields) is correctly extracted and associated with the document content before further processing.
 *   `backend/data_ingestion/embedding_processor.py`: Handles hierarchical chunking of Markdown documents (prepending titles/sections to content) and standard text splitting for other formats. It receives documents with pre-parsed front matter (from `litecoin_docs_loader.py`) and further processes this metadata, including converting `published_at` to `datetime` objects. Generates vector embeddings using Google Text Embedding 004 with `task_type='retrieval_document'` for knowledge base content.
-*   `backend/data_ingestion/vector_store_manager.py`: Manages connections to MongoDB Atlas. Facilitates the insertion and retrieval of vector embeddings. Handles deletion of documents based on flattened metadata fields (as `langchain-mongodb` stores metadata at the root document level).
+*   `backend/data_ingestion/vector_store_manager.py`: Manages connections to MongoDB Atlas. Facilitates the insertion and retrieval of vector embeddings. Handles deletion of documents based on flattened metadata fields (as `langchain-mongodb` stores metadata at the root document level). Contains a `clear_all_documents()` method to empty a collection.
 *   `backend/ingest_data.py`: A standalone script to orchestrate the data ingestion process, primarily focused on processing the **Curated Knowledge Base**.
+*   `backend/utils/clear_litecoin_docs_collection.py`: A utility script to clear all documents from the `litecoin_docs` collection in MongoDB. It uses the `clear_all_documents` method from `VectorStoreManager`.
 *   `backend/data_models.py`: (Planned) Will contain core Pydantic data models for the application, such as the `DataSource` model.
 *   `backend/api/v1/sources.py`: (Planned) Will contain the API router and endpoints for managing data sources.
 
