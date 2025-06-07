@@ -40,7 +40,7 @@ This focus on specialized, real-time, and accurate data is the core differentiat
         *   Description: Provides quick access to snippets from Litecoin developer documentation, links to key resources, and answers to common technical questions for developers building on Litecoin.
         *   Example Queries: "How to use Litecoin RPC call [method_name]?", "Link to Litecoin improvement proposals (LIPs).", "What are common Litecoin scripting opcodes?"
     *   **Feature 5: Curated Knowledge Base**
-        *   Description: A continuously updated library of well-researched, clearly written articles and data covering all aspects of Litecoin. This content is explicitly structured for optimal machine retrieval and serves as the primary source for the chatbot's answers.
+        *   Description: A continuously updated library of well-researched, clearly written articles and data covering all aspects of Litecoin. This content is explicitly structured for optimal machine retrieval and serves as the primary source for the chatbot's answers. Content generation may be initiated by research tools like DeepSearch, but all such content undergoes rigorous human vetting and curation to meet our 'canonical' standard before being integrated.
 
 ## Architectural Overview & Patterns
 *   The project utilizes a Next.js frontend and a Python/FastAPI backend. The architecture is centered around a **content-first RAG pipeline**, where a curated knowledge base is ingested to provide context for the LLM, ensuring responses are grounded in verified information. A microservices-oriented architectural approach is being considered for the RAG capabilities, with further details to be fleshed out as development progresses.

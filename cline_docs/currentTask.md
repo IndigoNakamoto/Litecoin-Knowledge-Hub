@@ -5,66 +5,6 @@
 
 ## Active Task(s):
 
-*   ### Task ID: `UTIL-DB-001`
-    *   #### Name: Create Utility Script to Clear `litecoin_docs` Collection
-    *   #### Detailed Description & Business Context:
-        Provide a straightforward way to clear all documents from the `litecoin_docs` MongoDB collection. This is useful for development and testing, allowing for a clean state before ingesting new data or running tests. The script leverages the existing `clear_all_documents` method in `VectorStoreManager`.
-    *   #### Acceptance Criteria:
-        1.  A new script `backend/utils/clear_litecoin_docs_collection.py` is created.
-        2.  The script imports `VectorStoreManager` and uses its `clear_all_documents` method.
-        3.  The script loads environment variables correctly to ensure DB connection.
-        4.  The script includes a confirmation prompt before deleting data.
-        5.  The script can be run directly from the command line (e.g., `python backend/utils/clear_litecoin_docs_collection.py`).
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Supports general development and testing for all milestones.
-    *   #### Status: Done
-    *   #### Plan:
-        *   ✅ Create `backend/utils/clear_litecoin_docs_collection.py`.
-        *   ✅ Implement logic to load .env, instantiate `VectorStoreManager`, and call `clear_all_documents()`.
-        *   ✅ Add user confirmation prompt.
-    *   #### Estimated Effort: 0.5 hours
-    *   #### Assigned To: Cline
-    *   #### Priority: Medium
-
-*   ### Task ID: `M4-KB-001`
-    *   #### Name: Establish Content Foundation for FAQ Feature
-    *   #### Detailed Description & Business Context:
-        Before ingesting random data, we must first define the structure of our curated knowledge base and create the initial set of "golden" documents for the "Litecoin Basics & FAQ" feature. This ensures our RAG system is built on a foundation of quality.
-    *   #### Acceptance Criteria:
-        1.  A new directory, `knowledge_base/`, is created at the project root.
-        2.  A template file, `knowledge_base/_template.md`, is created to define the standard structure for all future articles (e.g., metadata frontmatter, heading styles).
-        3.  A master index file, `knowledge_base/index.md`, is created, outlining a categorized list of 50 high-impact articles for the "Litecoin Basics & FAQ" feature.
-        4.  At least three foundational FAQ articles are written and placed in `knowledge_base/` (e.g., `what-is-litecoin.md`, `how-litecoin-differs-from-bitcoin.md`, `understanding-litecoin-wallets.md`).
-        5.  The existing task `M4-FAQ-001` is updated to reflect that it will ingest data from the new `knowledge_base/` directory, not from external raw sources.
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)
-        *   Feature 5: Curated Knowledge Base
-    *   #### Status: In Progress
-    *   #### Progress (as of 2025-06-06):
-        *   ✅ Core project documentation (`projectRoadmap.md`, `codebaseSummary.md`, `README.md`, `currentTask.md`) updated to reflect the content-first strategy.
-        *   ✅ `user_instructions/knowledge_base_contribution_guide.md` created.
-        *   ✅ `knowledge_base/` directory created.
-        *   ✅ `knowledge_base/_template.md` created.
-        *   ✅ `knowledge_base/index.md` created, outlining 50 high-impact articles.
-        *   ✅ Created `knowledge_base/001-.md`.
-        *   ✅ Created `knowledge_base/002-.md`.
-        *   ✅ Created `knowledge_base/004-.md`.
-        *   ✅ Created `knowledge_base/006-.md`.
-        *   ✅ Created `knowledge_base/045-.md`.
-    *   #### Plan:
-        *   ✅ Create `knowledge_base/` directory.
-        *   ✅ Create `knowledge_base/_template.md`.
-        *   ✅ Create `knowledge_base/index.md` outlining 50 high-impact articles.
-        *   ✅ Write the initial three foundational FAQ articles:
-            *   `knowledge_base/what-is-litecoin.md`
-            *   `knowledge_base/how-litecoin-differs-from-bitcoin.md`
-            *   `knowledge_base/understanding-litecoin-wallets.md`
-        *   **Next step:** Continue writing the remaining 47 FAQ articles in `knowledge_base/` based on the `index.md`.
-        *   Update task `M4-FAQ-001` (already done by redefining its scope during the content-first strategy integration).
-    *   #### Estimated Effort: (To be determined)
-    *   #### Assigned To: (To be determined)
-    *   #### Priority: Highest
-
 *   ### Task ID: `M4-DATASRC-001`
     *   #### Name: Implement CRUD API for Data Source Management
     *   #### Detailed Description & Business Context:
@@ -112,7 +52,44 @@
     *   #### Assigned To: (To be determined)
     *   #### Priority: High
 
-## Task Backlog:
+*   ### Task ID: `M4-KB-001`
+    *   #### Name: Establish Content Foundation for FAQ Feature
+    *   #### Detailed Description & Business Context:
+        Before ingesting random data, we must first define the structure of our curated knowledge base and create the initial set of "golden" documents for the "Litecoin Basics & FAQ" feature. This ensures our RAG system is built on a foundation of quality.
+    *   #### Acceptance Criteria:
+        1.  A new directory, `knowledge_base/`, is created at the project root.
+        2.  A template file, `knowledge_base/_template.md`, is created to define the standard structure for all future articles (e.g., metadata frontmatter, heading styles).
+        3.  A master index file, `knowledge_base/index.md`, is created, outlining a categorized list of 50 high-impact articles for the "Litecoin Basics & FAQ" feature.
+        4.  At least three foundational FAQ articles are written and placed in `knowledge_base/` (e.g., `what-is-litecoin.md`, `how-litecoin-differs-from-bitcoin.md`, `understanding-litecoin-wallets.md`).
+        5.  The existing task `M4-FAQ-001` is updated to reflect that it will ingest data from the new `knowledge_base/` directory, not from external raw sources.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)
+        *   Feature 5: Curated Knowledge Base
+    *   #### Status: In Progress
+    *   #### Progress (as of 2025-06-06):
+        *   ✅ Core project documentation (`projectRoadmap.md`, `codebaseSummary.md`, `README.md`, `currentTask.md`) updated to reflect the content-first strategy.
+        *   ✅ `user_instructions/knowledge_base_contribution_guide.md` created.
+        *   ✅ `knowledge_base/` directory created.
+        *   ✅ `knowledge_base/_template.md` created.
+        *   ✅ `knowledge_base/index.md` created, outlining 50 high-impact articles.
+        *   ✅ Created `knowledge_base/001-.md`.
+        *   ✅ Created `knowledge_base/002-.md`.
+        *   ✅ Created `knowledge_base/004-.md`.
+        *   ✅ Created `knowledge_base/006-.md`.
+        *   ✅ Created `knowledge_base/045-.md`.
+    *   #### Plan:
+        *   ✅ Create `knowledge_base/` directory.
+        *   ✅ Create `knowledge_base/_template.md`.
+        *   ✅ Create `knowledge_base/index.md` outlining 50 high-impact articles.
+        *   ✅ Write the initial three foundational FAQ articles:
+            *   `knowledge_base/what-is-litecoin.md`
+            *   `knowledge_base/how-litecoin-differs-from-bitcoin.md`
+            *   `knowledge_base/understanding-litecoin-wallets.md`
+        *   **Next step:** Continue writing the remaining 47 FAQ articles in `knowledge_base/` based on the `index.md`.
+        *   Update task `M4-FAQ-001` (already done by redefining its scope during the content-first strategy integration).
+    *   #### Estimated Effort: (To be determined)
+    *   #### Assigned To: (To be determined)
+    *   #### Priority: Highest
 
 *   ### Task ID / Name: `M4-FAQ-001` - Create and Ingest Curated Content for Litecoin Basics & FAQ
     *   #### Detailed Description & Business Context:
@@ -156,6 +133,8 @@
     *   #### Estimated Effort: (To be determined)
     *   #### Assigned To: (To be determined)
     *   #### Priority: High
+
+## Task Backlog:
 
 *   ### Task ID: `M4-INT-001`
     *   #### Name: Integrate Frontend with Backend API

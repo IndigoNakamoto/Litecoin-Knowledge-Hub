@@ -20,6 +20,7 @@
 *   `knowledge_base/`: Contains the curated knowledge base articles.
     *   `_template.md`: Template for new knowledge base articles.
     *   `index.md`: Master index of all knowledge base articles.
+    *   `deep_research/`: Subdirectory for articles initiated by research tools (e.g., DeepSearch). These articles undergo the standard human curation and vetting process before being fully integrated.
 *   `cline_agent_workspace/`: Contains agent's operational files.
 *   `reference_docs/`: Contains documentation for frameworks, services, and APIs used in the project.
 *   `user_instructions/`: Contains instructions for the user.

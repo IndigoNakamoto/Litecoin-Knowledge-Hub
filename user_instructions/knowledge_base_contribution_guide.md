@@ -77,8 +77,48 @@ Adherence to these formatting guidelines ensures readability and consistent pars
 *   **Tables:**
     *   Use Markdown tables for structured data where appropriate.
 
-## 5. Contribution Workflow
-Follow these steps to contribute new content or update existing articles:
+## 5. Using DeepSearch (or similar AI tools) for Initial Drafts
+To accelerate content creation, especially for comprehensive topics, AI-powered research tools like DeepSearch can be used to generate initial drafts. However, these drafts **must** undergo a rigorous human vetting and curation process before being considered part of the canonical knowledge base.
+
+*   **Directory:** Articles initiated via DeepSearch should be placed in the `knowledge_base/deep_research/` subdirectory.
+*   **Prompt Engineering:**
+    *   Craft precise prompts to guide the AI. For example:
+        *   **For FAQs (Feature 1):** "Generate concise, beginner-friendly answers to common Litecoin questions (e.g., ‘What is Litecoin?’, ‘How to set up a wallet?’) using simple language, sourced from Litecoin Foundation, CoinMarketCap, and X sentiment."
+        *   **For Knowledge Base Articles (Feature 5):** "Create a structured article on Litecoin’s history, technical features, and recent developments, with sections for ‘Introduction,’ ‘Key Features,’ and ‘Updates,’ sourced from official docs, blockchain data, and recent X posts."
+    *   Instruct the AI to focus on Litecoin-specific information and avoid general crypto content unless for direct comparison.
+*   **Initial Output:** Save the raw output from DeepSearch as a Markdown file in `knowledge_base/deep_research/`.
+*   **Mandatory Frontmatter for DeepSearch Drafts:**
+    In addition to the standard frontmatter (`title`, `tags`, `last_updated`), articles originating from DeepSearch **must** include:
+    ```yaml
+    source_type: deepsearch_generated
+    original_deepsearch_query: "The exact query used to generate this draft."
+    vetting_status: draft # Other statuses: pending_review, vetted
+    # --- Fields below to be filled by human vetter ---
+    # vetter_name: ""
+    # vetting_date: "" 
+    ```
+*   **Human Vetting and Curation Process (CRITICAL):**
+    1.  **Selection:** Pick a `draft` article from `knowledge_base/deep_research/`.
+    2.  **Verification:** Thoroughly cross-check all facts, figures, and technical details against trusted primary sources (e.g., litecoin.org, official GitHub, reputable exchanges/market data sites).
+    3.  **Correction & Enhancement:**
+        *   Correct any inaccuracies, outdated information, or misleading statements.
+        *   Fill content gaps. Research and add information that the AI might have missed, especially for niche or highly technical topics.
+        *   Rewrite sections for clarity, conciseness, and appropriate tone (beginner-friendly for FAQs, technically sound for deeper articles).
+        *   Ensure objectivity and remove any AI-generated biases or speculative content.
+    4.  **Structuring for RAG:**
+        *   Ensure the article adheres to the heading structure (`# H1`, `## H2`, `### H3`) outlined in Section 3.
+        *   Format content for optimal readability and machine parsing (lists, code blocks, etc.).
+    5.  **Metadata Update:**
+        *   Change `vetting_status` to `vetted`.
+        *   Fill in `vetter_name` with your name/identifier.
+        *   Set `vetting_date` to the current date (`YYYY-MM-DD`).
+        *   Update `last_updated` to the current date.
+        *   Ensure `title` and `tags` are accurate and comprehensive.
+    6.  **Final Review:** Read through the entire article one last time to catch any errors.
+*   **Conditional Ingestion:** Only articles with `vetting_status: vetted` will be processed by the main data ingestion pipeline. This ensures that no unverified AI-generated content reaches the chatbot.
+
+## 6. General Contribution Workflow
+Follow these steps to contribute new manually-written content or update existing articles:
 
 1.  **Identify a Need:** Determine if a new topic needs to be covered or an existing article requires updates/corrections. Check `cline_docs/currentTask.md` for content-related tasks.
 2.  **Create/Locate File:**
@@ -98,9 +138,9 @@ Follow these steps to contribute new content or update existing articles:
         ```
     *   Check for any errors in the console output.
 6.  **Submit for Review:**
-    *   Commit your changes with a clear commit message.
+    *   Commit your changes with a clear commit message (e.g., "feat(kb): add vetted article on MWEB via deepsearch" or "fix(kb): correct details in what-is-litecoin.md").
     *   Push your changes to your fork/branch.
     *   Open a Pull Request (PR) against the main project repository.
-    *   In your PR description, briefly explain the purpose of your contribution and any specific areas reviewers should focus on.
+    *   In your PR description, briefly explain the purpose of your contribution and any specific areas reviewers should focus on. If it's a DeepSearch-originated article, mention this.
 
 Thank you for helping build a high-quality knowledge resource for the Litecoin community!
