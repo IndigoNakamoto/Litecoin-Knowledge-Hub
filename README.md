@@ -6,9 +6,9 @@ A RAG (Retrieval-Augmented Generation) Chatbot for Litecoin users is an AI-power
 **Target Users/Audience:** Litecoin users (novice and experienced), Cryptocurrency enthusiasts, Developers building on Litecoin, Potential adopters seeking reliable information about Litecoin’s features, transactions, or market trends.
 
 ## Project Status
-The project has successfully completed the **Core RAG Pipeline Implementation** (Milestone 3). The core RAG pipeline is now functional, capable of ingesting data from multiple sources, retrieving relevant information, and generating answers with source attribution.
+The project has successfully completed the **Core RAG Pipeline Implementation** (Milestone 3).
 
-The project is currently focused on **Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)**.
+The project is currently focused on **Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)**. The backend and data ingestion pipeline for this milestone are **complete and validated**. The current focus is on developing the frontend chat interface and integrating it with the backend API.
 
 ## Key Features
 
