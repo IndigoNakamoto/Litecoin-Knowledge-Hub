@@ -12,8 +12,9 @@
     *   #### Acceptance Criteria:
         1.  A new directory, `knowledge_base/`, is created at the project root.
         2.  A template file, `knowledge_base/_template.md`, is created to define the standard structure for all future articles (e.g., metadata frontmatter, heading styles).
-        3.  At least three foundational FAQ articles are written and placed in `knowledge_base/` (e.g., `what-is-litecoin.md`, `how-litecoin-differs-from-bitcoin.md`, `understanding-litecoin-wallets.md`).
-        4.  The existing task `M4-FAQ-001` is updated to reflect that it will ingest data from the new `knowledge_base/` directory, not from external raw sources.
+        3.  A master index file, `knowledge_base/index.md`, is created, outlining a categorized list of 50 high-impact articles for the "Litecoin Basics & FAQ" feature.
+        4.  At least three foundational FAQ articles are written and placed in `knowledge_base/` (e.g., `what-is-litecoin.md`, `how-litecoin-differs-from-bitcoin.md`, `understanding-litecoin-wallets.md`).
+        5.  The existing task `M4-FAQ-001` is updated to reflect that it will ingest data from the new `knowledge_base/` directory, not from external raw sources.
     *   #### Link to projectRoadmap.md goal(s):
         *   Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)
         *   Feature 5: Curated Knowledge Base
@@ -23,10 +24,12 @@
         *   ✅ `user_instructions/knowledge_base_contribution_guide.md` created.
         *   ✅ `knowledge_base/` directory created.
         *   ✅ `knowledge_base/_template.md` created.
+        *   ✅ `knowledge_base/index.md` created, outlining 50 high-impact articles.
     *   #### Plan:
         *   ✅ Create `knowledge_base/` directory.
         *   ✅ Create `knowledge_base/_template.md`.
-        *   Write initial three FAQ articles in `knowledge_base/` (e.g., `what-is-litecoin.md`, `how-litecoin-differs-from-bitcoin.md`, `understanding-litecoin-wallets.md`).
+        *   ✅ Create `knowledge_base/index.md` outlining 50 high-impact articles.
+        *   Write the initial 50 FAQ articles in `knowledge_base/` based on the `index.md`. (Starting with the first three: `what-is-litecoin.md`, `how-litecoin-differs-from-bitcoin.md`, `understanding-litecoin-wallets.md`).
         *   Update task `M4-FAQ-001` (already done by redefining its scope during the content-first strategy integration).
     *   #### Estimated Effort: (To be determined)
     *   #### Assigned To: (To be determined)
