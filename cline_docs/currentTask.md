@@ -24,7 +24,13 @@
         7.  A new test file, `backend/test_sources_api.py`, is created with tests for each CRUD endpoint.
     *   #### Link to projectRoadmap.md goal(s):
         *   This is a foundational task that supports all major feature milestones by ensuring data integrity and manageability.
-    *   #### Status: To Do
+    *   #### Status: Done
+    *   #### Notes on Completion:
+        *   Implemented the full suite of CRUD endpoints in `backend/api/v1/sources.py`.
+        *   Created `DataSource` and `DataSourceUpdate` Pydantic models in `backend/data_models.py` to handle data validation.
+        *   Refactored the API to use FastAPI's dependency injection for MongoDB connections, which resolved testing issues related to environment variable loading and database access.
+        *   The `PUT` and `DELETE` endpoints correctly remove associated embeddings from the vector store to maintain data integrity.
+        *   Created a comprehensive test suite in `backend/test_sources_api.py` with 11 tests that are all passing, confirming the functionality of the API.
     *   #### Plan:
         *   **Phase 1: Backend Data Model & API Endpoints**
             1.  **Define the `DataSource` Model:**

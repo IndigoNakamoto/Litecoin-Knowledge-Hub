@@ -32,7 +32,7 @@
 *   **Usage:**
     *   Vector storage and search for RAG.
     *   General application data (if needed).
-*   **ORM/ODM:** (To be determined, e.g., Pydantic for FastAPI, `MongoEngine` or direct `pymongo` usage)
+*   **ORM/ODM:** Direct `pymongo` usage for database operations, combined with Pydantic models for data validation and serialization in the FastAPI layer.
 *   **RAG Components:** (This seems like a good place for a dedicated RAG component breakdown)
     *   **Data Ingestion & Processing:**
         *   Markdown documents are loaded using `litecoin_docs_loader.py`, which utilizes the `python-frontmatter` library to parse YAML front matter and extract content. This ensures metadata (title, tags, custom fields) is accurately captured.

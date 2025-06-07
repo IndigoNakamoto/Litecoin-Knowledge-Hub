@@ -34,11 +34,12 @@
 *   `backend/data_ingestion/vector_store_manager.py`: Manages connections to MongoDB Atlas. Facilitates the insertion and retrieval of vector embeddings. Handles deletion of documents based on flattened metadata fields (as `langchain-mongodb` stores metadata at the root document level). Contains a `clear_all_documents()` method to empty a collection.
 *   `backend/ingest_data.py`: A standalone script to orchestrate the data ingestion process, primarily focused on processing the **Curated Knowledge Base**.
 *   `backend/utils/clear_litecoin_docs_collection.py`: A utility script to clear all documents from the `litecoin_docs` collection in MongoDB. It uses the `clear_all_documents` method from `VectorStoreManager`.
-*   `backend/data_models.py`: (Planned) Will contain core Pydantic data models for the application, such as the `DataSource` model.
-*   `backend/api/v1/sources.py`: (Planned) Will contain the API router and endpoints for managing data sources.
+*   `backend/data_models.py`: Contains core Pydantic data models for the application, such as `DataSource` and `DataSourceUpdate`.
+*   `backend/api/v1/sources.py`: Contains the API router and CRUD endpoints for managing data sources. It uses FastAPI's dependency injection to handle database connections and ensures that deleting a data source also removes its associated embeddings from the vector store.
 
 ## Core Data Models & Entities
-*   **`DataSource`** (Planned): A Pydantic model to represent a data source for the RAG pipeline. It will include fields like `name`, `type`, `uri`, and `status`.
+*   **`DataSource`**: A Pydantic model representing a data source for the RAG pipeline. It includes fields like `id`, `name`, `type`, `uri`, `status`, and timestamps.
+*   **`DataSourceUpdate`**: A Pydantic model used for updating a `DataSource`, where all fields are optional.
 *   (Other models for Litecoin data, user queries, etc., will be defined as needed.)
 
 ## Critical Data Flow Diagrams
@@ -63,12 +64,12 @@
     *   **Description**: Receives a user query and processes it through the RAG pipeline.
     *   **Request Body**: `{"query": "string"}`
     *   **Response Body**: `{"answer": "string", "sources": [...]}`
-*   **Data Source Management (Planned):**
-    *   **`POST /api/v1/sources`**: Creates a new data source.
-    *   **`GET /api/v1/sources`**: Retrieves a list of all data sources.
-    *   **`GET /api/v1/sources/{source_id}`**: Retrieves a single data source.
-    *   **`PUT /api/v1/sources/{source_id}`**: Updates a data source.
-    *   **`DELETE /api/v1/sources/{source_id}`**: Deletes a data source and its associated vectorized data.
+*   **Data Source Management:**
+    *   **`POST /api/v1/sources`**: Creates a new data source record.
+    *   **`GET /api/v1/sources`**: Retrieves a list of all data source records.
+    *   **`GET /api/v1/sources/{source_id}`**: Retrieves a single data source record by its ID.
+    *   **`PUT /api/v1/sources/{source_id}`**: Updates an existing data source record using a partial update model.
+    *   **`DELETE /api/v1/sources/{source_id}`**: Deletes a data source record and its associated vectorized data from the vector store.
 
 ## External Services & Dependencies
 *   Google Text Embedding API (text-embedding-004)
@@ -84,6 +85,7 @@
 *   Project Initialization (INIT-001) (6/5/2025) - Initial setup of documentation.
 *   Project Reset & Re-Scaffold (6/5/2025) - Removed initial scaffold due to a Git submodule conflict. Re-scaffolded frontend and backend with a clean Git history, ensuring the monorepo is correctly tracked.
 *   Metadata Ingestion Fix (M4-FAQ-001) (6/6/2025) - Resolved an issue where front matter from Markdown documents in `knowledge_base/` was not being correctly ingested. Updated `litecoin_docs_loader.py` to use the `python-frontmatter` library for robust parsing, ensuring all metadata is captured.
+*   Data Source CRUD API (M4-DATASRC-001) (6/7/2025) - Implemented a full suite of CRUD API endpoints for managing data sources. This includes creating `DataSource` and `DataSourceUpdate` Pydantic models, using FastAPI's dependency injection for database connections, and ensuring that `PUT` and `DELETE` operations maintain data integrity by removing associated embeddings from the vector store.
 
 ## Links to other relevant documentation
 *   `cline_docs/projectRoadmap.md`

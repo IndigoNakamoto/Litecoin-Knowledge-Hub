@@ -7,9 +7,25 @@ from typing import List, Dict, Any
 load_dotenv()
 
 # Import the RAG chain constructor
-from rag_pipeline import get_rag_chain
+from backend.rag_pipeline import RAGPipeline
+from backend.api.v1.sources import router as sources_router
+
+from bson import ObjectId # Import ObjectId
+from fastapi.encoders import jsonable_encoder # Import jsonable_encoder
 
 app = FastAPI()
+
+# Add custom JSON encoder for ObjectId
+app.json_encoders = {
+    ObjectId: str
+}
+
+# Include API routers
+app.include_router(sources_router, prefix="/api/v1/sources", tags=["Data Sources"])
+
+# Initialize RAGPipeline globally or as a dependency
+# For simplicity, initializing globally for now. Consider dependency injection for better testability.
+rag_pipeline_instance = RAGPipeline()
 
 class ChatRequest(BaseModel):
     query: str
@@ -33,12 +49,8 @@ async def chat_endpoint(request: ChatRequest):
     Processes the query through the RAG chain to get a generated response
     and the source documents used.
     """
-    # Get the RAG chain
-    rag_chain = await get_rag_chain()
-    
-    # Invoke the chain with the user's query
-    # The chain now returns a dictionary with "answer" and "context" (source documents)
-    rag_output = await rag_chain.ainvoke(request.query)
+    # Use the globally initialized RAG pipeline instance
+    rag_output = await rag_pipeline_instance.rag_chain_with_source.ainvoke(request.query)
     
     # Transform Langchain Document objects to our Pydantic SourceDocument model
     source_documents = [
