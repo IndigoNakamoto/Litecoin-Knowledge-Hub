@@ -7,7 +7,7 @@ from data_ingestion.twitter_loader import load_twitter_posts # Reason: Import ne
 from data_ingestion.github_loader import load_github_repo_data # Reason: Import new GitHub loader.
 from data_ingestion.web_article_loader import load_web_article_data # Reason: Import new Web Article loader.
 from data_ingestion.embedding_processor import process_documents
-from data_ingestion.vector_store_manager import insert_documents_to_vector_store
+from data_ingestion.vector_store_manager import VectorStoreManager # Corrected import
 from langchain_core.documents import Document # Reason: Import Document for consistent handling.
 
 def main(source_type: str, source_identifier: str):
@@ -70,8 +70,11 @@ def main(source_type: str, source_identifier: str):
     processed_docs = process_documents(documents)
     print(f"Split documents into {len(processed_docs)} chunks.")
 
+    print(f"Initializing VectorStoreManager for db: '{db_name}', collection: '{collection_name}'...")
+    vector_store_manager = VectorStoreManager(db_name=db_name, collection_name=collection_name)
+
     print(f"Inserting documents into MongoDB collection '{collection_name}' in db '{db_name}'...")
-    insert_documents_to_vector_store(processed_docs, collection_name)
+    vector_store_manager.add_documents(processed_docs) # Corrected usage
     print("Data ingestion pipeline completed successfully.")
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@
     *   `GitPython`: For cloning and interacting with Git repositories (e.g., GitHub).
     *   `beautifulsoup4`: For parsing HTML and XML documents (e.g., web scraping).
     *   `lxml`: A fast XML and HTML parser, often used as a backend for BeautifulSoup.
+    *   `python-frontmatter`: For robustly parsing YAML front matter from Markdown files, ensuring metadata like title, tags, and custom fields are correctly extracted.
     *   **RAG Pipeline Specifics:**
         *   **Hierarchical Chunking:** Markdown documents are parsed hierarchically. For each chunk, its parent titles (e.g., "Title: Document Title\nSection: Section Name\nSubsection: Subsection Name") are prepended to the content before embedding. This provides rich contextual information directly into the vector.
         *   **Embedding `task_type`:**
@@ -32,6 +33,17 @@
     *   Vector storage and search for RAG.
     *   General application data (if needed).
 *   **ORM/ODM:** (To be determined, e.g., Pydantic for FastAPI, `MongoEngine` or direct `pymongo` usage)
+*   **RAG Components:** (This seems like a good place for a dedicated RAG component breakdown)
+    *   **Data Ingestion & Processing:**
+        *   Markdown documents are loaded using `litecoin_docs_loader.py`, which utilizes the `python-frontmatter` library to parse YAML front matter and extract content. This ensures metadata (title, tags, custom fields) is accurately captured.
+        *   The extracted content and metadata are then processed by `embedding_processor.py` for hierarchical chunking and embedding.
+    *   **Embedding Model:** Google Text Embedding 004 (`text-embedding-004`) is used.
+        *   Knowledge base documents: `task_type='retrieval_document'`.
+        *   User queries: `task_type='retrieval_query'`.
+    *   **Vector Store:** MongoDB Atlas Vector Search.
+    *   **Retriever:** Implemented via `VectorStoreManager` using similarity search (default k=3).
+    *   **Generator:** Langchain with `ChatGoogleGenerativeAI` (gemini-pro).
+    *   **Orchestration:** Langchain.
 *   **Vector Search Specifics:**
     *   **Metadata Handling:** When using `langchain-mongodb` (`MongoDBAtlasVectorSearch`), metadata from Langchain `Document` objects (e.g., parsed from Markdown frontmatter) is **flattened** into the root of the MongoDB document. It is *not* stored in a nested `metadata` sub-document. For example, `Document(page_content="...", metadata={"author": "Cline"})` will result in a MongoDB document like `{"text": "...", "embedding": [...], "author": "Cline"}`.
     *   **Atlas Vector Search Index Definition:** To enable filtering on these flattened metadata fields, the Atlas Vector Search index must define filterable paths at the root level.
@@ -81,6 +93,7 @@
 *   **Python/FastAPI:** Chosen for backend due to Python's strong AI/ML ecosystem and FastAPI's high performance and ease of use for building APIs.
 *   **Google Text Embedding 004:** Specified for generating text embeddings for the RAG system. Critical for its performance is the use of `task_type='retrieval_document'` for stored content and `task_type='retrieval_query'` for user queries, along with a hierarchical chunking strategy for source documents.
 *   **MongoDB:** Chosen for its flexibility and capabilities for vector search, suitable for RAG applications.
+*   **`python-frontmatter`**: Added to ensure reliable parsing of YAML front matter from Markdown source files, as the default Langchain loaders did not consistently extract all necessary metadata for the project's specific file structure. This is crucial for populating document chunks with accurate `title`, `tags`, `last_updated`, etc.
 
 ## Version Control System & Branching Strategy
 *   **VCS:** Git (assumed, hosted on GitHub/GitLab/etc. - To be confirmed)

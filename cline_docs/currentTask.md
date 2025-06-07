@@ -102,11 +102,16 @@
     *   #### Link to projectRoadmap.md goal(s):
         *   Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)
         *   Feature 5: Curated Knowledge Base
-    *   #### Status: To Do
+    *   #### Status: Done
     *   #### Plan:
-        *   Finalize content of initial FAQ articles in `knowledge_base/`.
-        *   Use `ingest_data.py` to load data from `knowledge_base/`.
-        *   Verify ingestion in MongoDB.
+        *   ✅ Finalize content of initial FAQ articles in `knowledge_base/`. (Completed as part of M4-KB-001)
+        *   ✅ Use `ingest_data.py` to load data from `knowledge_base/`.
+        *   ✅ Verify ingestion in MongoDB (implicitly done by checking vector store content and metadata via `test_rag_pipeline.py`).
+        *   ✅ Confirmed front matter metadata is correctly ingested with document chunks.
+    *   #### Notes on Completion:
+        *   Initial ingestion of 3+ foundational articles from `knowledge_base/` is complete.
+        *   Corrected an issue where `UnstructuredMarkdownLoader` was not parsing front matter. Switched to `python-frontmatter` library in `litecoin_docs_loader.py` which resolved the problem.
+        *   Verified via `test_rag_pipeline.py` that front matter (title, tags, last_updated) is now present in the metadata of the ingested document chunks.
     *   #### Estimated Effort: (To be determined)
     *   #### Assigned To: (To be determined)
     *   #### Priority: High

@@ -14,7 +14,7 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 # --- Setup Logger ---
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.INFO) # Reverted to INFO
 handler = logging.StreamHandler()
 formatter = logging.Formatter('[%(asctime)s] %(levelname)s:%(name)s:%(message)s')
 handler.setFormatter(formatter)

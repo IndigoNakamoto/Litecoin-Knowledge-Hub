@@ -26,8 +26,8 @@
 ## Key Modules/Components & Their Responsibilities
 *   `backend/rag_pipeline.py`: Contains the core logic for the RAG (Retrieval-Augmented Generation) pipeline. This includes orchestrating Langchain chains, using an updated prompt template, and ensuring user queries are embedded with `task_type='retrieval_query'`.
 *   `backend/main.py`: The main entry point for the FastAPI backend, responsible for defining API endpoints and handling incoming requests.
-*   `backend/data_ingestion/litecoin_docs_loader.py`: Responsible for loading raw text data from various Litecoin-related sources.
-*   `backend/data_ingestion/embedding_processor.py`: Handles hierarchical chunking of Markdown documents (prepending titles/sections to content) and standard text splitting for other formats. Parses YAML frontmatter from Markdown, converting `published_at` to `datetime` objects. Generates vector embeddings using Google Text Embedding 004 with `task_type='retrieval_document'` for knowledge base content.
+*   `backend/data_ingestion/litecoin_docs_loader.py`: Responsible for loading raw text data from Markdown files or directories. It now utilizes the `python-frontmatter` library to accurately parse YAML front matter from these files, ensuring that metadata (like title, tags, custom fields) is correctly extracted and associated with the document content before further processing.
+*   `backend/data_ingestion/embedding_processor.py`: Handles hierarchical chunking of Markdown documents (prepending titles/sections to content) and standard text splitting for other formats. It receives documents with pre-parsed front matter (from `litecoin_docs_loader.py`) and further processes this metadata, including converting `published_at` to `datetime` objects. Generates vector embeddings using Google Text Embedding 004 with `task_type='retrieval_document'` for knowledge base content.
 *   `backend/data_ingestion/vector_store_manager.py`: Manages connections to MongoDB Atlas. Facilitates the insertion and retrieval of vector embeddings. Handles deletion of documents based on flattened metadata fields (as `langchain-mongodb` stores metadata at the root document level).
 *   `backend/ingest_data.py`: A standalone script to orchestrate the data ingestion process, primarily focused on processing the **Curated Knowledge Base**.
 *   `backend/data_models.py`: (Planned) Will contain core Pydantic data models for the application, such as the `DataSource` model.
@@ -79,6 +79,7 @@
 ## Recent Significant Changes
 *   Project Initialization (INIT-001) (6/5/2025) - Initial setup of documentation.
 *   Project Reset & Re-Scaffold (6/5/2025) - Removed initial scaffold due to a Git submodule conflict. Re-scaffolded frontend and backend with a clean Git history, ensuring the monorepo is correctly tracked.
+*   Metadata Ingestion Fix (M4-FAQ-001) (6/6/2025) - Resolved an issue where front matter from Markdown documents in `knowledge_base/` was not being correctly ingested. Updated `litecoin_docs_loader.py` to use the `python-frontmatter` library for robust parsing, ensuring all metadata is captured.
 
 ## Links to other relevant documentation
 *   `cline_docs/projectRoadmap.md`
