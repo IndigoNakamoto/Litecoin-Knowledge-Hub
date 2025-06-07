@@ -11,7 +11,7 @@ This milestone focuses on implementing the first core feature: providing answers
 *   Refine RAG pipeline for accurate retrieval and generation of FAQ answers.
 
 ## Estimated Time
-30 hours
+30 hours (5 hours so far)
 
 ## Dependencies
 *   Completed: Milestone 3 (Core RAG Pipeline Implementation)
