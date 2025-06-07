@@ -25,7 +25,29 @@
     *   #### Link to projectRoadmap.md goal(s):
         *   This is a foundational task that supports all major feature milestones by ensuring data integrity and manageability.
     *   #### Status: To Do
-    *   #### Plan: (As defined in the approved plan)
+    *   #### Plan:
+        *   **Phase 1: Backend Data Model & API Endpoints**
+            1.  **Define the `DataSource` Model:**
+                *   Create `backend/data_models.py`.
+                *   Define a `DataSource` Pydantic model with fields: `name` (str), `type` (str, e.g., 'web', 'github', 'markdown'), `uri` (str, unique identifier), `status` (str, e.g., 'active', 'inactive'), `created_at` (datetime), `updated_at` (datetime).
+            2.  **Create a Dedicated API Router for Sources:**
+                *   Create `backend/api/v1/sources.py`.
+            3.  **Implement CRUD API Endpoints in `backend/api/v1/sources.py`:**
+                *   `POST /api/v1/sources`: Create a new data source record in a new MongoDB collection `data_sources`.
+                *   `GET /api/v1/sources`: Retrieve all data source records.
+                *   `GET /api/v1/sources/{source_id}`: Retrieve a single data source by ID.
+                *   `PUT /api/v1/sources/{source_id}`: Update an existing data source.
+                *   `DELETE /api/v1/sources/{source_id}`: Delete a data source record.
+            4.  **Integrate Router into `backend/main.py`:**
+                *   Include the `sources` router in the main FastAPI application.
+        *   **Phase 2: Ensuring Data Integrity on Deletion**
+            1.  **Link Source Deletion to Vector Store:**
+                *   Modify the `DELETE /api/v1/sources/{source_id}` endpoint to remove all associated document chunks from the `litecoin_docs` vector store (MongoDB collection) based on metadata (source identifier).
+        *   **Phase 3: Documentation & Testing**
+            1.  **Update Project Documentation:** (Already partially done by adding this task and updating codebaseSummary.md)
+                *   Ensure `cline_docs/codebaseSummary.md` accurately reflects the new files, models, and endpoints upon completion.
+            2.  **Create API Tests:**
+                *   Create `backend/test_sources_api.py` with Pytest tests for all CRUD endpoints, including validation of data integrity on deletion.
     *   #### Estimated Effort: (To be determined)
     *   #### Assigned To: (To be determined)
     *   #### Priority: High
