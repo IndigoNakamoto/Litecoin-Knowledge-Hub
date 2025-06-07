@@ -46,9 +46,11 @@
         *   ✅ `knowledge_base/` directory created.
         *   ✅ `knowledge_base/_template.md` created.
         *   ✅ `knowledge_base/index.md` created, outlining 50 high-impact articles.
-        *   ✅ Created `knowledge_base/what-is-litecoin.md`.
-        *   ✅ Created `knowledge_base/how-litecoin-differs-from-bitcoin.md`.
-        *   ✅ Created `knowledge_base/understanding-litecoin-wallets.md`.
+        *   ✅ Created `knowledge_base/001-.md`.
+        *   ✅ Created `knowledge_base/002-.md`.
+        *   ✅ Created `knowledge_base/004-.md`.
+        *   ✅ Created `knowledge_base/006-.md`.
+        *   ✅ Created `knowledge_base/045-.md`.
     *   #### Plan:
         *   ✅ Create `knowledge_base/` directory.
         *   ✅ Create `knowledge_base/_template.md`.
