@@ -17,7 +17,8 @@
     *   `techStack.md`: Key technology choices and justifications.
     *   `codebaseSummary.md`: Overview of project structure and components.
     *   `task_archive.md`: Archive of completed tasks.
-*   `knowledge_base/`: Contains the curated knowledge base articles.
+*   `knowledge_base/`: Contains the curated knowledge base.
+    *   `articles/`: Subdirectory containing the curated markdown articles.
     *   `_template.md`: Template for new knowledge base articles.
     *   `index.md`: Master index of all knowledge base articles.
     *   `deep_research/`: Subdirectory for articles initiated by research tools (e.g., DeepSearch). These articles undergo the standard human curation and vetting process before being fully integrated.

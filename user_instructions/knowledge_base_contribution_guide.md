@@ -22,18 +22,8 @@ To ensure consistency and optimal processing by our RAG pipeline, all articles m
     *   Example: `what-is-mweb.md`, `understanding-scrypt-algorithm.md`.
 *   **Frontmatter (YAML):**
     *   Every article must begin with YAML frontmatter enclosed in triple-dashed lines (`---`).
-    *   Required fields:
-        *   `title`: The main title of the article (e.g., "Understanding Litecoin's MimbleWimble Extension Blocks (MWEB)").
-        *   `tags`: A list of relevant keywords or categories (e.g., `["mweb", "privacy", "fungibility", "protocol"]`).
-        *   `last_updated`: The date the article was last significantly revised, in `YYYY-MM-DD` format (e.g., `2025-06-06`).
-    *   Example:
-        ```yaml
-        ---
-        title: Understanding Litecoin's MimbleWimble Extension Blocks (MWEB)
-        tags: ["mweb", "privacy", "fungibility", "protocol"]
-        last_updated: 2025-06-06
-        ---
-        ```
+    *   The specific fields required in the frontmatter are defined in the template file `knowledge_base/_template.md`. Please refer to this template for the standard set of metadata fields such as `title`, `id`, `category`, `tags`, `summary`, `last_updated`, `author`, `source`, `language`, and `relevance_score`.
+    *   Ensure all fields specified in `knowledge_base/_template.md` are included and correctly formatted.
 *   **Headings:**
     *   Each article must have exactly one Level 1 Heading (`# Main Title`), which should match the `title` in the frontmatter.
     *   Use Level 2 Headings (`## Section`) and Level 3 Headings (`### Subsection`) to logically structure the content.
@@ -88,15 +78,9 @@ To accelerate content creation, especially for comprehensive topics, AI-powered 
     *   Instruct the AI to focus on Litecoin-specific information and avoid general crypto content unless for direct comparison.
 *   **Initial Output:** Save the raw output from DeepSearch as a Markdown file in `knowledge_base/deep_research/`.
 *   **Mandatory Frontmatter for DeepSearch Drafts:**
-    In addition to the standard frontmatter (`title`, `tags`, `last_updated`), articles originating from DeepSearch **must** include:
-    ```yaml
-    source_type: deepsearch_generated
-    original_deepsearch_query: "The exact query used to generate this draft."
-    vetting_status: draft # Other statuses: pending_review, vetted
-    # --- Fields below to be filled by human vetter ---
-    # vetter_name: ""
-    # vetting_date: "" 
-    ```
+    *   Articles originating from DeepSearch must include all standard frontmatter fields as defined in `knowledge_base/_template.md`.
+    *   In addition, they **must** include specific fields to track their origin and vetting status. These additional fields are defined in the `knowledge_base/deep_research/_template_deepsearch.md` template. Please refer to this template for fields such as `source_type`, `original_deepsearch_query`, `vetting_status`, `vetter_name`, and `vetting_date`.
+    *   Ensure all fields specified in both `knowledge_base/_template.md` (for common fields) and `knowledge_base/deep_research/_template_deepsearch.md` (for DeepSearch-specific fields) are included and correctly formatted.
 *   **Human Vetting and Curation Process (CRITICAL):**
     1.  **Selection:** Pick a `draft` article from `knowledge_base/deep_research/`.
     2.  **Verification:** Thoroughly cross-check all facts, figures, and technical details against trusted primary sources (e.g., litecoin.org, official GitHub, reputable exchanges/market data sites).
@@ -124,7 +108,9 @@ Follow these steps to contribute new manually-written content or update existing
 2.  **Create/Locate File:**
     *   **New Article:** Create a new `.md` file in the `knowledge_base/` directory using the specified filename convention.
     *   **Existing Article:** Open the relevant file in `knowledge_base/`.
-3.  **Use the Template:** For new articles, it's recommended to start by copying the content of `knowledge_base/_template.md` (if it exists and is up-to-date) or by ensuring you include the required frontmatter.
+3.  **Use the Template:**
+    *   For new, manually-written articles, start by copying the content of `knowledge_base/_template.md`. This ensures you include all required frontmatter fields and follow the standard article structure.
+    *   For articles initiated by DeepSearch, use `knowledge_base/deep_research/_template_deepsearch.md` as your starting point, or ensure your generated file's frontmatter aligns with it.
 4.  **Write/Edit Content:**
     *   Adhere strictly to the structural, formatting, and style guidelines outlined in this document.
     *   Focus on accuracy, clarity, and objectivity.

@@ -85,13 +85,17 @@ if __name__ == '__main__':
     # This allows the script to be run from the project root or from backend/data_ingestion
     current_script_path = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.normpath(os.path.join(current_script_path, "..", ".."))
-    kb_path_from_root = os.path.join(project_root, "knowledge_base")
+    # Path for loading main articles for testing purposes
+    kb_articles_path_from_root = os.path.join(project_root, "knowledge_base", "articles")
+    # Path for creating dummy deep_research files, relative to knowledge_base
+    kb_root_path_for_deep_research_test = os.path.join(project_root, "knowledge_base")
+
 
     print(f"Project root determined as: {project_root}")
-    print(f"Knowledge base path determined as: {kb_path_from_root}")
+    print(f"Knowledge base articles path for testing determined as: {kb_articles_path_from_root}")
 
     # Create dummy files for testing the vetting_status logic
-    deep_research_path = os.path.join(kb_path_from_root, "deep_research")
+    deep_research_path = os.path.join(kb_root_path_for_deep_research_test, "deep_research")
     if not os.path.exists(deep_research_path):
         os.makedirs(deep_research_path)
 
@@ -125,10 +129,10 @@ This is a draft article from deep_research and should be skipped.
     with open(draft_file_path, "w") as f:
         f.write(draft_file_content)
 
-    print(f"\nAttempting to load from directory: {os.path.abspath(kb_path_from_root)}")
-    if os.path.exists(kb_path_from_root):
-        documents_from_dir = load_litecoin_docs(kb_path_from_root)
-        print(f"\n--- Summary of Loaded Documents ({len(documents_from_dir)} total) ---")
+    print(f"\nAttempting to load articles from directory: {os.path.abspath(kb_articles_path_from_root)}")
+    if os.path.exists(kb_articles_path_from_root):
+        documents_from_dir = load_litecoin_docs(kb_articles_path_from_root)
+        print(f"\n--- Summary of Loaded Articles ({len(documents_from_dir)} total) ---")
         for i, doc in enumerate(documents_from_dir):
             print(f"  Doc {i+1}: Source: {doc.metadata.get('source', 'N/A')}, Title: {doc.metadata.get('title', 'N/A')}, Vetting: {doc.metadata.get('vetting_status', 'N/A')}")
             # print(f"    Content: {doc.page_content[:80] + '...' if len(doc.page_content) > 80 else doc.page_content}")
@@ -144,7 +148,7 @@ This is a draft article from deep_research and should be skipped.
         print(f"  Loaded {len(single_draft_doc)} doc(s). Should be 0.")
 
     else:
-        print(f"Directory '{kb_path_from_root}' not found. Skipping directory loading example.")
+        print(f"Articles directory '{kb_articles_path_from_root}' not found. Skipping articles loading example.")
     
     # Clean up dummy files
     if os.path.exists(vetted_file_path):
