@@ -93,3 +93,56 @@ This document serves as the master index for all articles in the Litecoin RAG Ch
 * **Expanded Foundational Topics**
     * `069-understanding-fungibility-in-litecoin.md`: What is Fungibility and Why Does it Matter for Litecoin?
     * `070-litecoin-scalability-solutions-overview.md`: An Overview of Litecoin's Scalability Solutions
+
+### 8. Litecoin Mining (6 Articles)
+* `071-mining-hardware.md`: Best hardware for mining Litecoin
+* `072-mining-software.md`: Popular mining software for Litecoin
+* `073-joining-mining-pools.md`: How to join and choose a Litecoin mining pool
+* `074-mining-profitability.md`: Calculating Litecoin mining profitability
+* `075-solo-vs-pool-mining.md`: Pros and cons of solo mining vs. pool mining
+* `076-mining-difficulty-adjustment.md`: How Litecoin’s mining difficulty adjusts
+
+### 9. Litecoin Development (6 Articles)
+* `077-building-on-litecoin.md`: How to build decentralized applications (dApps) on Litecoin
+* `078-litecoin-api-guide.md`: Using Litecoin’s API for blockchain queries and transactions
+* `079-integrating-litecoin-payments.md`: How to accept Litecoin payments on websites or apps
+* `080-litecoin-smart-contracts.md`: Exploring smart contract capabilities on Litecoin
+* `081-litecoin-node-setup.md`: Setting up and running a Litecoin full node
+* `082-litecoin-cli-commands.md`: Essential Litecoin CLI commands for developers
+
+### 10. Litecoin Use Cases (5 Articles)
+* `083-remittances-with-litecoin.md`: Using Litecoin for cross-border payments
+* `084-micropayments.md`: Litecoin’s role in micropayments and tipping
+* `085-gaming-and-litecoin.md`: Litecoin in gaming (e.g., in-game purchases, NFTs)
+* `086-litecoin-for-merchants.md`: Benefits of accepting Litecoin for businesses
+* `087-litecoin-in-defi.md`: Litecoin’s potential in decentralized finance (DeFi)
+
+### 11. Litecoin Community (4 Articles)
+* `088-litecoin-forums.md`: Popular Litecoin forums and discussion boards
+* `089-social-media-channels.md`: Official and community-run social media channels
+* `090-litecoin-meetups.md`: How to find or organize Litecoin meetups
+* `091-litecoin-events.md`: Major Litecoin conferences and events
+
+### 12. Litecoin News and Updates (3 Articles)
+* `092-recent-announcements.md`: Latest Litecoin Foundation announcements
+* `093-development-updates.md`: Quarterly development updates from core developers
+* `094-litecoin-blog-highlights.md`: Summaries of recent blog posts from litecoin.com
+
+### 13. Litecoin Tutorials (5 Articles)
+* `095-setting-up-a-wallet.md`: How to set up a Litecoin wallet
+* `096-making-your-first-transaction.md`: Sending and receiving Litecoin: A beginner’s guide
+* `097-mining-litecoin.md`: A simple guide to mining Litecoin
+* `098-securing-your-wallet.md`: Best practices for wallet security
+* `099-using-a-block-explorer.md`: How to use a Litecoin block explorer
+
+### 14. Litecoin FAQs (10 Articles)
+* `100-faq-buying-litecoin.md`: How do I buy Litecoin?
+* `101-faq-transaction-fees.md`: Why are my transaction fees high/low?
+* `102-faq-lost-wallet.md`: What if I lose access to my wallet?
+* `103-faq-halving-impact.md`: How does halving affect Litecoin’s price?
+* `104-faq-mweb-privacy.md`: Is MWEB truly private?
+* `105-faq-mining-rewards.md`: How are mining rewards distributed?
+* `106-faq-litecoin-vs-bitcoin.md`: Why choose Litecoin over Bitcoin?
+* `107-faq-scams.md`: How to avoid Litecoin-related scams?
+* `108-faq-tax-implications.md`: Are there tax implications for using Litecoin?
+* `109-faq-future-of-litecoin.md`: What’s the future of Litecoin?
