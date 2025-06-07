@@ -92,31 +92,6 @@
     *   #### Estimated Effort: (To be determined)
     *   #### Assigned To: (To be determined)
     *   #### Priority: Highest
-
-*   ### Task ID / Name: `M4-FAQ-001` - Create and Ingest Curated Content for Litecoin Basics & FAQ
-    *   #### Detailed Description & Business Context:
-        To implement the "Litecoin Basics & FAQ" feature, the RAG pipeline needs to be populated with high-quality, curated knowledge. This task involves creating well-structured Markdown documents for fundamental Litecoin topics within the `knowledge_base/` directory and then ingesting this curated data into the MongoDB vector store.
-    *   #### Acceptance Criteria:
-        1.  The foundational articles created in `M4-KB-001` (e.g., `what-is-litecoin.md`, `how-litecoin-differs-from-bitcoin.md`, `understanding-litecoin-wallets.md`) are finalized and meet quality standards in the `knowledge_base/articles/` directory.
-        2.  The `ingest_data.py` script is used to load data specifically from the `knowledge_base/articles/` directory.
-        3.  Verify that the data from these curated articles is present in the MongoDB vector store.
-        4.  Document any specific ingestion notes in this task's "Notes on Completion".
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)
-        *   Feature 5: Curated Knowledge Base
-    *   #### Status: Done
-    *   #### Plan:
-        *   ✅ Finalize content of initial FAQ articles in `knowledge_base/articles/`. (Completed as part of M4-KB-001)
-        *   ✅ Use `ingest_data.py` to load data from `knowledge_base/articles/`.
-        *   ✅ Verify ingestion in MongoDB (implicitly done by checking vector store content and metadata via `test_rag_pipeline.py`).
-        *   ✅ Confirmed front matter metadata is correctly ingested with document chunks.
-    *   #### Notes on Completion:
-        *   Initial ingestion of foundational articles from `knowledge_base/articles/` is complete.
-        *   Corrected an issue where `UnstructuredMarkdownLoader` was not parsing front matter. Switched to `python-frontmatter` library in `litecoin_docs_loader.py` which resolved the problem.
-        *   Verified via `test_rag_pipeline.py` that front matter (title, tags, last_updated) is now present in the metadata of the ingested document chunks.
-    *   #### Estimated Effort: (To be determined)
-    *   #### Assigned To: (To be determined)
-    *   #### Priority: High
     
 *   ### Task ID: `M4-UI-001`
     *   #### Name: Develop Frontend Chat UI Components
@@ -173,6 +148,31 @@
     *   #### Priority: High
 
 ## Recently Completed Tasks:
+
+*   ### Task ID / Name: `M4-FAQ-001` - Create and Ingest Curated Content for Litecoin Basics & FAQ
+    *   #### Detailed Description & Business Context:
+        To implement the "Litecoin Basics & FAQ" feature, the RAG pipeline needs to be populated with high-quality, curated knowledge. This task involves creating well-structured Markdown documents for fundamental Litecoin topics within the `knowledge_base/` directory and then ingesting this curated data into the MongoDB vector store.
+    *   #### Acceptance Criteria:
+        1.  The foundational articles created in `M4-KB-001` (e.g., `what-is-litecoin.md`, `how-litecoin-differs-from-bitcoin.md`, `understanding-litecoin-wallets.md`) are finalized and meet quality standards in the `knowledge_base/articles/` directory.
+        2.  The `ingest_data.py` script is used to load data specifically from the `knowledge_base/articles/` directory.
+        3.  Verify that the data from these curated articles is present in the MongoDB vector store.
+        4.  Document any specific ingestion notes in this task's "Notes on Completion".
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)
+        *   Feature 5: Curated Knowledge Base
+    *   #### Status: Done
+    *   #### Plan:
+        *   ✅ Finalize content of initial FAQ articles in `knowledge_base/articles/`. (Completed as part of M4-KB-001)
+        *   ✅ Use `ingest_data.py` to load data from `knowledge_base/articles/`.
+        *   ✅ Verify ingestion in MongoDB (implicitly done by checking vector store content and metadata via `test_rag_pipeline.py`).
+        *   ✅ Confirmed front matter metadata is correctly ingested with document chunks.
+    *   #### Notes on Completion:
+        *   Initial ingestion of foundational articles from `knowledge_base/articles/` is complete.
+        *   Corrected an issue where `UnstructuredMarkdownLoader` was not parsing front matter. Switched to `python-frontmatter` library in `litecoin_docs_loader.py` which resolved the problem.
+        *   Verified via `test_rag_pipeline.py` that front matter (title, tags, last_updated) is now present in the metadata of the ingested document chunks.
+    *   #### Estimated Effort: (To be determined)
+    *   #### Assigned To: (To be determined)
+    *   #### Priority: High
 
 *   ### Task ID: `M3-DOC-001`
     *   #### Name: Document Metadata Filtering Enhancements

@@ -210,7 +210,52 @@ The project's core documentation is maintained in the `cline_docs/` directory:
 *   `codebaseSummary.md`: Provides an overview of the project's structure, key components, data flow, and dependencies.
 
 ## Contributing
-(Contribution guidelines will be added here.)
 
+### How to Contribute to the Knowledge Base
+
+The Litecoin RAG Chat aims to be the most reliable and accurate source of information for Litecoin. This is achieved through a "content-first" strategy, where all information in the `knowledge_base/` directory is human-vetted and structured for optimal AI processing.
+
+**1. Core Principles for Content:**
+*   **Objectivity:** Present factual information without bias.
+*   **Accuracy:** All statements must be thoroughly researched and verifiable, citing primary sources where possible.
+*   **Clarity:** Write for a broad audience, explaining complex concepts simply without sacrificing technical correctness. Define jargon on first use.
+*   **Conciseness:** Be clear and to the point, avoiding unnecessary verbosity.
+
+**2. Article Structure:**
+All articles must adhere to a strict structure for consistency and optimal RAG pipeline processing:
+*   **Filename:** Use lowercase, hyphen-separated words (e.g., `what-is-mweb.md`).
+*   **Frontmatter (YAML):** Every article must begin with YAML frontmatter enclosed in `---`. Refer to `knowledge_base/_template.md` for required fields (`title`, `id`, `category`, `tags`, `summary`, `last_updated`, `author`, `source`, `language`, `relevance_score`).
+*   **Headings:**
+    *   Exactly one Level 1 Heading (`# Main Title`), matching the `title` in frontmatter.
+    *   Use Level 2 (`## Section`) and Level 3 (`### Subsection`) headings for logical content structure. This hierarchical structure is crucial for the AI's contextual understanding during retrieval.
+
+**3. Content Formatting and Style:**
+*   **Markdown:** Use standard Markdown.
+*   **Links:** Use descriptive text (e.g., `[Litecoin Improvement Proposals](URL)`).
+*   **Code Snippets:** Use backticks (`` `inline code` ``) and triple backticks for code blocks (```language\ncode\n```).
+*   **Lists, Emphasis, Blockquotes, Tables:** Use standard Markdown syntax.
+
+**4. Using AI Tools (e.g., DeepSearch) for Initial Drafts:**
+AI tools can accelerate content creation, but drafts **must** undergo rigorous human vetting.
+*   **Placement:** Place AI-initiated drafts in `knowledge_base/deep_research/`.
+*   **Prompt Engineering:** Craft precise prompts to guide the AI.
+*   **Mandatory Frontmatter:** Include all standard frontmatter fields from `knowledge_base/_template.md` and additional DeepSearch-specific fields from `knowledge_base/deep_research/_template_deepsearch.md` (e.g., `source_type`, `original_deepsearch_query`, `vetting_status`, `vetter_name`, `vetting_date`).
+*   **Human Vetting Process (CRITICAL):**
+    1.  **Selection:** Pick a `draft` article.
+    2.  **Verification:** Cross-check all facts against trusted primary sources.
+    3.  **Correction & Enhancement:** Correct inaccuracies, fill gaps, rewrite for clarity, and ensure objectivity.
+    4.  **Structuring for RAG:** Ensure adherence to heading structure and formatting.
+    5.  **Metadata Update:** Change `vetting_status` to `vetted`, fill `vetter_name`, `vetting_date`, and update `last_updated`.
+*   **Conditional Ingestion:** Only articles with `vetting_status: vetted` are processed by the main data ingestion pipeline.
+
+**5. General Contribution Workflow:**
+1.  **Identify a Need:** Determine new topics or updates needed. Consult `knowledge_base/index.md` for a categorized list of articles to write and fill out.
+2.  **Create/Locate File:** Create a new `.md` file in `knowledge_base/articles/` or `knowledge_base/deep_research/` (depending on origin) or open an existing one.
+3.  **Use the Template:** Copy `knowledge_base/_template.md` for new articles, or ensure DeepSearch drafts align with `knowledge_base/deep_research/_template_deepsearch.md`.
+4.  **Write/Edit Content:** Adhere to all guidelines.
+5.  **Local Verification (Recommended):** Run `python ingest_data.py --source_type markdown --source_identifier ../knowledge_base` from `backend/` to check for parsing errors.
+6.  **Submit for Review:** Commit changes with a clear message, push to your branch, and open a Pull Request (PR) against the main repository. Explain your contribution in the PR description.
+
+This detailed process ensures the knowledge base remains a high-quality, reliable resource for the Litecoin RAG Chat.
 ## License
 (License information will be added here.)
