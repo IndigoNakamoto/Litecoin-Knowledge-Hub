@@ -11,6 +11,11 @@
     *   `requirements.txt`: Python dependencies.
     *   `rag_pipeline.py`: Encapsulates Langchain-related logic for the RAG pipeline.
 *   `cline_docs/`: Contains project documentation.
+    *   `projectRoadmap.md`: High-level project vision, goals, and progress.
+    *   `currentTask.md`: Details of current objectives and active tasks.
+    *   `techStack.md`: Key technology choices and justifications.
+    *   `codebaseSummary.md`: Overview of project structure and components.
+    *   `task_archive.md`: Archive of completed tasks.
 *   `cline_agent_workspace/`: Contains agent's operational files.
 *   `reference_docs/`: Contains documentation for frameworks, services, and APIs used in the project.
 *   `user_instructions/`: Contains instructions for the user.
@@ -62,3 +67,4 @@
 *   `cline_docs/projectRoadmap.md`
 *   `cline_docs/techStack.md`
 *   `cline_docs/currentTask.md`
+*   `cline_docs/task_archive.md`
