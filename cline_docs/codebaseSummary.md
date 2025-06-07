@@ -24,10 +24,10 @@
 *   `user_instructions/`: Contains instructions for the user.
 
 ## Key Modules/Components & Their Responsibilities
-*   `backend/rag_pipeline.py`: Contains the core logic for the RAG (Retrieval-Augmented Generation) pipeline, including the definition and orchestration of Langchain chains.
+*   `backend/rag_pipeline.py`: Contains the core logic for the RAG (Retrieval-Augmented Generation) pipeline. This includes orchestrating Langchain chains, using an updated prompt template, and ensuring user queries are embedded with `task_type='retrieval_query'`.
 *   `backend/main.py`: The main entry point for the FastAPI backend, responsible for defining API endpoints and handling incoming requests.
 *   `backend/data_ingestion/litecoin_docs_loader.py`: Responsible for loading raw text data from various Litecoin-related sources.
-*   `backend/data_ingestion/embedding_processor.py`: Handles text splitting and generates vector embeddings using Google Text Embedding 004.
+*   `backend/data_ingestion/embedding_processor.py`: Handles hierarchical chunking of Markdown documents (prepending titles/sections to content) and standard text splitting for other formats. Generates vector embeddings using Google Text Embedding 004 with `task_type='retrieval_document'` for knowledge base content.
 *   `backend/data_ingestion/vector_store_manager.py`: Manages connections to MongoDB Atlas and facilitates the insertion and retrieval of vector embeddings.
 *   `backend/ingest_data.py`: A standalone script to orchestrate the data ingestion process, primarily focused on processing the **Curated Knowledge Base**.
 *   `backend/data_models.py`: (Planned) Will contain core Pydantic data models for the application, such as the `DataSource` model.
@@ -42,10 +42,10 @@
     ```mermaid
     graph TD
         A[Raw Data Sources: GitHub, Docs, Articles] -->|Research & Synthesis| B(Human Curation & Writing);
-        B -->|Structured for AI| C[Curated Knowledge Base: 'Golden' Articles];
-        C -->|ingest_data.py| D[RAG Pipeline: Chunking & Embedding];
+        B -->|Structured for AI| C[Curated Knowledge Base: 'Golden' Articles in Markdown];
+        C -->|ingest_data.py| D[RAG Pipeline: Hierarchical Chunking (Markdown) / Text Splitting & Embedding with 'retrieval_document' task_type];
         D --> E[MongoDB Vector Store];
-        F[User Query] --> G[API Backend];
+        F[User Query] -->|Embed with 'retrieval_query' task_type| G[API Backend];
         G -->|Similarity Search| E;
         E -->|Retrieve Context| G;
         G -->|Generate Answer| H[LLM];

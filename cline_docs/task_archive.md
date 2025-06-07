@@ -1,5 +1,35 @@
 ## Recently Completed Tasks:
 
+*   ### Task ID: `M4-RAG-OPT-001`
+    *   #### Name: Implement Advanced RAG Pipeline Optimizations
+    *   #### Detailed Description & Business Context:
+        Upgrade the data ingestion and retrieval pipeline based on expert recommendations for `text-embedding-004`. This involves implementing a hierarchical chunking strategy for Markdown files and ensuring the correct `task_type` parameter is used during embedding to improve retrieval accuracy.
+    *   #### Acceptance Criteria:
+        1.  `backend/data_ingestion/embedding_processor.py` is updated to implement hierarchical chunking for Markdown documents, prepending titles to each chunk.
+        2.  `backend/data_ingestion/embedding_processor.py` is updated to use `task_type='retrieval_document'` when embedding document chunks.
+        3.  `backend/rag_pipeline.py` is updated to use `task_type='retrieval_query'` when embedding user queries.
+        4.  The RAG prompt template in `backend/rag_pipeline.py` is updated to the recommended robust version.
+        5.  `cline_docs/techStack.md` is updated to reflect these new RAG pipeline details.
+        6.  `cline_docs/codebaseSummary.md` is updated to reflect these new RAG pipeline details.
+        7.  `user_instructions/knowledge_base_contribution_guide.md` is updated to explain the importance of Markdown structure for AI performance.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 3: Core RAG Pipeline Implementation (Enhancement)
+        *   Feature 5: Curated Knowledge Base (Foundation)
+    *   #### Status: Completed (6/6/2025)
+    *   #### Plan:
+        *   ✅ Modify `backend/data_ingestion/embedding_processor.py` for hierarchical chunking and `retrieval_document` task type.
+        *   ✅ Modify `backend/rag_pipeline.py` for `retrieval_query` task type and updated prompt.
+        *   ✅ Update `cline_docs/techStack.md`.
+        *   ✅ Update `cline_docs/codebaseSummary.md`.
+        *   ✅ Update `user_instructions/knowledge_base_contribution_guide.md`.
+    *   #### Estimated Effort: (To be determined)
+    *   #### Assigned To: (To be determined)
+    *   #### Priority: Highest
+    *   #### Notes on Completion:
+        *   All code changes implemented as planned.
+        *   All relevant documentation (`techStack.md`, `codebaseSummary.md`, `knowledge_base_contribution_guide.md`) updated.
+        *   This task significantly enhances the RAG pipeline's foundation for future content ingestion and query processing.
+
 *   ### Task ID / Name: `RAG-004` - Enhance RAG Pipeline Output with Source Documents
     *   #### Detailed Description & Business Context:
         Modify the RAG pipeline and API to return not just the generated answer, but also the source documents (content and metadata) that were retrieved and used as context by the LLM. This enhances transparency and allows users to verify the information.

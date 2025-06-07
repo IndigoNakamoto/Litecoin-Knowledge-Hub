@@ -19,6 +19,12 @@
     *   `GitPython`: For cloning and interacting with Git repositories (e.g., GitHub).
     *   `beautifulsoup4`: For parsing HTML and XML documents (e.g., web scraping).
     *   `lxml`: A fast XML and HTML parser, often used as a backend for BeautifulSoup.
+    *   **RAG Pipeline Specifics:**
+        *   **Hierarchical Chunking:** Markdown documents are parsed hierarchically. For each chunk, its parent titles (e.g., "Title: Document Title\nSection: Section Name\nSubsection: Subsection Name") are prepended to the content before embedding. This provides rich contextual information directly into the vector.
+        *   **Embedding `task_type`:**
+            *   Knowledge base documents are embedded using `task_type='retrieval_document'`.
+            *   User queries are embedded using `task_type='retrieval_query'`.
+            *   This asymmetric approach is critical for optimal performance with the `text-embedding-004` model.
 
 ## Database
 *   **Type:** MongoDB
@@ -44,7 +50,7 @@
 *   **Next.js:** Chosen for its robust features for React-based frontend development, SSR/SSG capabilities, and good integration with Vercel.
 *   **Tailwind CSS:** Chosen for utility-first CSS development, enabling rapid UI construction.
 *   **Python/FastAPI:** Chosen for backend due to Python's strong AI/ML ecosystem and FastAPI's high performance and ease of use for building APIs.
-*   **Google Text Embedding 004:** Specified for generating text embeddings for the RAG system.
+*   **Google Text Embedding 004:** Specified for generating text embeddings for the RAG system. Critical for its performance is the use of `task_type='retrieval_document'` for stored content and `task_type='retrieval_query'` for user queries, along with a hierarchical chunking strategy for source documents.
 *   **MongoDB:** Chosen for its flexibility and capabilities for vector search, suitable for RAG applications.
 
 ## Version Control System & Branching Strategy

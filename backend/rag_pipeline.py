@@ -25,7 +25,12 @@ db = client[DB_NAME]
 collection = db[COLLECTION_NAME]
 
 # Initialize Embeddings
-embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
+# Reason: Setting task_type to 'retrieval_query' for embedding user queries,
+# as recommended for text-embedding-004, to work with 'retrieval_document' for stored docs.
+embeddings = GoogleGenerativeAIEmbeddings(
+    model="models/text-embedding-004",
+    task_type="retrieval_query"
+)
 
 # Initialize Vector Store
 vector_store = MongoDBAtlasVectorSearch(
@@ -49,42 +54,18 @@ async def retrieve_documents(query: str):
 llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-preview-05-20", temperature=0.7)
 
 # Define the RAG prompt template
+# Reason: Using the updated, more robust prompt template as recommended.
 RAG_PROMPT_TEMPLATE = """
-### ROLE & OBJECTIVE ###
-You are a specialized AI analyst for the Litecoin protocol, functioning as a precise information extraction and synthesis engine. Your primary objective is to provide accurate, factual answers based exclusively on the provided `CONTEXT`. You must operate with a neutral, objective tone and never use information outside of the provided text.
+You are a helpful expert on cryptocurrency. Answer the user's question based *only* on the provided context. If the context does not contain the answer, say so.
 
-### INSTRUCTIONS ###
-You must follow this process to construct your answer:
-1.  **Analyze and Synthesize:** Carefully analyze the user's `QUESTION` and synthesize a direct and concise answer using *only* the information found in the `CONTEXT`.
-2.  **Strict Grounding:** Ensure every claim in your answer is directly supported by the provided `CONTEXT`. Do not add information, make assumptions, or use any prior knowledge.
-3.  **Handle Insufficient Information:** If the `CONTEXT` does not contain the necessary information to answer the `QUESTION`, you must state: "Based on the provided context, I cannot answer this question." Do not attempt to guess.
-4.  **Acknowledge Conflicts:** If the `CONTEXT` contains conflicting information, present the different points and explicitly state that the sources are in disagreement.
-5.  **Provide Confidence and Justification:** After the answer, you must assess your confidence in the answer's completeness and accuracy based on the provided `CONTEXT`.
-
+**Context:**
 ---
-
-### INPUT ###
-
-**CONTEXT:**
 {context}
-
-**QUESTION:**
-{question}
-
 ---
 
-### OUTPUT ###
+**User Question:** {question}
 
 **Answer:**
-[Your synthesized answer based ONLY on the context. Adhere to the instructions above.]
-
-**Confidence Score:** [High, Medium, or Low]
-
-**Justification:**
-[Explain your confidence score.
-- **High:** The answer is explicitly and comprehensively stated in the context.
-- **Medium:** The answer is inferred by combining multiple pieces of the context, but not stated directly.
-- **Low:** The context is related to the question but is incomplete, ambiguous, or provides only partial information.]
 """
 
 rag_prompt = ChatPromptTemplate.from_template(RAG_PROMPT_TEMPLATE)

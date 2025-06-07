@@ -95,3 +95,4 @@ This focus on specialized, real-time, and accurate data is the core differentiat
     *   **API:** `/api/v1/chat` endpoint created and functional, returning both the generated answer and source documents for transparency.
     *   **Testing:** Standalone test script (`backend/test_rag_pipeline.py`) created to validate the end-to-end pipeline.
     *   The core RAG pipeline is now functional and capable of ingesting data, retrieving relevant chunks, and generating answers with source attribution.
+    *   **Enhancement (6/6/2025):** The RAG pipeline was significantly enhanced by implementing hierarchical chunking for Markdown, specific `task_type` usage for `text-embedding-004` (distinguishing between document and query embeddings), and an improved LLM prompt template. These changes optimize retrieval accuracy and contextual understanding.

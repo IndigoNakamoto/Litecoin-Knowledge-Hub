@@ -39,6 +39,19 @@ To ensure consistency and optimal processing by our RAG pipeline, all articles m
     *   Use Level 2 Headings (`## Section`) and Level 3 Headings (`### Subsection`) to logically structure the content.
     *   Proper heading structure is crucial for the RAG system to effectively "chunk" the document for retrieval.
 
+*   **Why This Structure is Critical for AI:**
+    *   Our RAG (Retrieval-Augmented Generation) system relies heavily on this hierarchical structure (Frontmatter Title -> `# H1 Title` -> `## Section` -> `### Subsection` -> Paragraphs).
+    *   When processing your article, the system "chunks" it into smaller pieces. Each chunk is then embedded (turned into a vector) with its hierarchical context prepended.
+    *   For example, a paragraph under "### MWEB Details" within "## How MWEB Works" from an article titled "Litecoin Privacy Features" might be embedded as:
+        ```
+        Title: Litecoin Privacy Features
+        Section: How MWEB Works
+        Subsection: MWEB Details
+
+        MWEB (MimbleWimble Extension Blocks) enhances privacy by...
+        ```
+    *   This rich contextual information in the vector allows the AI to perform much more accurate and relevant searches when a user asks a question. Following the `_template.md` and these structural guidelines directly improves the AI's ability to understand and use your content effectively.
+
 ## 4. Content Formatting and Style Guide
 Adherence to these formatting guidelines ensures readability and consistent parsing:
 
