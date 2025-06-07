@@ -18,7 +18,7 @@ This milestone focuses on implementing the first core feature: providing answers
 *   **End-to-End Testing (`M4-E2E-001`):** Conduct full testing of the FAQ feature through the UI. (Status: **To Do**)
 
 ## Estimated Time
-(To be updated)
+35 hours (4 hours sofar) 
 
 ## Dependencies
 *   Completed: Milestone 3 (Core RAG Pipeline Implementation)
