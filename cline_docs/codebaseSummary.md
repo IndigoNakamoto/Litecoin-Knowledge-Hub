@@ -26,7 +26,7 @@
 *   `backend/data_ingestion/litecoin_docs_loader.py`: Responsible for loading raw text data from various Litecoin-related sources.
 *   `backend/data_ingestion/embedding_processor.py`: Handles text splitting and generates vector embeddings using Google Text Embedding 004.
 *   `backend/data_ingestion/vector_store_manager.py`: Manages connections to MongoDB Atlas and facilitates the insertion and retrieval of vector embeddings.
-*   `backend/ingest_data.py`: A standalone script to orchestrate the data ingestion process.
+*   `backend/ingest_data.py`: A standalone script to orchestrate the data ingestion process, primarily focused on processing the **Curated Knowledge Base**.
 *   `backend/data_models.py`: (Planned) Will contain core Pydantic data models for the application, such as the `DataSource` model.
 *   `backend/api/v1/sources.py`: (Planned) Will contain the API router and endpoints for managing data sources.
 
@@ -35,7 +35,21 @@
 *   (Other models for Litecoin data, user queries, etc., will be defined as needed.)
 
 ## Critical Data Flow Diagrams
-*   (Not yet established - will involve user query -> RAG system -> LLM -> response. Mermaid syntax will be preferred for diagrams when defined.)
+*   The following diagram illustrates the content-first RAG pipeline:
+    ```mermaid
+    graph TD
+        A[Raw Data Sources: GitHub, Docs, Articles] -->|Research & Synthesis| B(Human Curation & Writing);
+        B -->|Structured for AI| C[Curated Knowledge Base: 'Golden' Articles];
+        C -->|ingest_data.py| D[RAG Pipeline: Chunking & Embedding];
+        D --> E[MongoDB Vector Store];
+        F[User Query] --> G[API Backend];
+        G -->|Similarity Search| E;
+        E -->|Retrieve Context| G;
+        G -->|Generate Answer| H[LLM];
+        H --> G;
+        G --> I[Chatbot Response];
+    end
+    ```
 
 ## API Endpoints Overview
 *   **`POST /api/v1/chat`**:

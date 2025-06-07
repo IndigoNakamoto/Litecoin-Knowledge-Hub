@@ -1,7 +1,7 @@
 # Litecoin RAG Chat
 
 ## Project Overview
-A RAG (Retrieval-Augmented Generation) Chatbot for Litecoin users is an AI-powered conversational tool that provides real-time, accurate answers about Litecoin by retrieving relevant data from verified sources. It aims to solve the problem of misinformation and scattered resources by offering a centralized, reliable way for users to access Litecoin-related information, such as transactions, wallet management, and market insights. This will enhance user experience and foster greater adoption of Litecoin.
+A RAG (Retrieval-Augmented Generation) Chatbot for Litecoin users is an AI-powered conversational tool that provides real-time, accurate answers about Litecoin. Its core strength lies in retrieving relevant data from a **human-vetted, curated knowledge base**, ensuring high accuracy and reliability. It aims to solve the problem of misinformation and scattered resources by offering a centralized, trustworthy way for users to access Litecoin-related information, such as transactions, wallet management, and market insights. This will enhance user experience and foster greater adoption of Litecoin.
 
 **Target Users/Audience:** Litecoin users (novice and experienced), Cryptocurrency enthusiasts, Developers building on Litecoin, Potential adopters seeking reliable information about Litecoin’s features, transactions, or market trends.
 
@@ -23,6 +23,9 @@ Delivers real-time Litecoin price information, market capitalization, trading vo
 
 ### Feature 4: Developer Documentation & Resources
 Provides quick access to snippets from Litecoin developer documentation, links to key resources, and answers to common technical questions for developers building on Litecoin.
+
+### Feature 5: Curated Knowledge Base
+A continuously updated library of well-researched, clearly written articles and data covering all aspects of Litecoin. This content is explicitly structured for optimal machine retrieval and serves as the primary source for the chatbot's answers.
 
 ## Project Milestones
 This project is organized into several key milestones. For detailed information on each milestone, please refer to the documents in the `cline_docs/milestones/` directory.
@@ -62,6 +65,12 @@ This project is organized into several key milestones. For detailed information 
 *   `cline_docs/`: Contains project documentation.
 *   `cline_agent_workspace/`: Contains agent's operational files.
 *   `user_instructions/`: Contains instructions for the user.
+*   `knowledge_base/`: Contains the curated, human-vetted articles that form the primary source of truth for the RAG system.
+
+## Content-First Approach
+This project emphasizes a **content-first strategy**. The accuracy and reliability of the chatbot are directly tied to the quality of the information in its `knowledge_base/`. This directory houses meticulously researched, well-structured Markdown articles covering various Litecoin topics. These articles are the "golden source" for the RAG pipeline.
+
+While the system can ingest data from other sources (web, GitHub, etc.), the primary focus for high-quality, trusted answers will always be the content within `knowledge_base/`.
 
 ## Getting Started
 
@@ -183,6 +192,13 @@ The `ingest_data.py` script has been refactored to support multiple data sources
 
 5.  **Verify:**
     Confirm the script runs successfully and data is populated in your MongoDB Atlas collection.
+
+    **Prioritizing Curated Content:**
+    For the highest quality results, especially for the "Litecoin Basics & FAQ" feature, prioritize ingesting content from the `knowledge_base/` directory:
+    ```bash
+    python ingest_data.py --source_type markdown --source_identifier ../knowledge_base
+    ```
+    (This assumes you are in the `backend/` directory. Adjust the path if necessary.)
 
 If you encounter any issues, please check the terminal output for error messages.
 

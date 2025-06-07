@@ -5,6 +5,33 @@
 
 ## Active Task(s):
 
+*   ### Task ID: `M4-KB-001`
+    *   #### Name: Establish Content Foundation for FAQ Feature
+    *   #### Detailed Description & Business Context:
+        Before ingesting random data, we must first define the structure of our curated knowledge base and create the initial set of "golden" documents for the "Litecoin Basics & FAQ" feature. This ensures our RAG system is built on a foundation of quality.
+    *   #### Acceptance Criteria:
+        1.  A new directory, `knowledge_base/`, is created at the project root.
+        2.  A template file, `knowledge_base/_template.md`, is created to define the standard structure for all future articles (e.g., metadata frontmatter, heading styles).
+        3.  At least three foundational FAQ articles are written and placed in `knowledge_base/` (e.g., `what-is-litecoin.md`, `how-litecoin-differs-from-bitcoin.md`, `understanding-litecoin-wallets.md`).
+        4.  The existing task `M4-FAQ-001` is updated to reflect that it will ingest data from the new `knowledge_base/` directory, not from external raw sources.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)
+        *   Feature 5: Curated Knowledge Base
+    *   #### Status: In Progress
+    *   #### Progress (as of 2025-06-06):
+        *   ✅ Core project documentation (`projectRoadmap.md`, `codebaseSummary.md`, `README.md`, `currentTask.md`) updated to reflect the content-first strategy.
+        *   ✅ `user_instructions/knowledge_base_contribution_guide.md` created.
+        *   ✅ `knowledge_base/` directory created.
+        *   ✅ `knowledge_base/_template.md` created.
+    *   #### Plan:
+        *   ✅ Create `knowledge_base/` directory.
+        *   ✅ Create `knowledge_base/_template.md`.
+        *   Write initial three FAQ articles in `knowledge_base/` (e.g., `what-is-litecoin.md`, `how-litecoin-differs-from-bitcoin.md`, `understanding-litecoin-wallets.md`).
+        *   Update task `M4-FAQ-001` (already done by redefining its scope during the content-first strategy integration).
+    *   #### Estimated Effort: (To be determined)
+    *   #### Assigned To: (To be determined)
+    *   #### Priority: Highest
+
 *   ### Task ID: `M4-DATASRC-001`
     *   #### Name: Implement CRUD API for Data Source Management
     *   #### Detailed Description & Business Context:
@@ -54,22 +81,21 @@
 
 ## Task Backlog:
 
-*   ### Task ID / Name: `M4-FAQ-001` - Gather and Ingest Data for Litecoin Basics & FAQ
+*   ### Task ID / Name: `M4-FAQ-001` - Create and Ingest Curated Content for Litecoin Basics & FAQ
     *   #### Detailed Description & Business Context:
-        To implement the "Litecoin Basics & FAQ" feature, the RAG pipeline needs to be populated with relevant knowledge. This task involves identifying reliable sources for Litecoin fundamental information (e.g., official Litecoin websites, reputable crypto wikis, introductory articles) and ingesting this data into the MongoDB vector store.
+        To implement the "Litecoin Basics & FAQ" feature, the RAG pipeline needs to be populated with high-quality, curated knowledge. This task involves creating well-structured Markdown documents for fundamental Litecoin topics within the `knowledge_base/` directory and then ingesting this curated data into the MongoDB vector store.
     *   #### Acceptance Criteria:
-        1.  Identify at least 3-5 high-quality, publicly accessible data sources for Litecoin basics and FAQs.
-        2.  For each source, determine the best ingestion method (e.g., `web` loader for articles, `markdown` loader if content can be converted).
-        3.  Successfully run the `ingest_data.py` script for each identified source.
-        4.  Verify that the data from these sources is present in the MongoDB vector store.
-        5.  Document the chosen sources and any specific ingestion notes in this task's "Notes on Completion".
+        1.  The foundational articles created in `M4-KB-001` (e.g., `what-is-litecoin.md`, `how-litecoin-differs-from-bitcoin.md`, `understanding-litecoin-wallets.md`) are finalized and meet quality standards.
+        2.  The `ingest_data.py` script is used to load data specifically from the `knowledge_base/` directory.
+        3.  Verify that the data from these curated articles is present in the MongoDB vector store.
+        4.  Document any specific ingestion notes in this task's "Notes on Completion".
     *   #### Link to projectRoadmap.md goal(s):
         *   Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)
+        *   Feature 5: Curated Knowledge Base
     *   #### Status: To Do
     *   #### Plan:
-        *   Research and identify suitable data sources.
-        *   Prepare data if necessary (e.g., convert to Markdown).
-        *   Use `ingest_data.py` to load data.
+        *   Finalize content of initial FAQ articles in `knowledge_base/`.
+        *   Use `ingest_data.py` to load data from `knowledge_base/`.
         *   Verify ingestion in MongoDB.
     *   #### Estimated Effort: (To be determined)
     *   #### Assigned To: (To be determined)
