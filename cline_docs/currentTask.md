@@ -5,41 +5,7 @@
 
 ## Active Task(s):
 
-*   ### Task ID: `M4-UI-001`
-    *   #### Name: Develop Frontend Chat UI Components
-    *   #### Detailed Description & Business Context:
-        Create the necessary React components in the Next.js frontend to build the user-facing chat interface. This includes the main chat window, a text input area for user queries, a submission button, and a display area for both the user's questions and the AI's responses (including source documents).
-    *   #### Acceptance Criteria:
-        1.  A reusable `ChatWindow` component is created.
-        2.  An `InputBox` component allows users to type and submit questions.
-        3.  A `Message` component is created to display questions and answers distinctly.
-        4.  The UI is styled using Tailwind CSS to be clean and user-friendly.
-        5.  The component state is managed appropriately (e.g., storing the conversation history).
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)
-    *   #### Status: To Do
-    *   #### Plan: (To be defined)
-    *   #### Estimated Effort: (To be determined)
-    *   #### Assigned To: (To be determined)
-    *   #### Priority: High
-
-*   ### Task ID: `M4-INT-001`
-    *   #### Name: Integrate Frontend with Backend API
-    *   #### Detailed Description & Business Context:
-        Connect the frontend chat interface to the backend `/api/v1/chat` endpoint. This involves handling user input submission, making a POST request to the backend with the query, and then processing and displaying the JSON response (`answer` and `sources`) in the UI.
-    *   #### Acceptance Criteria:
-        1.  Submitting a query in the frontend triggers a POST request to `http://localhost:8000/api/v1/chat`.
-        2.  The `answer` from the API response is displayed in the chat interface.
-        3.  The `sources` from the API response are displayed alongside the answer, showing the origin of the information.
-        4.  Loading and error states are handled gracefully in the UI.
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)
-    *   #### Status: To Do
-    *   #### Plan: (To be defined)
-    *   #### Estimated Effort: (To be determined)
-    *   #### Assigned To: (To be determined)
-    *   #### Priority: High
-
+(Empty)
 ## Task Backlog:
 
 *   ### Task ID: `M4-KB-001`
@@ -227,6 +193,21 @@
         *   ✅ Test passed after user updated index.
     *   #### Priority: Highest
 
+*   ### Task ID: `M4-UI-001`
+    *   #### Name: Develop Frontend Chat UI Components
+    *   #### Status: Done
+    *   #### Notes on Completion:
+        *   Initialized ShadCN and added necessary components (`card`, `input`, `button`, `avatar`, `accordion`).
+        *   Created custom components (`ChatWindow.tsx`, `Message.tsx`, `InputBox.tsx`).
+        *   Assembled components and implemented basic state management in `frontend/src/app/page.tsx`.
+
+*   ### Task ID: `M4-INT-001`
+    *   #### Name: Integrate Frontend with Backend API
+    *   #### Status: Done
+    *   #### Notes on Completion:
+        *   Implemented API call logic in `frontend/src/app/page.tsx` to send queries to `/api/v1/chat` and display responses/sources.
+        *   Configured CORS middleware and added an OPTIONS handler in `backend/main.py` to resolve cross-origin issues.
+
 *   ### Task ID: `M3-TEST-001`
     *   #### Name: Create Validation Test for Advanced RAG Optimizations
     *   #### Detailed Description:
@@ -237,7 +218,7 @@
         3.  The test will programmatically:
             *   Clear the vector store before starting for a clean base.
             *   Ingest the `sample_for_hierarchical_test.md` file.
-            *   Verify that the chunks stored in the vector database contain the prepended hierarchical titles (e.g., "Title: Main Title\nSection: Section 1").
+            *   Verify that the chunks stored in the vector database contain the prepended hierarchical titles (e.g., "Title: Document Title\nSection: Section 1").
             *   Formulate a specific query that should *only* match a chunk from a deep subsection.
             *   Assert that the correct, context-rich chunk is retrieved, proving the system's precision.
         4.  The test must clean up after itself by deleting the temporary test data from the vector store upon completion.

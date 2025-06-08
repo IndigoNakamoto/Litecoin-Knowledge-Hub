@@ -12,6 +12,7 @@ from backend.api.v1.sources import router as sources_router
 
 from bson import ObjectId # Import ObjectId
 from fastapi.encoders import jsonable_encoder # Import jsonable_encoder
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
@@ -19,6 +20,19 @@ app = FastAPI()
 app.json_encoders = {
     ObjectId: str
 }
+
+origins = [
+    "*",
+    "http://localhost:3001",  # Allow requests from the frontend development server
+]
+
+app.add_middleware(
+    CORSMiddleware, 
+    allow_origins=origins, # works with ["*"], but not with origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Include API routers
 app.include_router(sources_router, prefix="/api/v1/sources", tags=["Data Sources"])
@@ -41,6 +55,13 @@ class ChatResponse(BaseModel):
 @app.get("/")
 def read_root():
     return {"Hello": "World"}
+
+@app.options("/api/v1/chat")
+async def chat_options():
+    """
+    Handle CORS preflight requests for the chat endpoint.
+    """
+    return {"status": "ok"}
 
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
