@@ -114,6 +114,7 @@
 *   **Google Text Embedding 004:** Specified for generating text embeddings for the RAG system. Critical for its performance is the use of `task_type='retrieval_document'` for stored content and `task_type='retrieval_query'` for user queries, along with a hierarchical chunking strategy for source documents.
 *   **MongoDB:** Chosen for its flexibility and capabilities for vector search, suitable for RAG applications.
 *   **`python-frontmatter`**: Added to ensure reliable parsing of YAML front matter from Markdown source files, as the default Langchain loaders did not consistently extract all necessary metadata for the project's specific file structure. This is crucial for populating document chunks with accurate `title`, `tags`, `last_updated`, etc.
+*   **Additional Libraries (Planned for CMS):** Libraries for rich text editing, content workflow management, and deeper AI integration will be evaluated and added as part of the AI-Integrated Knowledge Base CMS development.
 
 ## Version Control System & Branching Strategy
 *   **VCS:** Git (assumed, hosted on GitHub/GitLab/etc. - To be confirmed)

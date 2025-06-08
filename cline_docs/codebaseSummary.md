@@ -37,6 +37,7 @@
 *   `backend/api_client/ingest_kb_articles.py`: A client script responsible for orchestrating the ingestion of the entire knowledge base. It interacts with the `/api/v1/sources` endpoints to ensure a clean and complete data ingestion process, including clearing the collection before starting.
 *   `backend/data_models.py`: Contains core Pydantic data models for the application, such as `DataSource` and `DataSourceUpdate`.
 *   `backend/api/v1/sources.py`: Contains the API router and CRUD endpoints for managing data sources. It uses FastAPI's dependency injection to handle database connections and ensures that deleting a data source also removes its associated embeddings from the vector store.
+*   **AI-Integrated Knowledge Base CMS (Planned):** A new system to be developed, focusing on providing a user interface and backend APIs for collaborative content creation, editing, vetting, publishing, and archiving of knowledge base articles. This will integrate with AI capabilities for research and content assistance.
 
 ## Core Data Models & Entities
 *   **`DataSource`**: A Pydantic model representing a data source for the RAG pipeline. It includes fields like `id`, `name`, `type`, `uri`, `status`, and timestamps.
@@ -58,6 +59,20 @@
         H --> G;
         G --> I[Chatbot Response];
     end
+    ```
+*   **Planned CMS Data Flow (Conceptual):**
+    ```mermaid
+    graph TD
+        A[User/AI Agent] --> B(CMS Frontend);
+        B --> C(CMS Backend APIs);
+        C --> D[Knowledge Base (MongoDB)];
+        C --> E[AI Services: Google Deep Search, etc.];
+        E --> C;
+        C --> B;
+        B --> A;
+        C --> F[RAG Pipeline (Existing)];
+        F --> G[Chatbot Frontend (Existing)];
+        G --> A;
     ```
 
 ## API Endpoints Overview

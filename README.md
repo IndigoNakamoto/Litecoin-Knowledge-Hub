@@ -27,6 +27,9 @@ Provides quick access to snippets from Litecoin developer documentation, links t
 ### Feature 5: Curated Knowledge Base
 A continuously updated library of well-researched, clearly written articles and data covering all aspects of Litecoin. This content is explicitly structured for optimal machine retrieval and serves as the primary source for the chatbot's answers.
 
+### Feature 6: AI-Integrated Knowledge Base CMS (Planned)
+A dedicated content management system to facilitate the creation, editing, vetting, publishing, and archiving of knowledge base articles. This CMS will integrate AI assistance (e.g., Google Deep Search for research, AI agents for drafting/editing) to streamline the content workflow and ensure high-quality, accurate information.
+
 ## Project Milestones
 This project is organized into several key milestones. For detailed information on each milestone, please refer to the documents in the `cline_docs/milestones/` directory.
 
@@ -83,7 +86,7 @@ While the system can ingest data from other sources (web, GitHub, etc.), the pri
 
 ### Running Development Servers
 
-This document provides instructions to run the Next.js frontend and FastAPI backend development servers to verify the "Hello World" setups.
+This document provides instructions to run the Next.js frontend and FastAPI backend development servers to access the functional chat interface.
 
 #### Frontend (Next.js)
 
@@ -99,9 +102,7 @@ This document provides instructions to run the Next.js frontend and FastAPI back
     The Next.js development server should start, typically on `http://localhost:3000`.
 
 3.  **Verify:**
-    Open your web browser and go to `http://localhost:3000`. You should see the default Next.js "Welcome" page.
-
-    **Note on Node.js Version:** During the `create-next-app` process, warnings related to your Node.js version (v18.17.0) were observed, as some dependencies expected v18.18.0 or newer. While the scaffolding was successful, consider upgrading Node.js to the latest LTS version (>=18.18.0) at your convenience to prevent potential issues later.
+    Open your web browser and go to `http://localhost:3001`. You should see the Litecoin RAG Chat interface.
 
 #### Backend (FastAPI)
 

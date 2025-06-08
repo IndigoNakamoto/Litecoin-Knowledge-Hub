@@ -5,7 +5,40 @@
 
 ## Active Task(s):
 
-(Empty)
+## High-Priority Initiatives: AI-Integrated Knowledge Base CMS
+
+*   ### Task ID: `CMS-PLAN-001`
+    *   #### Name: Define Requirements and Plan for AI-Integrated Knowledge Base CMS
+    *   #### Detailed Description & Business Context:
+        Define the core requirements, features, and technical architecture for a content management system (CMS) specifically designed for the Litecoin RAG Chat's knowledge base. This CMS should facilitate collaborative content creation and editing by users and AI agents, integrate with research tools like Google Deep Search, and manage the lifecycle of knowledge base articles (creation, editing, publishing, archiving).
+    *   #### Acceptance Criteria:
+        1.  A detailed document outlining the CMS requirements and features is created (e.g., in `cline_docs/cms_requirements.md`).
+        2.  A high-level architectural plan for the CMS, including its interaction with existing RAG components and external AI services, is defined.
+        3.  Initial user stories for key CMS functionalities are drafted.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Feature 5: Curated Knowledge Base (Significant Enhancement)
+    *   #### Status: To Do
+    *   #### Plan: (To be defined during planning)
+    *   #### Estimated Effort: (To be determined)
+    *   #### Assigned To: (To be determined)
+    *   #### Priority: Highest
+
+*   ### Task ID: `CMS-DESIGN-001`
+    *   #### Name: Design User Interface and User Experience for CMS
+    *   #### Detailed Description & Business Context:
+        Design the user interface (UI) and user experience (UX) for the AI-integrated knowledge base CMS based on the defined requirements. This includes creating wireframes or mockups for key screens (e.g., article editor, content dashboard, search integration) and defining the user flow for content creation, editing, and publishing.
+    *   #### Acceptance Criteria:
+        1.  UI/UX designs (wireframes or mockups) for the core CMS functionalities are created.
+        2.  User flows for key content management processes are documented.
+        3.  Design considerations for integrating AI assistance into the editing workflow are outlined.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Feature 5: Curated Knowledge Base (Significant Enhancement)
+    *   #### Status: To Do
+    *   #### Plan: (To be defined during design)
+    *   #### Estimated Effort: (To be determined)
+    *   #### Assigned To: (To be determined)
+    *   #### Priority: High
+
 ## Task Backlog:
 
 *   ### Task ID: `M4-KB-001`
