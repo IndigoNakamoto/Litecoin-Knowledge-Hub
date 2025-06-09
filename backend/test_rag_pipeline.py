@@ -41,6 +41,7 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 # Local project imports (should now find modules and have .env loaded)
 from backend.data_ingestion.vector_store_manager import VectorStoreManager
 from backend.data_ingestion.embedding_processor import MarkdownTextSplitter
+from backend.data_ingestion.litecoin_docs_loader import load_litecoin_docs # Import the loader
 from backend.rag_pipeline import RAGPipeline # RAGPipeline checks for GOOGLE_API_KEY at import time
 
 
@@ -133,8 +134,8 @@ def test_hierarchical_chunking_and_retrieval():
         print("Test document ingested into dedicated test collection.")
         
         # Add a more significant delay to allow for potential eventual consistency and vector indexing
-        print("Waiting for 60 seconds for potential DB consistency and vector indexing...")
-        time.sleep(300) # Wait for 60 seconds
+        # print("Waiting for 60 seconds for indexing...")
+        time.sleep(10) # Wait for 60 seconds
 
         # --- Debug: Print all ingested chunks and their metadata using direct pymongo find ---
         print("\n--- Ingested Chunks for Debugging (Direct MongoDB Find) ---")
@@ -233,33 +234,52 @@ def test_metadata_filtering():
             model="models/text-embedding-004",
             task_type="retrieval_document"
         )
-        markdown_splitter = MarkdownTextSplitter()
+        # markdown_splitter = MarkdownTextSplitter() # No longer needed for this test
 
         # 1. Clean up any previous test runs for this specific file
         print(f"Cleaning up any pre-existing test data for source: {TEST_METADATA_MD_FILENAME}...")
         vector_store_manager.delete_documents_by_metadata({"source": TEST_METADATA_MD_FILENAME})
 
-        # 2. Ingest the sample metadata test file
-        print(f"Ingesting test Markdown file: {TEST_METADATA_MD_PATH}")
-        with open(TEST_METADATA_MD_PATH, 'r', encoding='utf-8') as f:
-            md_content = f.read()
-        
-        documents = markdown_splitter.split_text(md_content, metadata={"source": TEST_METADATA_MD_FILENAME})
+        # 2. Ingest the sample metadata test file using the correct loader
+        print(f"Ingesting test Markdown file: {TEST_METADATA_MD_PATH} using load_litecoin_docs")
+        # Use the dedicated loader which handles frontmatter parsing
+        documents = load_litecoin_docs(TEST_METADATA_MD_PATH)
+
+        if not documents:
+            print(f"No documents loaded from {TEST_METADATA_MD_PATH}. Check file path and content.")
+            assert False, "Failed to load test document."
+
+        # The loader returns a list of Documents, each with parsed metadata.
+        # We still need to split these documents into smaller chunks if necessary,
+        # but the metadata is now correctly attached to the initial Document objects.
+        # The add_documents method in VectorStoreManager should handle the splitting
+        # and embedding, preserving the metadata for each chunk.
+
+        # --- Debug: Print metadata of documents just before adding to vector store ---
+        print("\n--- Documents to be Ingested (with parsed metadata) ---")
+        for i, doc_to_add in enumerate(documents):
+            print(f"Doc {i+1} to add - Metadata: {doc_to_add.metadata}")
+            # print(f"Doc {i+1} to add - Content: {doc_to_add.page_content[:100]}...") # Optional: print content snippet
+        print("--- End of Documents to be Ingested ---")
+        # --- End Debug ---
+
+        # Add the documents. The add_documents method will handle splitting and embedding.
+        vector_store_manager.add_documents(documents, embeddings_model=doc_embeddings_model)
+        # Add again to test deletion logic later
         vector_store_manager.add_documents(documents, embeddings_model=doc_embeddings_model)
         print("Test document with metadata ingested.")
 
-        
-        print("Waiting for 60 seconds for indexing...")
-        time.sleep(60)
+        # Add a delay to allow for potential indexing of metadata fields
+        print("Waiting for 10 seconds for potential metadata indexing...")
+        time.sleep(10)
 
         # 3. Test filtering by 'author'
-        # Reason: Based on the debugging, we will now test the hypothesis that metadata is flattened.
-        # The filter path will NOT include 'metadata.'
+        # Reason: Metadata is stored at the top level in the MongoDB document.
         print(f"\nTesting filter: author == '{TEST_METADATA_AUTHOR}'")
         retrieved_docs_author = vector_store_manager.vector_store.similarity_search(
             "filtering", k=5, pre_filter={"author": {"$eq": TEST_METADATA_AUTHOR}}
         )
-        
+
         print(f"Retrieved {len(retrieved_docs_author)} documents with author filter.")
         assert len(retrieved_docs_author) > 0, "Should retrieve documents with author filter"
         for doc in retrieved_docs_author:

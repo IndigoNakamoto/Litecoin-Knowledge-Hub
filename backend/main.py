@@ -7,8 +7,8 @@ from typing import List, Dict, Any
 load_dotenv()
 
 # Import the RAG chain constructor
-from backend.rag_pipeline import RAGPipeline
-from backend.api.v1.sources import router as sources_router
+from rag_pipeline import RAGPipeline
+from api.v1.sources import router as sources_router
 
 from bson import ObjectId # Import ObjectId
 from fastapi.encoders import jsonable_encoder # Import jsonable_encoder

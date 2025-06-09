@@ -32,28 +32,45 @@ The RAG pipeline uses a collection named `litecoin_docs` within a database named
 
     ```json
     {
-      "name": "vector_index", // Or your preferred index name, ensure it matches MONGO_VECTOR_INDEX_NAME
-      "dynamic": true,       // IMPORTANT: Allows fields not explicitly defined (like 'text' and 'metadata') to be indexed.
       "fields": [
         {
           "type": "vector",
-          "path": "embedding", // Default path for Langchain embeddings
-          "numDimensions": 768, // Must match your embedding model's dimensions (e.g., 768 for text-embedding-004)
+          "path": "embedding",
+          "numDimensions": 768,
           "similarity": "cosine"
         },
-        // Optional: Explicitly define metadata fields if you need to perform specific queries/sorts on them.
-        // If "dynamic": true is set, these are not strictly necessary for storage but can optimize searching on these fields.
-        // Example:
-        // {
-        //   "type": "document", // Represents the 'metadata' field which is an object
-        //   "path": "metadata",
-        //   "dynamic": true    // Allows all sub-fields within 'metadata' to be indexed
-        // },
-        // {
-        //   "type": "string",
-        //   "path": "metadata.source", // Example for a specific metadata sub-field
-        //   "analyzer": "lucene.standard" // Choose an appropriate analyzer
-        // }
+        {
+          "type": "filter",
+          "path": "category"
+        },
+        {
+          "type": "filter",
+          "path": "tags"
+        },
+        {
+          "type": "filter",
+          "path": "author"
+        },
+        {
+          "type": "filter",
+          "path": "source"
+        },
+        {
+          "type": "filter",
+          "path": "language"
+        },
+        {
+          "type": "filter",
+          "path": "last_updated"
+        },
+        {
+          "type": "filter",
+          "path": "vetting_status"
+        },
+        {
+          "type": "filter",
+          "path": "source_type"
+        }
       ]
     }
     ```
