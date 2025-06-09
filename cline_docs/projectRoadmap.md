@@ -45,6 +45,12 @@ This focus on specialized, real-time, and accurate data is the core differentiat
         *   Description: A dedicated content management system to facilitate the creation, editing, vetting, publishing, and archiving of knowledge base articles. This CMS will integrate AI assistance (e.g., Google Deep Search for research, AI agents for drafting/editing) to streamline the content workflow and ensure high-quality, accurate information.
         *   User Stories: (To be defined in CMS-PLAN-001)
 
+*   **Phase 2: User Experience & Accuracy Enhancements (Planned)**
+    *   **Trust & Transparency (Source Citations):** Implement in-line citations in AI responses, linking directly to retrieved source documents for verifiability.
+    *   **Dynamic & Interactive Experience (Streaming & Suggestions):** Enable real-time streaming of AI responses for a faster feel, and generate proactive follow-up questions to guide user interaction.
+    *   **Upgraded Retrieval Engine (Hybrid Search & Re-ranking):** Enhance document retrieval accuracy by combining vector similarity with keyword search (hybrid search) and re-ranking retrieved documents for optimal relevance.
+    *   **User Feedback Loop:** Introduce a mechanism for users to provide direct feedback on AI answer quality, enabling continuous improvement and data collection.
+
 ## Architectural Overview & Patterns
 *   The project utilizes a Next.js frontend and a Python/FastAPI backend. The architecture is centered around a **content-first RAG pipeline**, where a curated knowledge base is ingested to provide context for the LLM, ensuring responses are grounded in verified information. A microservices-oriented architectural approach is being considered for the RAG capabilities, with further details to be fleshed out as development progresses.
 
@@ -74,6 +80,7 @@ This focus on specialized, real-time, and accurate data is the core differentiat
 *   **Milestone 4:** MVP Feature 1 Implementation (Litecoin Basics & FAQ) (Current)
 *   **Milestone 5:** MVP Feature 2 Implementation (Transaction & Block Explorer)
 *   **Milestone 6:** AI-Integrated Knowledge Base CMS - Planning and Initial Design
+*   **Milestone 7:** Implement User Experience & Accuracy Enhancements (Planned)
 *   (Timelines to be determined)
 
 ## Success Metrics
