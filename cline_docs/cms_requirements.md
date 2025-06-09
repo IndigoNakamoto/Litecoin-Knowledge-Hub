@@ -1,8 +1,10 @@
-# Requirements & Plan: AI-Integrated Knowledge Base CMS
+# **Requirements & Plan: AI-Integrated Knowledge Base CMS**
 
 ## 1. Overview & Goals
 
-This document outlines the requirements, features, and technical architecture for the AI-Integrated Content Management System (CMS) for the Litecoin RAG Chat.
+## **1. Overview & Goals**
+
+This document outlines the requirements, features, and technical architecture for the Content Management System (CMS) for the Litecoin Knowledge Base. This system is a foundational component of our content strategy, designed to ensure the quality, consistency, and accuracy of the information served to our users. This plan is informed by the detailed analysis in `cline_docs/cms_research.md`.
 
 **Primary Goals:**
 -   **Enforce Content Structure:** Ensure all knowledge base articles strictly adhere to the predefined template (`knowledge_base/_template.md`), including both frontmatter metadata and the main body structure.
@@ -10,14 +12,19 @@ This document outlines the requirements, features, and technical architecture fo
 -   **Ensure Data Integrity:** Use schema-driven validation to guarantee that all content is well-formed and accurate before being saved.
 -   **Seamless Integration:** The editor must integrate smoothly into the existing Next.js frontend and produce output compatible with the backend ingestion pipeline.
 
-## 2. High-Level Architecture
+*   **Enforce Content Structure:** Ensure all articles strictly adhere to a predefined format. This is the most critical technical requirement, as the backend `embedding_processor.py` relies on this predictable structure for its hierarchical chunking strategy. Deviations would corrupt vector context and severely degrade RAG pipeline accuracy.
+*   **Streamline Content Creation:** Provide a user-friendly, intuitive, and efficient editor for content creators to encourage the production of high-quality articles.
+*   **Ensure Data Integrity:** Use schema-driven validation to guarantee all content is well-formed before being saved, protecting the entire downstream system from data corruption.
+*   **Seamless Integration:** The editor must integrate smoothly into the existing Next.js frontend and produce output compatible with the backend, ensuring visual consistency and a compatible data format (`.md` with YAML frontmatter).
 
-The CMS editor will be a new feature within the existing `frontend` application. It will be composed of two primary, integrated parts managed by a single form state controller.
+## **2. High-Level Architecture & Technology Choices**
+
+The CMS editor will be a new feature within the frontend application, functioning as a single-page application composed of two primary parts managed by a single form state controller.
 
 ```mermaid
 graph TD
-    A[React Hook Form Provider] --> B{Frontmatter Form (Auto-Form + ShadCN)};
-    A --> C{Main Content Editor (Plate.js + ShadCN)};
+    A[React Hook Form Provider] --> B{Frontmatter Form (React Hook Form + Zod)};
+    A --> C{Main Content Editor (Tiptap)};
 
     subgraph "Article Editor Page"
         direction LR
@@ -34,59 +41,84 @@ graph TD
     style C fill:#ccf,stroke:#333,stroke-width:2px
 ```
 
--   **Form Management:** `react-hook-form` will manage the overall form state, validation, and submission.
--   **Frontmatter:** `Auto-Form` will generate a form from a Zod schema for the article's metadata.
--   **Main Content:** `Plate.js` will serve as the rich-text editor, configured with a schema to enforce the required article structure.
--   **UI Components:** `ShadCN` will be used for all UI elements (inputs, buttons, layout) to ensure visual consistency with the rest of the application.
+*   **Form Management:** **React Hook Form with Zod** is the selected solution.
+    *   **Reasoning:** While `Auto-Form` is excellent for simple forms, the potential for increasing complexity in article metadata (e.g., conditional fields, repeatable groups) requires the greater flexibility, performance, and fine-grained control offered by React Hook Form. This choice is more robust and future-proof.
+*   **Rich Text Editor:** **Tiptap** is the selected editor core.
+    *   **Reasoning:** Tiptap's schema-driven nature is superior for enforcing the strict, non-editable structural templates required for our knowledge base. Its ability to declaratively define a document's structure (e.g., `content: 'title_heading summary_paragraph detail_section+'`) and create non-editable `atom: true` nodes is critical for maintaining consistency and is a key differentiator identified in research.
+*   **UI Components:** **ShadCN** will be used for all UI elements to ensure a consistent look and feel.
+*   **Backend Framework:** **FastAPI** will be used for its performance, Python ecosystem, and native support for asynchronous operations.
 
-## 3. Core Features & Technical Implementation
+## **3. Core Features & Technical Implementation**
 
-### Feature 1: Schema-Driven Frontmatter Form
+### **Feature 1: Schema-Driven Frontmatter Form**
 
--   **Description:** A validated form for all metadata fields defined in `knowledge_base/_template.md`.
--   **Technology:**
-    -   **Schema:** A `Zod` schema will be created to define the data types, required fields, and validation rules for the frontmatter.
-    -   **Form Generation:** `Auto-Form` will use the Zod schema to automatically render the form fields.
-    -   **UI Components (ShadCN):**
-        -   `Input`: For `title`, `id`, `category`, `author`, `source`, `relevance_score`.
-        -   `Textarea`: For `summary`.
-        -   `Tag Input`: A custom or third-party component (e.g., "Emblor") for `tags`.
-        -   `Date Picker`: For `last_updated`.
-        -   `Select`: For `language`, `vetting_status`.
+*   **Description:** A validated form for all metadata fields, providing real-time feedback.
+*   **Technology:**
+    *   **Schema:** A Zod schema (`articleSchema.ts`) will define the data model and validation rules.
+    *   **Form Management:** **React Hook Form** will build the form, connected to the Zod schema via `@hookform/resolvers/zod`.
+    *   **UI Components (ShadCN):** Standard inputs, textareas, date pickers, and select components will be used.
 
-### Feature 2: Structured Rich-Text Editor
+### **Feature 2: Structured Rich-Text Editor**
 
--   **Description:** A rich-text editor that forces content to follow the standard article structure (e.g., "Core Concepts," "How It Works").
--   **Technology:**
-    -   **Editor Core:** `Plate.js`. Plate is a rich-text editor framework for Slate.js, designed for simplicity and efficiency. It provides a robust plugin system, headless primitives, and pre-built components using shadcn/ui, making it an ideal choice for our structured and design-consistent editor.
-    -   **Structural Enforcement:** The "Forced Layout" plugin for Plate.js will be configured with a schema that mirrors the required sections of a knowledge base article.
-    -   **Styling:** The editor and its toolbar will be styled using ShadCN components and Tailwind CSS.
-    -   **Customization:** The toolbar will be customized to only allow formatting options that align with the contribution guide (e.g., headings, bold, lists, links).
+*   **Description:** A rich-text editor that forces content to follow the standard article structure.
+*   **Technology:**
+    *   **Editor Core:** **Tiptap**.
+    *   **Structural Enforcement:** A custom Tiptap schema will enforce the required document structure and define non-editable `atom: true` nodes for fixed headings or instructional blocks.
+    *   **Toolbar:** The editor's toolbar will be intentionally limited to basic formatting to maintain a clean, uniform look across all articles.
 
-## 4. Initial User Stories
+## **4. Data and Asset Management Strategy**
 
--   **As a Content Creator,** I want to be presented with a structured form so that I can easily fill in all the required metadata for a new article without missing any fields.
--   **As a Content Creator,** I want the editor to guide me through creating the standard sections of an article in the correct order so that I don't have to remember the exact structure.
--   **As a System Administrator,** I want all submitted articles to be automatically validated against a schema so that the integrity and consistency of the knowledge base are maintained.
--   **As an AI Agent,** I want to interact with a predictable, schema-driven interface so that I can programmatically create and edit articles that are guaranteed to be in the correct format.
+### **4.1. Primary Data Store**
 
-## 5. User Roles and Permissions
+*   **Database:** **MongoDB** will be used as the primary data store.
+*   **Metadata:** Article metadata will be stored directly within the main article document in MongoDB. To ensure performance, **indexes must be created on all frequently queried metadata fields** (e.g., `tags`, `category`, `vetting_status`).
 
--   **Writer:**
-    -   Can create and save drafts of knowledge base articles.
-    -   Cannot directly publish or modify existing published articles.
--   **Editor:**
-    -   Has all the permissions of a Writer.
-    -   Can submit and publish new drafts to the knowledge base.
-    -   Can update existing knowledge base articles, effectively changing the live responses provided to users.
+### **4.2. Large Asset Handling**
 
-## 6. Proposed File Structure (within `frontend/`)
+*   **Strategy:** For large binary assets (images > 1MB, videos, PDFs), a dedicated **cloud storage solution (e.g., AWS S3, Google Cloud Storage)** is required.
+*   **Implementation:** The MongoDB database will store metadata about these assets, including a URL pointing to the file in cloud storage. This approach is more cost-effective, scalable, and performant for asset delivery than using GridFS.
 
-```
+## **5. User Roles and Permissions**
+
+*   **Writer:** Can create, edit, and delete their own draft articles.
+*   **Editor:** Has all Writer permissions, plus the ability to view, edit, and delete any article. This is the only role that can change `vetting_status` to `in_review` or `vetted`.
+*   **Administrator:** Has full system access, including all Editor permissions and user management.
+*   **Implementation:** A **JWT-based authentication** and a comprehensive **Role-Based Access Control (RBAC)** system will be implemented in the FastAPI backend.
+
+## **6. Backend & RAG Pipeline Integration Plan**
+
+### **6.1. Core Article CRUD API**
+
+*   **API Router:** A new router at `/api/v1/articles` will handle all CRUD operations.
+*   **Asynchronous Operations:** All I/O-bound tasks (database queries, file system access, calls to embedding models) **must be handled asynchronously** using FastAPI's `async/await` capabilities to ensure high performance and responsiveness.
+*   **File Handling:** The API will use the `python-frontmatter` library for parsing and serializing `.md` files.
+
+### **6.2. Embedding and Search Strategy**
+
+*   **Embedding Model:**
+    *   **Initial Choice:** The project will start with **Google's `text-embedding-004`**, being mindful of its 2048-token input limit and potential rate limits on the free tier.
+    *   **Future Flexibility:** The system architecture **must be designed to support batch re-embedding** of all content. This is critical to allow for future upgrades to more performant or cost-effective models without being locked into the initial choice.
+*   **Chunking Strategy:**
+    *   A well-defined and **intelligent chunking strategy is required** for processing long articles before embedding. This strategy should leverage the semantic structure provided by the Tiptap editor's output to create meaningful chunks, which is crucial for search relevance.
+*   **Search Index Consistency:**
+    *   The system **must address the "eventual consistency" of the Atlas Vector Search index**. There is a natural delay between when data is updated in MongoDB and when it's reflected in the search index.
+    *   **Solution:** For critical updates, a mechanism such as **polling the search index** must be implemented to verify that the update is live before confirming the action to the user or proceeding with tasks that depend on the new data.
+
+### **6.3. RAG Pipeline Quality Gate**
+
+*   **Filtering:** The core query method in `rag_pipeline.py` **must** be permanently modified to add a `pre_filter` to the vector search, retrieving **only** documents where `vetting_status` is `'vetted'`. This is the final and most important gatekeeper for content quality.
+*   **Vector Index Requirement:** This filtering is critically dependent on the MongoDB Atlas Vector Search index being configured to allow filtering on the `vetting_status` field.
+
+## **7. Proposed File Structure (within frontend/)**
+
+(No changes from previous version)
+
 frontend/
 └── src/
     ├── app/
-    │   └── (cms)/                # Route group for CMS pages
+    │   └── (cms)/                # Route group for CMS, protected by auth middleware
+    │       ├── dashboard/        # Page for listing all articles
+    │       │   └── page.tsx
     │       └── editor/
     │           ├── [id]/         # Route for editing an existing article
     │           │   └── page.tsx
@@ -94,18 +126,30 @@ frontend/
     │               └── page.tsx
     ├── components/
     │   └── cms/                  # New directory for CMS-specific components
-    │       ├── ArticleEditor.tsx # The main editor component wrapping form/plate
-    │       ├── FrontmatterForm.tsx # The frontmatter form component
-    │       └── PlateEditor.tsx   # The configured Plate.js editor component
+    │       ├── ArticleEditor.tsx # The main editor component
+    │       ├── FrontmatterForm.tsx
+    │       └── TiptapEditor.tsx  # Renamed from PlateEditor
     └── lib/
-        └── zod/
-            └── articleSchema.ts  # Zod schema for article frontmatter
-```
+        ├── zod/
+        │   └── articleSchema.ts
+        └── markdown/
+            └── utils.ts
 
-## 7. Next Steps & Implementation Plan
+## **8. Implementation Roadmap**
 
-1.  **Setup:** Install necessary dependencies (`zod`, `react-hook-form`, `cmdk`, `plate-ui`, etc.).
-2.  **Schema Definition:** Create the Zod schema in `frontend/src/lib/zod/articleSchema.ts`.
-3.  **Component Development:** Build the individual components (`FrontmatterForm.tsx`, `PlateEditor.tsx`).
-4.  **Integration:** Assemble the components in `ArticleEditor.tsx` and wrap them with `react-hook-form`.
-5.  **Page Creation:** Create the routes and pages under `frontend/src/app/(cms)/`.
+An iterative development approach is required.
+
+1.  **Phase 1: Core Setup & Basic Content Management:**
+    *   Implement technology choices: Tiptap, React Hook Form, FastAPI, MongoDB.
+    *   Develop basic article CRUD functionality.
+    *   Implement initial JWT authentication and basic roles.
+2.  **Phase 2: Semantic Search Implementation:**
+    *   Integrate MongoDB Atlas Vector Search.
+    *   Implement the asynchronous content ingestion pipeline, including the chunking strategy and embedding generation.
+    *   Build the search UI and API.
+    *   **Critically, implement the solution for search index consistency.**
+3.  **Phase 3: Refinement & Advanced Features:**
+    *   Implement the full, granular RBAC system tied to content workflows.
+    *   Develop advanced Tiptap features (custom blocks, template enforcement).
+    *   Implement the cloud storage solution for large assets.
+    *   Conduct performance testing and optimization.
