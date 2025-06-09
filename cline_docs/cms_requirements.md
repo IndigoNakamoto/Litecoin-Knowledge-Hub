@@ -58,7 +58,7 @@ graph TD
 
 -   **Description:** A rich-text editor that forces content to follow the standard article structure (e.g., "Core Concepts," "How It Works").
 -   **Technology:**
-    -   **Editor Core:** `Plate.js`.
+    -   **Editor Core:** `Plate.js`. Plate is a rich-text editor framework for Slate.js, designed for simplicity and efficiency. It provides a robust plugin system, headless primitives, and pre-built components using shadcn/ui, making it an ideal choice for our structured and design-consistent editor.
     -   **Structural Enforcement:** The "Forced Layout" plugin for Plate.js will be configured with a schema that mirrors the required sections of a knowledge base article.
     -   **Styling:** The editor and its toolbar will be styled using ShadCN components and Tailwind CSS.
     -   **Customization:** The toolbar will be customized to only allow formatting options that align with the contribution guide (e.g., headings, bold, lists, links).
@@ -70,7 +70,17 @@ graph TD
 -   **As a System Administrator,** I want all submitted articles to be automatically validated against a schema so that the integrity and consistency of the knowledge base are maintained.
 -   **As an AI Agent,** I want to interact with a predictable, schema-driven interface so that I can programmatically create and edit articles that are guaranteed to be in the correct format.
 
-## 5. Proposed File Structure (within `frontend/`)
+## 5. User Roles and Permissions
+
+-   **Writer:**
+    -   Can create and save drafts of knowledge base articles.
+    -   Cannot directly publish or modify existing published articles.
+-   **Editor:**
+    -   Has all the permissions of a Writer.
+    -   Can submit and publish new drafts to the knowledge base.
+    -   Can update existing knowledge base articles, effectively changing the live responses provided to users.
+
+## 6. Proposed File Structure (within `frontend/`)
 
 ```
 frontend/
@@ -92,7 +102,7 @@ frontend/
             └── articleSchema.ts  # Zod schema for article frontmatter
 ```
 
-## 6. Next Steps & Implementation Plan
+## 7. Next Steps & Implementation Plan
 
 1.  **Setup:** Install necessary dependencies (`zod`, `react-hook-form`, `cmdk`, `plate-ui`, etc.).
 2.  **Schema Definition:** Create the Zod schema in `frontend/src/lib/zod/articleSchema.ts`.
