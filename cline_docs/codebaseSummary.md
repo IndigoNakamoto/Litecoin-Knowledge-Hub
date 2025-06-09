@@ -77,8 +77,8 @@
 
 ## API Endpoints Overview
 *   **`POST /api/v1/chat`**:
-    *   **Description**: Receives a user query and processes it through the RAG pipeline.
-    *   **Request Body**: `{"query": "string"}`
+    *   **Description**: Receives a user query and processes it through the RAG pipeline, incorporating conversational history for context-aware responses.
+    *   **Request Body**: `{"query": "string", "chat_history": [{"role": "human" | "ai", "content": "string"}]}`
     *   **Response Body**: `{"answer": "string", "sources": [...]}`
 *   **Data Source Management:**
     *   **`POST /api/v1/sources`**: Creates a new data source record.
@@ -98,6 +98,15 @@
 *   (Not yet applicable for MVP, to be defined if user accounts or personalized features are added)
 
 ## Recent Significant Changes
+*   **Conversational Memory Implementation (6/9/2025)**:
+    *   **Backend (`backend/data_models.py`, `backend/rag_pipeline.py`, `backend/main.py`):**
+        *   Introduced `ChatMessage` and `ChatRequest` Pydantic models to handle structured chat history.
+        *   Modified `RAGPipeline` to use Langchain's `create_history_aware_retriever` and `create_retrieval_chain` for context-aware question rephrasing and answer generation.
+        *   Updated `/api/v1/chat` endpoint to accept `chat_history` and pass it to the RAG pipeline.
+    *   **Frontend (`frontend/src/app/page.tsx`):**
+        *   Updated `Message` interface to align `role` types (`human` | `ai`) with the backend.
+        *   Modified `handleSendMessage` to construct and send `chat_history` with each query.
+        *   Adjusted `Message` component rendering to map `human` | `ai` roles back to `user` | `assistant` for display.
 *   Project Initialization (INIT-001) (6/5/2025) - Initial setup of documentation.
 *   Project Reset & Re-Scaffold (6/5/2025) - Removed initial scaffold due to a Git submodule conflict. Re-scaffolded frontend and backend with a clean Git history, ensuring the monorepo is correctly tracked.
 *   Metadata Ingestion Fix (M4-FAQ-001) (6/6/2025) - Resolved an issue where front matter from Markdown documents in `knowledge_base/` was not being correctly ingested. Updated `litecoin_docs_loader.py` to use the `python-frontmatter` library for robust parsing, ensuring all metadata is captured.

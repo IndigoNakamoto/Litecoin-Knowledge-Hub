@@ -1,13 +1,16 @@
 import os
 import asyncio
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnablePassthrough, RunnableParallel
 from langchain_core.output_parsers import StrOutputParser
 from langchain_mongodb import MongoDBAtlasVectorSearch
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from pymongo import MongoClient
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Any
 from langchain_core.documents import Document
+from langchain.chains import create_history_aware_retriever, create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain # Corrected import path
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 
 # --- Environment Variable Checks ---
 # Ensure GOOGLE_API_KEY is loaded. This check is critical.
@@ -26,7 +29,17 @@ INDEX_NAME = os.getenv("MONGO_VECTOR_INDEX_NAME", "vector_index") # Default to '
 EMBEDDING_MODEL_NAME = "models/text-embedding-004"
 LLM_MODEL_NAME = "gemini-1.5-flash-latest" # Updated to a common model, was gemini-2.5-flash-preview-05-20
 
-# --- RAG Prompt Template ---
+# --- RAG Prompt Templates ---
+# 1. History-aware question rephrasing prompt
+QA_WITH_HISTORY_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        MessagesPlaceholder(variable_name="chat_history"),
+        ("human", "{input}"),
+        ("human", "Given the above conversation, generate a standalone question to address the user's input. If the input is already a standalone question, return it as is."),
+    ]
+)
+
+# 2. RAG prompt for final answer generation
 RAG_PROMPT_TEMPLATE = """
 You are a helpful expert on cryptocurrency. Answer the user's question based *only* on the provided context. If the context does not contain the answer, say so.
 
@@ -35,7 +48,7 @@ You are a helpful expert on cryptocurrency. Answer the user's question based *on
 {context}
 ---
 
-**User Question:** {question}
+**User Question:** {input}
 
 **Answer:**
 """
@@ -93,50 +106,57 @@ class RAGPipeline:
         self._setup_rag_chain()
 
     def _setup_rag_chain(self):
-        """Sets up the main RAG chain."""
+        """Sets up the main RAG chain with conversational history."""
         retriever = self.vector_store.as_retriever(
             search_type="similarity",
-            search_kwargs={"k": 5} # Retrieve top 5 documents for context
+            search_kwargs={"k": 10} # Retrieve top 5 documents for context
         )
 
-        # Chain for processing retrieved documents and generating an answer
-        rag_chain_from_docs = (
-            RunnablePassthrough.assign(context=(lambda x: format_docs(x["context"])))
-            | rag_prompt
-            | self.llm
-            | StrOutputParser()
+        # 1. Create a history-aware retriever
+        # This chain takes the chat history and the new question, and rephrases the question
+        # to be standalone if necessary.
+        history_aware_retriever = create_history_aware_retriever(
+            self.llm, retriever, QA_WITH_HISTORY_PROMPT
         )
 
-        # Full chain that includes document retrieval
-        self.rag_chain_with_source = RunnableParallel(
-            {"context": retriever, "question": RunnablePassthrough()}
-        ).assign(answer=rag_chain_from_docs)
+        # 2. Create the document combining chain
+        # This chain takes the retrieved documents and the user's question,
+        # formats them, and passes them to the LLM for final answer generation.
+        document_chain = create_stuff_documents_chain(self.llm, rag_prompt)
 
-    def query(self, query_text: str) -> Tuple[str, List[Document]]:
-        """
-        Processes a query through the RAG pipeline.
-        This is a synchronous wrapper for the async chain for easier use in scripts.
-        """
-        # Langchain's LCEL runnables are often async by default if components are async.
-        # For synchronous execution in a script, we can use asyncio.run()
-        # or ensure all components used are synchronous if possible.
-        # The MongoDBAtlasVectorSearch retriever can be invoked synchronously.
-        # ChatGoogleGenerativeAI can also be invoked synchronously.
+        # 3. Create the full retrieval chain
+        # This chain combines the history-aware retriever with the document combining chain.
+        self.rag_chain = create_retrieval_chain(history_aware_retriever, document_chain)
 
-        # Synchronous invocation of the chain
+    def query(self, query_text: str, chat_history: List[Tuple[str, str]]) -> Tuple[str, List[Document]]:
+        """
+        Processes a query through the RAG pipeline with conversational history.
+
+        Args:
+            query_text: The user's current query.
+            chat_history: A list of (human_message, ai_message) tuples representing the conversation history.
+
+        Returns:
+            A tuple containing the generated answer (str) and a list of source documents (List[Document]).
+        """
+        # Convert chat_history to Langchain's BaseMessage format
+        converted_chat_history: List[BaseMessage] = []
+        for human_msg, ai_msg in chat_history:
+            converted_chat_history.append(HumanMessage(content=human_msg))
+            converted_chat_history.append(AIMessage(content=ai_msg))
+
         try:
-            # If self.rag_chain_with_source.ainvoke exists and is preferred:
-            # result = asyncio.run(self.rag_chain_with_source.ainvoke(query_text))
-            
-            # For direct synchronous call:
-            result = self.rag_chain_with_source.invoke(query_text)
+            # Invoke the new rag_chain with input and chat history
+            result = self.rag_chain.invoke(
+                {"input": query_text, "chat_history": converted_chat_history}
+            )
             
             answer = result.get("answer", "Error: Could not generate answer.")
-            sources = result.get("context", [])
+            # The 'context' key from the retriever is now directly available in the result
+            sources = result.get("context", []) 
             return answer, sources
         except Exception as e:
             print(f"Error during RAG query execution: {e}")
-            # Fallback or re-raise, depending on desired error handling
             return f"Error processing query: {e}", []
 
 # --- Standalone functions (can be removed or kept for other uses if RAGPipeline class is primary) ---
@@ -158,7 +178,7 @@ async def get_rag_chain_async(vector_store_instance: MongoDBAtlasVectorSearch, l
     """
     retriever = vector_store_instance.as_retriever(
         search_type="similarity",
-        search_kwargs={"k": 3} 
+        search_kwargs={"k": 10} 
     )
     rag_chain_from_docs = (
         RunnablePassthrough.assign(context=(lambda x: format_docs(x["context"])))
@@ -183,20 +203,39 @@ if __name__ == "__main__":
     else:
         print("RAGPipeline direct run: .env file not found. Ensure GOOGLE_API_KEY and MONGO_URI are set.")
 
-    print("Testing RAGPipeline class...")
+    print("Testing RAGPipeline class with conversational history...")
     try:
         pipeline = RAGPipeline() # Uses default collection
-        test_query = "What is the role of hierarchical chunking?"
-        
-        print(f"\nQuerying pipeline with: '{test_query}'")
-        answer, sources = pipeline.query(test_query)
-        
-        print("\n--- Answer ---")
+
+        # Test 1: Initial query
+        initial_query = "What is Litecoin?"
+        print(f"\nQuerying pipeline with: '{initial_query}' (initial query)")
+        answer, sources = pipeline.query(initial_query, chat_history=[])
+        print("\n--- Answer (Initial Query) ---")
         print(answer)
-        print("\n--- Sources ---")
+        print("\n--- Sources (Initial Query) ---")
         if sources:
             for i, doc in enumerate(sources):
-                print(f"Source {i+1}: {doc.page_content[:150]}... (Metadata: {doc.metadata})")
+                print(f"Source {i+1}: {doc.page_content[:150]}... (Metadata: {doc.metadata.get('title', 'N/A')})")
+        else:
+            print("No sources retrieved.")
+
+        # Test 2: Follow-up query with history
+        follow_up_query = "Who created it?"
+        # Assuming the AI's previous answer was 'Litecoin was created by Charlie Lee.'
+        # For testing purposes, we'll simulate a simple history.
+        simulated_history = [
+            ("What is Litecoin?", "Litecoin is a peer-to-peer cryptocurrency and open-source software project released under the MIT/X11 license. It was inspired by Bitcoin but designed to have a faster block generation rate and use a different hashing algorithm.")
+        ]
+        print(f"\nQuerying pipeline with: '{follow_up_query}' (follow-up query)")
+        answer, sources = pipeline.query(follow_up_query, chat_history=simulated_history)
+        
+        print("\n--- Answer (Follow-up Query) ---")
+        print(answer)
+        print("\n--- Sources (Follow-up Query) ---")
+        if sources:
+            for i, doc in enumerate(sources):
+                print(f"Source {i+1}: {doc.page_content[:150]}... (Metadata: {doc.metadata.get('title', 'N/A')})")
         else:
             print("No sources retrieved.")
             

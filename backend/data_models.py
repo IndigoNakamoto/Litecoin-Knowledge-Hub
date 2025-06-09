@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 class DataSource(BaseModel):
@@ -42,5 +42,30 @@ class DataSourceUpdate(BaseModel):
             "example": {
                 "name": "Updated Litecoin Articles",
                 "status": "inactive"
+            }
+        }
+
+class ChatMessage(BaseModel):
+    """
+    Pydantic model for a single chat message in the conversation history.
+    """
+    role: Literal["human", "ai"] = Field(..., description="The role of the sender, either 'human' or 'ai'.")
+    content: str = Field(..., description="The content of the chat message.")
+
+class ChatRequest(BaseModel):
+    """
+    Pydantic model for a chat request, including the current query and chat history.
+    """
+    query: str = Field(..., description="The user's current query.")
+    chat_history: List[ChatMessage] = Field([], description="A list of previous chat messages in the conversation.")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "query": "What is Litecoin?",
+                "chat_history": [
+                    {"role": "human", "content": "Hi, how are you?"},
+                    {"role": "ai", "content": "I'm doing well, thank you! How can I help you with Litecoin today?"}
+                ]
             }
         }

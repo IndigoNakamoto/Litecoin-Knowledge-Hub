@@ -6,7 +6,7 @@ import Message from "@/components/Message";
 import InputBox from "@/components/InputBox";
 
 interface Message {
-  role: "user" | "assistant";
+  role: "human" | "ai"; // Changed to match backend Pydantic model
   content: string;
   sources?: { metadata?: { title?: string; source?: string } }[];
 }
@@ -16,9 +16,18 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSendMessage = async (message: string) => {
-    const newUserMessage: Message = { role: "user", content: message };
+    const newUserMessage: Message = { role: "human", content: message }; // Changed to "human"
     setMessages((prevMessages) => [...prevMessages, newUserMessage]);
     setIsLoading(true);
+
+    // Prepare chat history for the backend
+    // The backend expects a list of {role: "human" | "ai", content: "..."}
+    // We need to exclude the *current* user message from the history sent to the backend,
+    // as it's part of the 'query' itself.
+    const chatHistoryForBackend = messages.map(msg => ({
+      role: msg.role, // Already "human" or "ai"
+      content: msg.content
+    }));
 
     try {
       const response = await fetch("http://localhost:8000/api/v1/chat", {
@@ -26,7 +35,7 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ query: message }),
+        body: JSON.stringify({ query: message, chat_history: chatHistoryForBackend }),
       });
 
       if (!response.ok) {
@@ -35,7 +44,7 @@ export default function Home() {
 
       const data = await response.json();
       const newAssistantMessage: Message = {
-        role: "assistant",
+        role: "ai", // Changed to "ai"
         content: data.answer,
         sources: data.sources,
       };
@@ -43,7 +52,7 @@ export default function Home() {
     } catch (error) {
       console.error("Error sending message:", error);
       const errorMessage: Message = {
-        role: "assistant",
+        role: "ai", // Changed to "ai"
         content: "Sorry, something went wrong. Please try again.",
       };
       setMessages((prevMessages) => [...prevMessages, errorMessage]);
@@ -57,7 +66,7 @@ export default function Home() {
       <div className="flex-1 overflow-hidden">
         <ChatWindow>
           {messages.map((msg, index) => (
-            <Message key={index} role={msg.role} content={msg.content} sources={msg.sources} />
+            <Message key={index} role={msg.role === "human" ? "user" : "assistant"} content={msg.content} sources={msg.sources} />
           ))}
         </ChatWindow>
       </div>

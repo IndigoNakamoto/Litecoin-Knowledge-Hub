@@ -5,6 +5,31 @@
 
 ## Active Task(s):
 
+*   ### Task ID: `FEAT-CONV-001`
+    *   #### Name: Implement Conversational Memory for RAG Chat
+    *   #### Detailed Description & Business Context:
+        Enhance the Litecoin RAG Chat application to maintain conversational context across multiple turns. This will allow the chatbot to understand follow-up questions that refer to previous parts of the conversation, leading to more natural and accurate responses.
+    *   #### Acceptance Criteria:
+        1.  The backend API (`/api/v1/chat`) is updated to accept and process chat history.
+        2.  The RAG pipeline (`backend/rag_pipeline.py`) is modified to use Langchain's history-aware retriever and retrieval chain.
+        3.  The frontend (`frontend/src/app/page.tsx`) correctly sends the conversation history with each new query.
+        4.  The chatbot can accurately answer follow-up questions based on previous turns in the conversation.
+        5.  `backend/data_models.py` is updated with `ChatMessage` and `ChatRequest` models.
+        6.  `cline_docs/codebaseSummary.md` is updated to reflect the changes.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Primary Goal: Deliver accurate, real-time responses to Litecoin-related queries.
+        *   Enhance user experience and foster greater adoption of Litecoin.
+    *   #### Status: Done
+    *   #### Notes on Completion:
+        *   `backend/data_models.py` updated with `ChatMessage` and `ChatRequest` Pydantic models.
+        *   `backend/rag_pipeline.py` modified to use `create_history_aware_retriever` and `create_retrieval_chain`, along with new prompt templates for history-aware question rephrasing and final answer generation. The `query` method now accepts `chat_history`.
+        *   `backend/main.py` updated to import `ChatRequest` and `ChatMessage`, and the `/api/v1/chat` endpoint now accepts `ChatRequest` and passes the `chat_history` to the RAG pipeline.
+        *   `frontend/src/app/page.tsx` updated to manage chat history state, send it with API requests, and align `Message` interface roles (`human` | `ai`) with the backend.
+        *   `cline_docs/codebaseSummary.md` updated to document these changes.
+    *   #### Estimated Effort: 4 hours
+    *   #### Assigned To: Cline
+    *   #### Priority: Highest
+
 ## High-Priority Initiatives: AI-Integrated Knowledge Base CMS
 
 *   ### Task ID: `CMS-PLAN-001`
