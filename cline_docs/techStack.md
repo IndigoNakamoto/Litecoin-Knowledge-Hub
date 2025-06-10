@@ -3,7 +3,11 @@
 ## Frontend
 *   **Framework:** Next.js
 *   **Styling:** Tailwind CSS
-*   **UI Libraries:** (To be determined, e.g., ShadCN if suitable)
+*   **UI Libraries:** ShadCN (Chosen for consistency across the application, including the CMS)
+*   **Form Management (CMS):** React Hook Form with Zod
+    *   **Reasoning:** Chosen for its flexibility, performance, and fine-grained control, making it suitable for potentially complex article metadata and future-proofing the CMS. Zod provides robust schema validation.
+*   **Rich Text Editor (CMS):** Tiptap
+    *   **Reasoning:** Selected for its schema-driven nature, which is crucial for enforcing strict document structures and non-editable template sections within the knowledge base articles.
 *   **Language:** TypeScript (Preferred for Next.js projects, to be confirmed by user if an alternative is desired)
 *   **Node.js Version:** 18.18.0 (managed via nvm, as confirmed by user)
 
@@ -114,7 +118,10 @@
 *   **Google Text Embedding 004:** Specified for generating text embeddings for the RAG system. Critical for its performance is the use of `task_type='retrieval_document'` for stored content and `task_type='retrieval_query'` for user queries, along with a hierarchical chunking strategy for source documents.
 *   **MongoDB:** Chosen for its flexibility and capabilities for vector search, suitable for RAG applications.
 *   **`python-frontmatter`**: Added to ensure reliable parsing of YAML front matter from Markdown source files, as the default Langchain loaders did not consistently extract all necessary metadata for the project's specific file structure. This is crucial for populating document chunks with accurate `title`, `tags`, `last_updated`, etc.
-*   **Additional Libraries (Planned for CMS):** Libraries for rich text editing, content workflow management, and deeper AI integration will be evaluated and added as part of the AI-Integrated Knowledge Base CMS development.
+*   **Tiptap (CMS):** Chosen for its schema-driven approach to rich text editing, allowing strict enforcement of article structure, which is critical for the RAG pipeline's data consistency. Its ability to define non-editable `atom: true` nodes is a key feature.
+*   **React Hook Form with Zod (CMS):** Selected for managing complex forms for article metadata. React Hook Form offers performance and fine-grained control, while Zod ensures robust data validation against a defined schema (`articleSchema.ts`). This combination is more flexible and future-proof than simpler form solutions.
+*   **ShadCN (UI Components):** Will be used for all UI elements in the CMS and broader application to ensure a consistent and professional look and feel.
+*   **Additional Libraries (Planned for CMS):** Further libraries for content workflow management and deeper AI integration will be evaluated and added as part of the AI-Integrated Knowledge Base CMS development.
 
 ## Version Control System & Branching Strategy
 *   **VCS:** Git (assumed, hosted on GitHub/GitLab/etc. - To be confirmed)

@@ -5,6 +5,16 @@
 *   `.gitignore`: Specifies intentionally untracked files that Git should ignore for both frontend and backend, with rules correctly scoped for the monorepo structure (e.g., `frontend/node_modules/`).
 *   `frontend/`: Contains the Next.js application.
     *   `src/`: Main source code for the Next.js application (using App Router).
+        *   `app/(cms)/`: Route group for CMS, protected by auth middleware.
+            *   `dashboard/page.tsx`: Page for listing all articles.
+            *   `editor/[id]/page.tsx`: Route for editing an existing article.
+            *   `editor/new/page.tsx`: Route for creating a new article.
+        *   `components/cms/`: New directory for CMS-specific components.
+            *   `ArticleEditor.tsx`: The main editor component.
+            *   `FrontmatterForm.tsx`: Component for article metadata form.
+            *   `TiptapEditor.tsx`: The Tiptap-based rich text editor component.
+        *   `lib/zod/articleSchema.ts`: Zod schema for article validation.
+        *   `lib/markdown/utils.ts`: Utility functions for markdown processing (if needed).
 *   `backend/`: Contains the FastAPI application.
     *   `data_ingestion/`: Contains modules for data loading, embedding, and vector store management.
     *   `utils/`: Contains utility scripts.
@@ -37,7 +47,10 @@
 *   `backend/api_client/ingest_kb_articles.py`: A client script responsible for orchestrating the ingestion of the entire knowledge base. It interacts with the `/api/v1/sources` endpoints to ensure a clean and complete data ingestion process, including clearing the collection before starting.
 *   `backend/data_models.py`: Contains core Pydantic data models for the application, such as `DataSource` and `DataSourceUpdate`.
 *   `backend/api/v1/sources.py`: Contains the API router and CRUD endpoints for managing data sources. It uses FastAPI's dependency injection to handle database connections and ensures that deleting a data source also removes its associated embeddings from the vector store.
-*   **AI-Integrated Knowledge Base CMS (Planned):** A new system to be developed, focusing on providing a user interface and backend APIs for collaborative content creation, editing, vetting, publishing, and archiving of knowledge base articles. This will integrate with AI capabilities for research and content assistance.
+*   **AI-Integrated Knowledge Base CMS (Planned):** A new system to be developed, as detailed in `cline_docs/cms_requirements.md`.
+    *   **Frontend (Next.js):** Will feature a schema-driven frontmatter form (React Hook Form + Zod) and a structured rich-text editor (Tiptap) to enforce content consistency. UI components will be built with ShadCN.
+    *   **Backend (FastAPI):** Will provide `/api/v1/articles` CRUD endpoints for managing knowledge base articles, handling asynchronous operations, and using `python-frontmatter` for `.md` file processing. It will also implement JWT-based authentication and RBAC.
+    *   **Data Management:** Articles will be stored in MongoDB, with large assets in a separate cloud storage solution. The system will address vector search index consistency and ensure the RAG pipeline only retrieves 'vetted' articles.
 
 ## Core Data Models & Entities
 *   **`DataSource`**: A Pydantic model representing a data source for the RAG pipeline. It includes fields like `id`, `name`, `type`, `uri`, `status`, and timestamps.
@@ -86,6 +99,12 @@
     *   **`GET /api/v1/sources/{source_id}`**: Retrieves a single data source record by its ID.
     *   **`PUT /api/v1/sources/{source_id}`**: Updates an existing data source record using a partial update model.
     *   **`DELETE /api/v1/sources/{source_id}`**: Deletes a data source record and its associated vectorized data from the vector store.
+*   **Article Management (CMS - Planned):**
+    *   **`POST /api/v1/articles`**: Creates a new article.
+    *   **`GET /api/v1/articles`**: Retrieves a list of all articles (with filtering/pagination).
+    *   **`GET /api/v1/articles/{article_id}`**: Retrieves a single article by its ID.
+    *   **`PUT /api/v1/articles/{article_id}`**: Updates an existing article.
+    *   **`DELETE /api/v1/articles/{article_id}`**: Deletes an article.
 
 ## External Services & Dependencies
 *   Google Text Embedding API (text-embedding-004)

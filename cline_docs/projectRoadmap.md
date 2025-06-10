@@ -42,8 +42,13 @@ This focus on specialized, real-time, and accurate data is the core differentiat
     *   **Feature 5: Curated Knowledge Base**
         *   Description: A continuously updated library of well-researched, clearly written articles and data covering all aspects of Litecoin. This content is explicitly structured for optimal machine retrieval and serves as the primary source for the chatbot's answers. Content generation may be initiated by research tools like DeepSearch, but all such content undergoes rigorous human vetting and curation to meet our 'canonical' standard before being integrated.
     *   **Feature 6: AI-Integrated Knowledge Base CMS**
-        *   Description: A dedicated content management system to facilitate the creation, editing, vetting, publishing, and archiving of knowledge base articles. This CMS will integrate AI assistance (e.g., Google Deep Search for research, AI agents for drafting/editing) to streamline the content workflow and ensure high-quality, accurate information.
-        *   User Stories: (To be defined in CMS-PLAN-001)
+        *   Description: A foundational component of the content strategy, this Content Management System (CMS) is designed to ensure the quality, consistency, and accuracy of the Litecoin Knowledge Base. It will facilitate the creation, editing, vetting, publishing, and archiving of knowledge base articles, integrating AI assistance to streamline workflows.
+        *   **Primary Goals:**
+            *   **Enforce Content Structure:** Ensure all articles strictly adhere to the predefined template (`knowledge_base/_template.md`), including frontmatter and body structure, critical for the RAG pipeline's hierarchical chunking.
+            *   **Streamline Content Creation:** Provide a user-friendly and efficient editor (Tiptap with React Hook Form) for human and AI content creators.
+            *   **Ensure Data Integrity:** Use schema-driven validation (Zod) to guarantee content is well-formed before saving.
+            *   **Seamless Integration:** Integrate smoothly into the Next.js frontend and produce Markdown output compatible with the backend ingestion pipeline.
+        *   User Stories: (Defined in `cline_docs/cms_requirements.md` and subsequent implementation tasks)
 
 *   **Phase 2: User Experience & Accuracy Enhancements (Planned)**
     *   **Trust & Transparency (Source Citations):** Implement in-line citations in AI responses, linking directly to retrieved source documents for verifiability.
@@ -77,10 +82,24 @@ This focus on specialized, real-time, and accurate data is the core differentiat
 *   **Milestone 1:** Project Initialization & Documentation Setup (Completed)
 *   **Milestone 2:** Basic Project Scaffold (Next.js Frontend, FastAPI Backend) (Completed)
 *   **Milestone 3:** Core RAG Pipeline Implementation (Data Ingestion, Embedding, Retrieval, Generation) (Completed)
-*   **Milestone 4:** MVP Feature 1 Implementation (Litecoin Basics & FAQ) (Current)
+*   **Milestone 4:** MVP Feature 1 Implementation (Litecoin Basics & FAQ) (Current - Focus on frontend UI development and E2E testing for FAQ)
 *   **Milestone 5:** MVP Feature 2 Implementation (Transaction & Block Explorer)
-*   **Milestone 6:** AI-Integrated Knowledge Base CMS - Planning and Initial Design
-*   **Milestone 7:** Implement User Experience & Accuracy Enhancements (Planned)
+*   **Milestone 6: AI-Integrated Knowledge Base CMS Development**
+    *   **Phase 1: Core Setup & Basic Content Management**
+        *   Implement technology choices: Tiptap, React Hook Form, FastAPI, MongoDB.
+        *   Develop basic article CRUD functionality (API and Frontend).
+        *   Implement initial JWT authentication and basic user roles.
+    *   **Phase 2: Semantic Search Implementation for CMS Content**
+        *   Integrate MongoDB Atlas Vector Search for articles managed via CMS.
+        *   Implement/adapt the asynchronous content ingestion pipeline for CMS-driven articles, including chunking and embedding.
+        *   Build search UI within CMS and necessary API adjustments.
+        *   Implement solution for search index consistency.
+    *   **Phase 3: Refinement & Advanced CMS Features**
+        *   Implement full, granular RBAC system tied to content workflows.
+        *   Develop advanced Tiptap features (custom blocks, template enforcement).
+        *   Implement cloud storage solution for large assets.
+        *   Conduct performance testing and optimization.
+*   **Milestone 7:** Implement User Experience & Accuracy Enhancements (General RAG Chat - Planned)
 *   (Timelines to be determined)
 
 ## Success Metrics

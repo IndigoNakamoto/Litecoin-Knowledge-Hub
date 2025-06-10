@@ -5,44 +5,80 @@
 
 ## High-Priority Initiatives: AI-Integrated Knowledge Base CMS
 
-*   ### Task ID: `CMS-PLAN-001`
-    *   #### Name: Define Requirements and Plan for AI-Integrated Knowledge Base CMS
+*   ### Task ID: `CMS-IMP-001`
+    *   #### Name: CMS Implementation - Phase 1: Core Setup & Basic Content Management
     *   #### Detailed Description & Business Context:
-        Define the core requirements, features, and technical architecture for a content management system (CMS) specifically designed for the Litecoin RAG Chat's knowledge base. This CMS should facilitate collaborative content creation and editing by users and AI agents, integrate with research tools like Google Deep Search, and manage the lifecycle of knowledge base articles (creation, editing, publishing, archiving).
+        Implement the foundational elements of the AI-Integrated Knowledge Base CMS. This phase focuses on setting up the core technologies, developing basic CRUD (Create, Read, Update, Delete) functionality for articles, and implementing initial authentication and role-based access control. This aligns with Phase 1 of the CMS Implementation Roadmap defined in `cline_docs/cms_requirements.md`.
     *   #### Acceptance Criteria:
-        1.  A detailed document outlining the CMS requirements and features is created (e.g., in `cline_docs/cms_requirements.md`).
-        2.  A high-level architectural plan for the CMS, including its interaction with existing RAG components and external AI services, is defined.
-        3.  Initial user stories for key CMS functionalities are drafted.
+        1.  Selected frontend technologies (Tiptap, React Hook Form with Zod, ShadCN) are integrated into the Next.js application.
+        2.  Basic article CRUD API endpoints (`/api/v1/articles`) are developed in the FastAPI backend, capable of creating, reading, updating, and deleting article data in MongoDB.
+        3.  Frontend components for article creation/editing (including frontmatter form and Tiptap editor) are developed and connected to the backend API.
+        4.  Initial JWT-based authentication is implemented for CMS access.
+        5.  Basic user roles (e.g., Writer, Editor) are defined and enforced for core CMS actions.
     *   #### Link to projectRoadmap.md goal(s):
-        *   Feature 5: Curated Knowledge Base (Significant Enhancement)
-    *   #### Status: Completed
-    *   #### Plan: Defined in `cline_docs/cms_requirements.md`
-    *   #### Estimated Effort: 4 hours (Planning)
-    *   #### Assigned To: Cline
-    *   #### Priority: Highest
-
-*   ### Task ID: `CMS-DESIGN-001`
-    *   #### Name: Design User Interface and User Experience for CMS
-    *   #### Detailed Description & Business Context:
-        Design the user interface (UI) and user experience (UX) for the AI-integrated knowledge base CMS based on the defined requirements. This includes creating wireframes or mockups for key screens (e.g., article editor, content dashboard, search integration) and defining the user flow for content creation, editing, and publishing.
-    *   #### Acceptance Criteria:
-        1.  UI/UX designs (wireframes or mockups) for the core CMS functionalities are created.
-        2.  User flows for key content management processes are documented.
-        3.  Design considerations for integrating AI assistance into the editing workflow are outlined.
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Feature 5: Curated Knowledge Base (Significant Enhancement)
+        *   Feature 6: AI-Integrated Knowledge Base CMS
+        *   Milestone 6: AI-Integrated Knowledge Base CMS Development - Phase 1
     *   #### Status: To Do
     *   #### Plan:
-        1.  **Setup:** Install necessary dependencies (`zod`, `react-hook-form`, `cmdk`, `plate-ui`, etc.).
-        2.  **Schema Definition:** Create the Zod schema in `frontend/src/lib/zod/articleSchema.ts`.
-        3.  **Component Development:** Build the individual components (`FrontmatterForm.tsx`, `PlateEditor.tsx`).
-        4.  **Integration:** Assemble the components in `ArticleEditor.tsx` and wrap them with `react-hook-form`.
-        5.  **Page Creation:** Create the routes and pages under `frontend/src/app/(cms)/`.
+        1.  **Frontend Setup:**
+            *   Install necessary dependencies: `tiptap` related packages, `react-hook-form`, `@hookform/resolvers`, `zod`.
+            *   Define `articleSchema.ts` in `frontend/src/lib/zod/`.
+            *   Develop `FrontmatterForm.tsx` using React Hook Form and ShadCN components.
+            *   Develop `TiptapEditor.tsx` with basic structural enforcement.
+            *   Assemble these into `ArticleEditor.tsx`.
+            *   Create CMS pages: `frontend/src/app/(cms)/dashboard/page.tsx`, `frontend/src/app/(cms)/editor/new/page.tsx`, `frontend/src/app/(cms)/editor/[id]/page.tsx`.
+        2.  **Backend Setup (FastAPI):**
+            *   Define Pydantic models for Article data.
+            *   Implement `/api/v1/articles` router with asynchronous CRUD operations interacting with MongoDB.
+            *   Integrate `python-frontmatter` for handling `.md` file generation/parsing if articles are stored/retrieved as files initially.
+        3.  **Authentication & Authorization:**
+            *   Implement JWT generation and validation middleware in FastAPI.
+            *   Define basic roles and protect CMS routes/endpoints.
+        4.  **Integration & Testing:**
+            *   Connect frontend CMS components to backend Article APIs.
+            *   Perform end-to-end testing of article creation, editing, and display.
+    *   #### Estimated Effort: (To be determined)
+    *   #### Assigned To: (To be determined)
+    *   #### Priority: Highest
+
+## Task Backlog:
+
+*   ### Task ID: `CMS-IMP-002`
+    *   #### Name: CMS Implementation - Phase 2: Semantic Search Implementation
+    *   #### Detailed Description & Business Context:
+        Integrate semantic search capabilities within the CMS, allowing users to efficiently find and manage articles. This involves connecting to MongoDB Atlas Vector Search, implementing or adapting the content ingestion pipeline for CMS-managed articles, and building the necessary UI and API components. This aligns with Phase 2 of the CMS Implementation Roadmap.
+    *   #### Acceptance Criteria:
+        1.  MongoDB Atlas Vector Search is integrated for articles created/managed via the CMS.
+        2.  The asynchronous content ingestion pipeline (chunking, embedding) is adapted or implemented for CMS articles.
+        3.  A search interface is built into the CMS frontend.
+        4.  Backend API supports search queries over CMS articles.
+        5.  The solution for search index consistency (e.g., polling) is implemented for critical updates.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Feature 6: AI-Integrated Knowledge Base CMS
+        *   Milestone 6: AI-Integrated Knowledge Base CMS Development - Phase 2
+    *   #### Status: To Do
+    *   #### Plan: (To be defined)
     *   #### Estimated Effort: (To be determined)
     *   #### Assigned To: (To be determined)
     *   #### Priority: High
 
-## Task Backlog:
+*   ### Task ID: `CMS-IMP-003`
+    *   #### Name: CMS Implementation - Phase 3: Refinement & Advanced Features
+    *   #### Detailed Description & Business Context:
+        Implement advanced features and refinements for the CMS, including a full Role-Based Access Control (RBAC) system, advanced Tiptap editor capabilities, and cloud storage for large assets. This aligns with Phase 3 of the CMS Implementation Roadmap.
+    *   #### Acceptance Criteria:
+        1.  A granular RBAC system tied to content workflows (draft, review, vetted) is implemented.
+        2.  Advanced Tiptap features (e.g., custom non-editable blocks, template enforcement) are developed.
+        3.  A cloud storage solution (e.g., S3, GCS) is integrated for handling large binary assets, with MongoDB storing asset metadata and URLs.
+        4.  Performance testing and optimization of the CMS are conducted.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Feature 6: AI-Integrated Knowledge Base CMS
+        *   Milestone 6: AI-Integrated Knowledge Base CMS Development - Phase 3
+    *   #### Status: To Do
+    *   #### Plan: (To be defined)
+    *   #### Estimated Effort: (To be determined)
+    *   #### Assigned To: (To be determined)
+    *   #### Priority: High
 
 *   ### Task ID: `M4-KB-001`
     *   #### Name: Establish Content Foundation for FAQ Feature
@@ -103,6 +139,24 @@
     *   #### Priority: High
 
 ## Recently Completed Tasks:
+
+*   ### Task ID: `CMS-PLAN-001`
+    *   #### Name: Define Requirements and Plan for AI-Integrated Knowledge Base CMS
+    *   #### Detailed Description & Business Context:
+        Define the core requirements, features, and technical architecture for a content management system (CMS) specifically designed for the Litecoin RAG Chat's knowledge base. This CMS should facilitate collaborative content creation and editing by users and AI agents, integrate with research tools like Google Deep Search, and manage the lifecycle of knowledge base articles (creation, editing, publishing, archiving).
+    *   #### Acceptance Criteria:
+        1.  A detailed document outlining the CMS requirements and features is created (e.g., in `cline_docs/cms_requirements.md`).
+        2.  A high-level architectural plan for the CMS, including its interaction with existing RAG components and external AI services, is defined.
+        3.  Initial user stories for key CMS functionalities are drafted.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Feature 6: AI-Integrated Knowledge Base CMS
+    *   #### Status: Done
+    *   #### Notes on Completion:
+        *   Detailed requirements, architecture, and implementation roadmap defined in `cline_docs/cms_requirements.md`.
+        *   Core project documents (`projectRoadmap.md`, `techStack.md`, `codebaseSummary.md`) updated to reflect CMS plans.
+    *   #### Estimated Effort: 4 hours (Planning)
+    *   #### Assigned To: Cline
+    *   #### Priority: Highest
 
 *   ### Task ID: `FEAT-CONV-001`
     *   #### Name: Implement Conversational Memory for RAG Chat
