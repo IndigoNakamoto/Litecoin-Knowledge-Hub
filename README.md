@@ -120,7 +120,7 @@ The project utilizes a Next.js frontend and a Python/FastAPI backend. The archit
 graph TD
     A[Raw Data Sources: GitHub, Docs, Articles] -->|Research & Synthesis| B(Human Curation & Writing);
     B -->|Structured for AI| C[Curated Knowledge Base: 'Golden' Articles in Markdown];
-    C -->|ingest_data.py| D[RAG Pipeline: Hierarchical Chunking (Markdown) / Text Splitting & Embedding with 'retrieval_document' task_type];
+    C -->|ingest_data.py| D["RAG Pipeline: Hierarchical Chunking (Markdown) / Text Splitting & Embedding with 'retrieval_document' task_type"];
     D --> E[MongoDB Vector Store];
     F[User Query] -->|Embed with 'retrieval_query' task_type| G[API Backend];
     G -->|Similarity Search| E;
