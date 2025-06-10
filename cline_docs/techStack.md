@@ -121,6 +121,7 @@
 *   **Tiptap (CMS):** Chosen for its schema-driven approach to rich text editing, allowing strict enforcement of article structure, which is critical for the RAG pipeline's data consistency. Its ability to define non-editable `atom: true` nodes is a key feature.
 *   **React Hook Form with Zod (CMS):** Selected for managing complex forms for article metadata. React Hook Form offers performance and fine-grained control, while Zod ensures robust data validation against a defined schema (`articleSchema.ts`). This combination is more flexible and future-proof than simpler form solutions.
 *   **ShadCN (UI Components):** Will be used for all UI elements in the CMS and broader application to ensure a consistent and professional look and feel.
+*   **`fastapi-users` (Recommended for CMS):** This library is highly recommended for implementing the CMS's authentication and user management features. It provides a secure, pre-built, and extensible solution for handling user registration, password hashing, JWT-based authentication, and more, which will significantly accelerate development of Phase 1 (`CMS-IMP-001`).
 *   **Additional Libraries (Planned for CMS):** Further libraries for content workflow management and deeper AI integration will be evaluated and added as part of the AI-Integrated Knowledge Base CMS development.
 
 ## Version Control System & Branching Strategy

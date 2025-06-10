@@ -16,6 +16,7 @@
         *   `lib/zod/articleSchema.ts`: Zod schema for article validation.
         *   `lib/markdown/utils.ts`: Utility functions for markdown processing (if needed).
 *   `backend/`: Contains the FastAPI application.
+    *   `cms/`: New directory for all CMS-related backend modules, organized by domain (e.g., `articles`, `users`, `auth`).
     *   `data_ingestion/`: Contains modules for data loading, embedding, and vector store management.
     *   `utils/`: Contains utility scripts.
     *   `main.py`: Main FastAPI application file.
@@ -47,10 +48,10 @@
 *   `backend/api_client/ingest_kb_articles.py`: A client script responsible for orchestrating the ingestion of the entire knowledge base. It interacts with the `/api/v1/sources` endpoints to ensure a clean and complete data ingestion process, including clearing the collection before starting.
 *   `backend/data_models.py`: Contains core Pydantic data models for the application, such as `DataSource` and `DataSourceUpdate`.
 *   `backend/api/v1/sources.py`: Contains the API router and CRUD endpoints for managing data sources. It uses FastAPI's dependency injection to handle database connections and ensures that deleting a data source also removes its associated embeddings from the vector store.
-*   **AI-Integrated Knowledge Base CMS (Planned):** A new system to be developed, as detailed in `cline_docs/cms_requirements.md`.
-    *   **Frontend (Next.js):** Will feature a schema-driven frontmatter form (React Hook Form + Zod) and a structured rich-text editor (Tiptap) to enforce content consistency. UI components will be built with ShadCN.
-    *   **Backend (FastAPI):** Will provide `/api/v1/articles` CRUD endpoints for managing knowledge base articles, handling asynchronous operations, and using `python-frontmatter` for `.md` file processing. It will also implement JWT-based authentication and RBAC.
-    *   **Data Management:** Articles will be stored in MongoDB, with large assets in a separate cloud storage solution. The system will address vector search index consistency and ensure the RAG pipeline only retrieves 'vetted' articles.
+*   **AI-Integrated Knowledge Base CMS (Planned):** A new system to be developed, as detailed in `cline_docs/cms_research_v3.md` and the three-phased plan in `currentTask.md`.
+    *   **Backend (FastAPI):** Will be built within a new `backend/cms/` directory, organized by domain. It will provide `/api/v1/articles` CRUD endpoints, JWT-based authentication (likely via `fastapi-users`), and a granular RBAC system tied to content workflows. It will also feature a webhook-based service to synchronize vetted content with the RAG pipeline.
+    *   **Frontend (Next.js):** Will feature a schema-driven frontmatter form (`FrontmatterForm.tsx` using React Hook Form + Zod) and a structured rich-text editor (`TiptapEditor.tsx`) to enforce content consistency. It will include a dashboard for managing articles, an internal semantic search feature, and UI for managing large assets.
+    *   **Data Management:** Articles will be stored as structured JSON in MongoDB. Large binary assets will be offloaded to a dedicated cloud storage solution (e.g., S3/GCS). The system will ensure the RAG pipeline's vector store is kept consistent with the 'vetted' articles in the CMS.
 
 ## Core Data Models & Entities
 *   **`DataSource`**: A Pydantic model representing a data source for the RAG pipeline. It includes fields like `id`, `name`, `type`, `uri`, `status`, and timestamps.
@@ -105,6 +106,9 @@
     *   **`GET /api/v1/articles/{article_id}`**: Retrieves a single article by its ID.
     *   **`PUT /api/v1/articles/{article_id}`**: Updates an existing article.
     *   **`DELETE /api/v1/articles/{article_id}`**: Deletes an article.
+    *   **`GET /api/v1/articles/search`**: Performs semantic search over CMS articles for internal use.
+*   **RAG Synchronization (CMS - Planned):**
+    *   **`POST /api/v1/sync/rag`**: A webhook endpoint for the CMS to notify the RAG pipeline of content changes (vet, update, archive).
 
 ## External Services & Dependencies
 *   Google Text Embedding API (text-embedding-004)

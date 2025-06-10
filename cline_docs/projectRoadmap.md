@@ -85,20 +85,15 @@ This focus on specialized, real-time, and accurate data is the core differentiat
 *   **Milestone 4:** MVP Feature 1 Implementation (Litecoin Basics & FAQ) (Current - Focus on frontend UI development and E2E testing for FAQ)
 *   **Milestone 5:** MVP Feature 2 Implementation (Transaction & Block Explorer)
 *   **Milestone 6: AI-Integrated Knowledge Base CMS Development**
-    *   **Phase 1: Core Setup & Basic Content Management**
-        *   Implement technology choices: Tiptap, React Hook Form, FastAPI, MongoDB.
-        *   Develop basic article CRUD functionality (API and Frontend).
-        *   Implement initial JWT authentication and basic user roles.
-    *   **Phase 2: Semantic Search Implementation for CMS Content**
-        *   Integrate MongoDB Atlas Vector Search for articles managed via CMS.
-        *   Implement/adapt the asynchronous content ingestion pipeline for CMS-driven articles, including chunking and embedding.
-        *   Build search UI within CMS and necessary API adjustments.
-        *   Implement solution for search index consistency.
-    *   **Phase 3: Refinement & Advanced CMS Features**
-        *   Implement full, granular RBAC system tied to content workflows.
-        *   Develop advanced Tiptap features (custom blocks, template enforcement).
-        *   Implement cloud storage solution for large assets.
-        *   Conduct performance testing and optimization.
+    *   **Phase 1: Core Setup & Basic Content Management (`CMS-IMP-001`)**
+        *   **Goal:** Establish foundational elements for article creation, editing, and management.
+        *   **Tasks:** Develop backend structure (FastAPI) with domain-driven modules (`/cms`), implement Pydantic models and CRUD APIs (`/api/v1/articles`), and set up initial JWT authentication with basic roles. On the frontend (Next.js), install dependencies (Tiptap, React Hook Form), create Zod schemas, and build core components (`FrontmatterForm`, `TiptapEditor`) and pages for the CMS.
+    *   **Phase 2: Semantic Search & RAG Synchronization (`CMS-IMP-002`)**
+        *   **Goal:** Enhance CMS usability and connect it to the live RAG pipeline.
+        *   **Tasks:** Implement a semantic search API and UI for internal CMS use. Establish a robust synchronization mechanism (e.g., webhook) to update the RAG pipeline's vector store in real-time as content is vetted, updated, or archived in the CMS.
+    *   **Phase 3: Refinement & Advanced Features (`CMS-IMP-003`)**
+        *   **Goal:** Build a mature, feature-rich CMS with granular security and AI assistance.
+        *   **Tasks:** Implement a granular RBAC system tied to content workflows (draft, review, vetted). Integrate cloud storage for large assets. Enhance the Tiptap editor with strict template enforcement and custom blocks. Introduce AI-assisted authoring tools (e.g., summarization, rephrasing) via Tiptap extensions and a secure backend proxy.
 *   **Milestone 7:** Implement User Experience & Accuracy Enhancements (General RAG Chat - Planned)
 *   (Timelines to be determined)
 
