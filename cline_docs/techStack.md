@@ -24,6 +24,8 @@
     *   `beautifulsoup4`: For parsing HTML and XML documents (e.g., web scraping).
     *   `lxml`: A fast XML and HTML parser, often used as a backend for BeautifulSoup.
     *   `python-frontmatter`: For robustly parsing YAML front matter from Markdown files, ensuring metadata like title, tags, and custom fields are correctly extracted.
+    *   `jose`: For JWT (JSON Web Token) creation and verification in authentication.
+    *   `passlib`: For secure password hashing (e.g., bcrypt).
     *   **RAG Pipeline Specifics:**
         *   **Hierarchical Chunking:** Markdown documents are parsed hierarchically. For each chunk, its parent titles (e.g., "Title: Document Title\nSection: Section Name\nSubsection: Subsection Name") are prepended to the content before embedding. This provides rich contextual information directly into the vector.
         *   **Embedding `task_type`:**
@@ -121,7 +123,7 @@
 *   **Tiptap (CMS):** Chosen for its schema-driven approach to rich text editing, allowing strict enforcement of article structure, which is critical for the RAG pipeline's data consistency. Its ability to define non-editable `atom: true` nodes is a key feature.
 *   **React Hook Form with Zod (CMS):** Selected for managing complex forms for article metadata. React Hook Form offers performance and fine-grained control, while Zod ensures robust data validation against a defined schema (`articleSchema.ts`). This combination is more flexible and future-proof than simpler form solutions.
 *   **ShadCN (UI Components):** Will be used for all UI elements in the CMS and broader application to ensure a consistent and professional look and feel.
-*   **`fastapi-users` (Recommended for CMS):** This library is highly recommended for implementing the CMS's authentication and user management features. It provides a secure, pre-built, and extensible solution for handling user registration, password hashing, JWT-based authentication, and more, which will significantly accelerate development of Phase 1 (`CMS-IMP-001`).
+*   **`fastapi-users` (CMS Authentication):** Used for implementing the CMS's authentication and user management features, providing a secure and extensible solution for user registration, password hashing, and JWT-based authentication. This was a key component of Phase 1 (`CMS-IMP-001`).
 *   **Additional Libraries (Planned for CMS):** Further libraries for content workflow management and deeper AI integration will be evaluated and added as part of the AI-Integrated Knowledge Base CMS development.
 
 ## Version Control System & Branching Strategy

@@ -48,9 +48,9 @@
 *   `backend/api_client/ingest_kb_articles.py`: A client script responsible for orchestrating the ingestion of the entire knowledge base. It interacts with the `/api/v1/sources` endpoints to ensure a clean and complete data ingestion process, including clearing the collection before starting.
 *   `backend/data_models.py`: Contains core Pydantic data models for the application, such as `DataSource` and `DataSourceUpdate`.
 *   `backend/api/v1/sources.py`: Contains the API router and CRUD endpoints for managing data sources. It uses FastAPI's dependency injection to handle database connections and ensures that deleting a data source also removes its associated embeddings from the vector store.
-*   **AI-Integrated Knowledge Base CMS (Planned):** A new system to be developed, as detailed in `cline_docs/cms_research_v3.md` and the three-phased plan in `currentTask.md`.
-    *   **Backend (FastAPI):** Will be built within a new `backend/cms/` directory, organized by domain. It will provide `/api/v1/articles` CRUD endpoints, JWT-based authentication (likely via `fastapi-users`), and a granular RBAC system tied to content workflows. It will also feature a webhook-based service to synchronize vetted content with the RAG pipeline.
-    *   **Frontend (Next.js):** Will feature a schema-driven frontmatter form (`FrontmatterForm.tsx` using React Hook Form + Zod) and a structured rich-text editor (`TiptapEditor.tsx`) to enforce content consistency. It will include a dashboard for managing articles, an internal semantic search feature, and UI for managing large assets.
+*   **AI-Integrated Knowledge Base CMS (Phase 1 Implemented):** This system is now foundational for content management.
+    *   **Backend (FastAPI):** Implemented within `backend/cms/` (articles, users, auth modules). Provides `/api/v1/articles` CRUD endpoints for creating, reading, updating, and deleting articles in MongoDB. Features JWT-based authentication for CMS access, including user registration and login, with basic user roles enforced for core actions.
+    *   **Frontend (Next.js):** Includes a login page (`/login`), a dashboard (`/dashboard`), and article editor pages (`/editor/new`, `/editor/[id]`). Utilizes `FrontmatterForm.tsx` (React Hook Form + Zod) for metadata validation and `TiptapEditor.tsx` for rich-text content editing. Authentication context (`AuthContext.tsx`) manages JWT tokens.
     *   **Data Management:** Articles will be stored as structured JSON in MongoDB. Large binary assets will be offloaded to a dedicated cloud storage solution (e.g., S3/GCS). The system will ensure the RAG pipeline's vector store is kept consistent with the 'vetted' articles in the CMS.
 
 ## Core Data Models & Entities
@@ -121,6 +121,9 @@
 *   (Not yet applicable for MVP, to be defined if user accounts or personalized features are added)
 
 ## Recent Significant Changes
+*   **CMS Implementation - Phase 1 (`CMS-IMP-001`) (6/9/2025):**
+    *   **Backend:** Implemented core CRUD for articles (`/api/v1/articles`), JWT-based authentication, and basic user management within `backend/cms/`.
+    *   **Frontend:** Developed login page, authentication context, and article editor components.
 *   **Conversational Memory Implementation (6/9/2025)**:
     *   **Backend (`backend/data_models.py`, `backend/rag_pipeline.py`, `backend/main.py`):**
         *   Introduced `ChatMessage` and `ChatRequest` Pydantic models to handle structured chat history.

@@ -1,39 +1,9 @@
 # Current Task: Litecoin RAG Chat
 
 ## Current Sprint/Iteration Goal
-*   **Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)**
+*   **Milestone 6: AI-Integrated Knowledge Base CMS Development - Phase 2: Semantic Search Implementation**
 
 ## High-Priority Initiatives: AI-Integrated Knowledge Base CMS
-
-*   ### Task ID: `CMS-IMP-001`
-    *   #### Name: CMS Implementation - Phase 1: Core Setup & Basic Content Management
-    *   #### Detailed Description & Business Context:
-        Implement the foundational elements of the AI-Integrated Knowledge Base CMS. This phase focuses on setting up the core technologies, developing basic CRUD (Create, Read, Update, Delete) functionality for articles, and implementing initial authentication and role-based access control. This aligns with Phase 1 of the CMS Implementation Roadmap defined in `cline_docs/cms_requirements.md`.
-    *   #### Acceptance Criteria:
-        1.  Selected frontend technologies (Tiptap, React Hook Form with Zod, ShadCN) are integrated into the Next.js application.
-        2.  Basic article CRUD API endpoints (`/api/v1/articles`) are developed in the FastAPI backend, capable of creating, reading, updating, and deleting article data in MongoDB.
-        3.  Frontend components for article creation/editing (including frontmatter form and Tiptap editor) are developed and connected to the backend API.
-        4.  Initial JWT-based authentication is implemented for CMS access.
-        5.  Basic user roles (e.g., Writer, Editor) are defined and enforced for core CMS actions.
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Feature 6: AI-Integrated Knowledge Base CMS
-        *   Milestone 6: AI-Integrated Knowledge Base CMS Development - Phase 1
-    *   #### Status: Done
-    *   #### Plan:
-        1.  **Backend Tasks (FastAPI):**
-            *   ~~**Project Scaffolding:** Create a new directory `backend/cms/` to house all CMS-related backend modules, following a domain-driven structure (e.g., `backend/cms/articles`, `backend/cms/users`).~~ (Done)
-            *   ~~**Data Modeling:** Define Pydantic models for `ArticleCreate`, `ArticleUpdate`, and `ArticleRead` based on the schema in `cms_research_v3.md`.~~ (Done)
-            *   ~~**API Endpoints:** Implement the initial `/api/v1/articles` router with full asynchronous CRUD operations interacting with a dedicated `articles` collection in MongoDB.~~ (Done)
-            *   ~~**Authentication:** Implement JWT-based authentication, preferably using the `fastapi-users` library. Create initial user roles ('Writer', 'Editor', 'Admin') and secure the article endpoints.~~ (Done)
-        2.  **Frontend Tasks (Next.js):**
-            *   ~~**Dependency Installation:** Install `@tiptap/react`, `@tiptap/starter-kit`, `react-hook-form`, `@hookform/resolvers`, `zod`.~~ (Done)
-            *   ~~**Schema Definition:** Create `frontend/src/lib/zod/articleSchema.ts` for frontmatter validation, mirroring the backend models.~~ (Done)
-            *   ~~**Component Development:** Build `FrontmatterForm.tsx`, `TiptapEditor.tsx` (with a basic schema), and assemble them into `ArticleEditor.tsx`.~~ (Done)
-            *   ~~**Page Routing:** Create pages for the CMS dashboard (`/dashboard`), new article editor (`/editor/new`), and editing existing articles (`/editor/[id]`).~~ (Done)
-            *   ~~**API Integration:** Connect frontend components to the backend API for data operations and implement login UI/state management for JWTs.~~ (Done)
-    *   #### Estimated Effort: (To be determined)
-    *   #### Assigned To: (To be determined)
-    *   #### Priority: Highest
 
 ## Recently Completed Tasks:
 

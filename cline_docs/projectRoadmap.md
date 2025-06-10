@@ -127,3 +127,8 @@ This focus on specialized, real-time, and accurate data is the core differentiat
     *   **Full Knowledge Base Ingestion:** Successfully ingested and validated the entire (initial 7 articles and 4 deep research articles) knowledge base, including `articles` and `deep_research` content, resolving multiple bugs in the process. Contributors needed for the knowledge base. 
     *   **Advanced Metadata Filtering:** Enhanced the vector search index to support filtering on all available metadata fields, enabling more powerful and granular queries.
     *   With these tasks completed, the entire backend and data pipeline for the MVP FAQ feature is now functional and validated. The project's focus now shifts to frontend UI development.
+*   **Milestone 6: AI-Integrated Knowledge Base CMS Development - Phase 1: Core Setup & Basic Content Management (`CMS-IMP-001`)** - Completed 6/9/2025
+    *   **Core Setup:** Integrated selected frontend technologies (Tiptap, React Hook Form with Zod, ShadCN) into the Next.js application.
+    *   **Basic Article CRUD:** Developed basic article CRUD API endpoints (`/api/v1/articles`) in the FastAPI backend, capable of creating, reading, updating, and deleting article data in MongoDB. Frontend components for article creation/editing (including frontmatter form and Tiptap editor) were developed and connected to the backend API.
+    *   **Initial Authentication:** Implemented initial JWT-based authentication for CMS access, including login and registration endpoints.
+    *   **Basic User Roles:** Defined basic user roles (e.g., Writer, Editor) for core CMS actions.
