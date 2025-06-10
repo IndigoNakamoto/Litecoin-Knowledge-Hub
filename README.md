@@ -128,7 +128,6 @@ graph TD
     G -->|Generate Answer| H[LLM];
     H --> G;
     G --> I[Chatbot Response];
-end
 ```
 
 ## Content-First Approach
