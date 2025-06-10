@@ -49,13 +49,13 @@ This project is organized into several key milestones. For detailed information 
 | ✅ | [Milestone 3: Core RAG Pipeline](./cline_docs/milestones/milestone_3_core_rag_pipeline.md) | Implementation of the core data ingestion, retrieval, and generation pipeline. |
 | ✅ | [Milestone 4: Backend & Knowledge Base Completion](./cline_docs/milestones/milestone_4_litecoin_basics_faq.md) | Full backend and data pipeline for MVP FAQ feature, including full knowledge base ingestion and advanced metadata filtering. |
 | 📝 | [Milestone 5: Transaction & Block Explorer](./cline_docs/milestones/milestone_5_transaction_block_explorer.md) | Feature for looking up transaction and block details. |
-| ⏳ | [Milestone 6: AI-Integrated Knowledge Base CMS Development](./cline_docs/milestones/milestone_6_market_data_insights.md) | Development of the CMS. Phase 1 (Core Setup & Basic Content Management) ✅. Phase 2 (Semantic Search & RAG Sync) ⏳. Phase 3 (Refinement & Advanced Features) 📝. |
+| 🟨 | [Milestone 6: AI-Integrated Knowledge Base CMS Development](./cline_docs/milestones/milestone_6_market_data_insights.md) | Development of the CMS. Phase 1 (Core Setup & Basic Content Management) ✅. Phase 2 (Semantic Search & RAG Sync) ⏳. Phase 3 (Refinement & Advanced Features) 📝. |
 | 📝 | [Milestone 7: Developer Documentation](./cline_docs/milestones/milestone_7_developer_documentation.md) | Feature for providing access to developer resources. |
 | 📝 | [Milestone 8: Testing, Refinement & Deployment](./cline_docs/milestones/milestone_8_testing_refinement_deployment.md) | Comprehensive testing, optimization, and deployment. |
 
 **Legend:**
 *   ✅: Completed
-*   ⏳: In Progress
+*   🟨: In Progress
 *   📝: Planned
 
 ## Technology Stack
