@@ -8,10 +8,11 @@ from typing import List, Dict, Any
 load_dotenv()
 
 # Import the RAG chain constructor and data models
-from rag_pipeline import RAGPipeline
-from data_models import ChatRequest, ChatMessage # Import ChatRequest and ChatMessage
-from api.v1.sources import router as sources_router
-from cms.articles.router import router as articles_router
+from .rag_pipeline import RAGPipeline
+from .data_models import ChatRequest, ChatMessage # Import ChatRequest and ChatMessage
+from .api.v1.sources import router as sources_router
+from .cms.articles.router import router as articles_router
+from .cms.auth.router import router as auth_router
 
 from bson import ObjectId # Import ObjectId
 from fastapi.encoders import jsonable_encoder # Import jsonable_encoder
@@ -25,8 +26,7 @@ app.json_encoders = {
 }
 
 origins = [
-    "*",
-    "http://localhost:3001",  # Allow requests from the frontend development server
+    "http://localhost:3000",  # Allow requests from the frontend development server
 ]
 
 app.add_middleware(
@@ -40,6 +40,7 @@ app.add_middleware(
 # Include API routers
 app.include_router(sources_router, prefix="/api/v1/sources", tags=["Data Sources"])
 app.include_router(articles_router) # The prefix is already in the router
+app.include_router(auth_router) # The prefix is already in the router
 
 # Initialize RAGPipeline globally or as a dependency
 # For simplicity, initializing globally for now. Consider dependency injection for better testability.

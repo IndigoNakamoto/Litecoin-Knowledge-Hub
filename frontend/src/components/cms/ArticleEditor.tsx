@@ -4,38 +4,57 @@ import { useState } from 'react';
 import FrontmatterForm from './FrontmatterForm';
 import { ArticleFormData } from '@/lib/zod/articleSchema';
 import TiptapEditor from './TiptapEditor';
+import { useAuthContext } from '@/contexts/AuthContext';
 
 const ArticleEditor = () => {
   const [content, setContent] = useState('');
+  const { token } = useAuthContext();
 
   const handleFormSubmit = async (data: ArticleFormData) => {
+    console.log('Attempting to save article...');
+    console.log('Auth Token:', token);
+
+    if (!token) {
+      console.error('Authentication token is missing. Cannot save article.');
+      alert('You must be logged in to create an article.');
+      return;
+    }
+
     const articleData = {
       ...data,
-      tiptap_content_json: JSON.parse(content || '{}'), // Assuming Tiptap provides JSON
+      content_markdown: content,
     };
     
-    // Replace with your API endpoint
-    const response = await fetch('/api/v1/articles', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(articleData),
-    });
+    console.log('Article Data:', articleData);
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+    console.log('Backend URL:', backendUrl);
 
-    if (response.ok) {
-      // Handle success (e.g., redirect to dashboard)
-      console.log('Article saved successfully');
-    } else {
-      // Handle error
-      console.error('Failed to save article');
+    try {
+      const response = await fetch(`${backendUrl}/api/v1/articles`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(articleData),
+      });
+
+      if (response.ok) {
+        console.log('Article saved successfully');
+        alert('Article saved successfully!');
+        // Optionally, redirect or clear the form
+      } else {
+        console.error('Failed to save article');
+        alert('Failed to save article.');
+      }
+    } catch (error) {
+      console.error('An error occurred during article save:', error);
+      alert('An error occurred. Please try again.');
     }
   };
 
-  const handleEditorChange = (richText: string) => {
-    // For now, we're getting HTML. We'll need to configure Tiptap to output JSON.
-    // This is a placeholder.
-    setContent(JSON.stringify({ html: richText }));
+  const handleEditorChange = (markdown: string) => {
+    setContent(markdown);
   };
 
   return (

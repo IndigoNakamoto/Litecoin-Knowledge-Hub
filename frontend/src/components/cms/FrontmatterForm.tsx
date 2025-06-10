@@ -16,12 +16,18 @@ interface FrontmatterFormProps {
 const FrontmatterForm = ({ onSubmit, defaultValues }: FrontmatterFormProps) => {
   const form = useForm<ArticleFormData>({
     resolver: zodResolver(articleSchema),
-    defaultValues: defaultValues || {},
+    defaultValues: {
+      ...defaultValues,
+      tags: defaultValues?.tags || [], // Ensure tags is always an array
+    },
   });
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+      <form onSubmit={form.handleSubmit((data) => {
+        console.log('FrontmatterForm onSubmit triggered with data:', data);
+        onSubmit(data);
+      })} className="space-y-8">
         <FormField
           control={form.control}
           name="title"
