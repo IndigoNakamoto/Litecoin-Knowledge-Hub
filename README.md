@@ -118,16 +118,32 @@ The project utilizes a Next.js frontend and a Python/FastAPI backend. The archit
 
 ```mermaid
 graph TD
-    A[Raw Data Sources: GitHub, Docs, Articles] -->|Research & Synthesis| B(Human Curation & Writing);
-    B -->|Structured for AI| C[Curated Knowledge Base: 'Golden' Articles in Markdown];
-    C -->|ingest_data.py| D["RAG Pipeline: Hierarchical Chunking (Markdown) / Text Splitting & Embedding with 'retrieval_document' task_type"];
-    D --> E[MongoDB Vector Store];
-    F[User Query] -->|Embed with 'retrieval_query' task_type| G[API Backend];
-    G -->|Similarity Search| E;
-    E -->|Retrieve Context| G;
-    G -->|Generate Answer| H[LLM];
-    H --> G;
-    G --> I[Chatbot Response];
+    subgraph "Content Management & Curation (CMS)"
+        A[User/Content Creator] -->|Create/Edit Content in CMS| B(Frontend: Next.js, Tiptap Editor)
+        B -->|API Call - CRUD| C[Backend: FastAPI]
+        C -->|Store/Retrieve Article Data| D[Primary Data Store: MongoDB]
+        C -->|Vetting & Publishing| F[Content Lifecycle Management]
+    end
+
+    subgraph "Data Ingestion & RAG Pipeline"
+        A_Raw[Other Data Sources: GitHub, Docs, etc.] -->|Research & Synthesis| G(Human Curation)
+        F -->|Published Articles| H[Curated Knowledge Base]
+        G --> H
+        H -->|ingest_data.py| I["Ingestion Pipeline: Chunking & Embedding"]
+        I --> J[Vector Store: MongoDB Atlas]
+    end
+
+    subgraph "Chat & Retrieval"
+        K[User] -->|Sends Query| L[Chat Frontend: Next.js]
+        L -->|API Call| M[RAG API Backend: FastAPI]
+        M -->|Embed Query| N[Embedding Model]
+        N -->|Similarity Search| J
+        J -->|Retrieve Context| M
+        M -->|Generate Answer with Context| O[LLM]
+        O --> M
+        M -->|Sends Response| L
+    end
+
 ```
 
 ## Content-First Approach
