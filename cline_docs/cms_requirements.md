@@ -116,19 +116,19 @@ graph TD
 frontend/
 └── src/
     ├── app/
-    │   └── (cms)/                # Route group for CMS, protected by auth middleware
-    │       ├── dashboard/        # Page for listing all articles
+    │   └── (cms)/
+    │       ├── dashboard/
     │       │   └── page.tsx
     │       └── editor/
-    │           ├── [id]/         # Route for editing an existing article
+    │           ├── [id]/
     │           │   └── page.tsx
-    │           └── new/          # Route for creating a new article
+    │           └── new/
     │               └── page.tsx
     ├── components/
-    │   └── cms/                  # New directory for CMS-specific components
-    │       ├── ArticleEditor.tsx # The main editor component
+    │   └── cms/
+    │       ├── ArticleEditor.tsx
     │       ├── FrontmatterForm.tsx
-    │       └── TiptapEditor.tsx  # Renamed from PlateEditor
+    │       └── TiptapEditor.tsx
     └── lib/
         ├── zod/
         │   └── articleSchema.ts
