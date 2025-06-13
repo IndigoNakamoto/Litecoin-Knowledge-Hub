@@ -1,4 +1,4 @@
-# Tech Stack: Litecoin RAG Chat
+# Tech Stack: Litecoin Knowledge Hub
 
 ## Frontend
 *   **Framework:** Next.js

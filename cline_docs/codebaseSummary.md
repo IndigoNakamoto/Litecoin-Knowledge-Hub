@@ -1,7 +1,7 @@
 # Codebase Summary: Litecoin RAG Chat
 
 ## High-Level Directory Structure Overview
-*   **Git Repository Root:** `Litecoin-RAG-Chat/` (This is the root of the monorepo and the Git repository.)
+*   **Git Repository Root:** `Litecoin-Knowledge-Hub/` (This is the root of the monorepo and the Git repository.)
 *   `.gitignore`: Specifies intentionally untracked files that Git should ignore for both frontend and backend, with rules correctly scoped for the monorepo structure.
 *   `frontend/`: Contains the Next.js application.
     *   `src/`: Main source code for the Next.js application (using App Router).

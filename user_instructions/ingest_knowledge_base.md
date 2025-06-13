@@ -22,7 +22,7 @@ The process involves two main scripts that should be run in order from the proje
 
 ### **Summary of Steps**
 
-To perform a full, clean ingestion of the knowledge base, execute the following commands sequentially from the project's root directory (`Litecoin-RAG-Chat/`):
+To perform a full, clean ingestion of the knowledge base, execute the following commands sequentially from the project's root directory (`Litecoin-Knowledge-Hub/`):
 
 ```bash
 python backend/utils/clear_litecoin_docs_collection.py

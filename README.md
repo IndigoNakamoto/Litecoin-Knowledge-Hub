@@ -1,4 +1,4 @@
-# Litecoin RAG Chat
+# Litecoin Knowledge Hub
 
 ## Project Overview
 The Litecoin RAG (Retrieval-Augmented Generation) Chatbot is an AI-powered conversational tool designed to serve the Litecoin community by providing real-time, accurate answers to a wide range of questions. Its core strength lies in retrieving information from a human-vetted, curated knowledge base managed by the Litecoin Foundation through Ghost CMS. This ensures the information is not only accurate but also aligned with the Foundation's mission to combat misinformation and provide a single, trustworthy source for everything related to Litecoin. The chatbot aims to enhance user experience, foster greater adoption, and provide clear, reliable information about Litecoin's features, transaction management, development projects, and market insights.
@@ -94,7 +94,7 @@ This project is organized into several key milestones. For detailed information 
 For more details, see `cline_docs/techStack.md`.
 
 ## Project Structure
-*   **Git Repository Root:** `Litecoin-RAG-Chat/`
+*   **Git Repository Root:** `Litecoin-Knowledge-Hub/`
 *   `frontend/`: Next.js application.
     *   `src/app/`: Main application routes and pages.
     *   `src/components/`: Reusable React components.

@@ -1,4 +1,4 @@
-# Current Task: Litecoin RAG Chat
+# Current Task: Litecoin Knowledge Hub
 
 ## Current Sprint/Iteration Goal
 *   **Milestone 6: Ghost CMS Integration - Phase 2: Content API Integration & Webhook Synchronization (`GHOST-INT-002`)**
