@@ -5,12 +5,22 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useAuthContext } from '@/contexts/AuthContext';
 
-// This would typically be in a shared auth context or hook
-const useAuth = () => {
+const LoginPage = () => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  
+  const { setToken } = useAuthContext();
   const router = useRouter();
 
-  const login = async (email: string, password: string) => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError('');
+
     try {
       const formData = new URLSearchParams();
       formData.append('username', email);
@@ -27,37 +37,33 @@ const useAuth = () => {
 
       if (response.ok) {
         const data = await response.json();
-        localStorage.setItem('accessToken', data.access_token);
-        router.push('/dashboard'); // Redirect to dashboard on successful login
+        // Use the AuthContext setToken function
+        setToken(data.access_token);
+        // Redirect to dashboard
+        router.push('/dashboard');
       } else {
-        // Handle login error
-        console.error('Login failed');
-        alert('Login failed. Please check your credentials.');
+        const errorData = await response.json();
+        setError(errorData.detail || 'Login failed. Please check your credentials.');
       }
     } catch (error) {
-      console.error('An error occurred during login:', error);
-      alert('An error occurred. Please try again.');
+      setError('An error occurred. Please try again.');
+      console.error('Login error:', error);
+    } finally {
+      setIsLoading(false);
     }
-  };
-
-  return { login };
-};
-
-
-const LoginPage = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const { login } = useAuth();
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    login(email, password);
   };
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100">
       <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md">
         <h1 className="text-2xl font-bold text-center">CMS Login</h1>
+        
+        {error && (
+          <div className="p-3 text-sm text-red-600 bg-red-100 border border-red-300 rounded">
+            {error}
+          </div>
+        )}
+        
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <Label htmlFor="email">Email</Label>
@@ -67,6 +73,7 @@ const LoginPage = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              disabled={isLoading}
             />
           </div>
           <div>
@@ -77,10 +84,11 @@ const LoginPage = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              disabled={isLoading}
             />
           </div>
-          <Button type="submit" className="w-full">
-            Login
+          <Button type="submit" className="w-full" disabled={isLoading}>
+            {isLoading ? 'Logging in...' : 'Login'}
           </Button>
         </form>
       </div>

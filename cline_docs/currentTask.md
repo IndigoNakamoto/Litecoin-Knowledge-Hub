@@ -1,7 +1,7 @@
 # Current Task: Litecoin RAG Chat
 
 ## Current Sprint/Iteration Goal
-*   **Milestone 6: AI-Integrated Knowledge Base CMS Development - Phase 2: Semantic Search Implementation**
+*   **Milestone 6: AI-Integrated Knowledge Base CMS Development - Phase 3: Refinement & Advanced Features (`CMS-IMP-003`)**
 
 ## High-Priority Initiatives: AI-Integrated Knowledge Base CMS
 
@@ -26,8 +26,6 @@
         *   JWT authentication is implemented and protects relevant endpoints.
         *   Frontend login page and article editor are connected to the backend.
 
-## Task Backlog:
-
 *   ### Task ID: `CMS-IMP-002`
     *   #### Name: CMS Implementation - Phase 2: Semantic Search Implementation
     *   #### Detailed Description & Business Context:
@@ -41,17 +39,30 @@
     *   #### Link to projectRoadmap.md goal(s):
         *   Feature 6: AI-Integrated Knowledge Base CMS
         *   Milestone 6: AI-Integrated Knowledge Base CMS Development - Phase 2
-    *   #### Status: To Do
+    *   #### Status: Done
+    *   #### Notes on Completion:
+        *   Backend:
+            *   Created `/api/v1/articles/search` endpoint in `backend/cms/articles/router.py`.
+            *   Implemented `search_articles` in `backend/cms/articles/crud.py` using MongoDB Atlas Vector Search.
+            *   Modified `create_article` and `update_article` in `backend/cms/articles/crud.py` to generate and store `content_embedding` for articles.
+            *   Created RAG synchronization webhook `/api/v1/sync/rag` in `backend/cms/sync/router.py`.
+            *   Integrated webhook call into `update_article` in `backend/cms/articles/crud.py` to trigger on relevant `vetting_status` changes.
+            *   Implemented logic within the RAG sync webhook to add/delete documents from the RAG vector store using `VectorStoreManager`.
+        *   Frontend:
+            *   Added search input and results display to `frontend/src/app/(cms)/dashboard/page.tsx`.
+            *   Connected frontend search UI to the `/api/v1/articles/search` endpoint, handling API calls and displaying results.
     *   #### Plan:
         1.  **Backend Tasks (FastAPI):**
-            *   **Semantic Search Endpoint:** Create a new endpoint (e.g., `/api/v1/articles/search`) that embeds a search query and uses MongoDB Atlas Vector Search to find similar articles within the CMS content (including drafts).
-            *   **Content Ingestion for Search:** Modify the article save logic to trigger an asynchronous task that embeds the article's content and updates a dedicated CMS search index in MongoDB.
-            *   **RAG Synchronization Service:** Implement a webhook endpoint (e.g., `/api/v1/sync/rag`). When an article's `vetting_status` changes to 'vetted' (or a vetted article is updated/archived), the CMS backend will call this webhook to trigger the RAG ingestion pipeline (add/update/remove) for that specific article.
+            *   **Semantic Search Endpoint:** Create a new endpoint (e.g., `/api/v1/articles/search`) that embeds a search query and uses MongoDB Atlas Vector Search to find similar articles within the CMS content (including drafts). - ✅ Done
+            *   **Content Ingestion for Search:** Modify the article save logic to trigger an asynchronous task that embeds the article's content and updates a dedicated CMS search index in MongoDB. - ✅ Done (Integrated into save logic directly)
+            *   **RAG Synchronization Service:** Implement a webhook endpoint (e.g., `/api/v1/sync/rag`). When an article's `vetting_status` changes to 'vetted' (or a vetted article is updated/archived), the CMS backend will call this webhook to trigger the RAG ingestion pipeline (add/update/remove) for that specific article. - ✅ Done
         2.  **Frontend Tasks (Next.js):**
-            *   **Search UI:** Add a search bar and results display to the CMS dashboard page, connected to the new search API endpoint.
+            *   **Search UI:** Add a search bar and results display to the CMS dashboard page, connected to the new search API endpoint. - ✅ Done
     *   #### Estimated Effort: (To be determined)
     *   #### Assigned To: (To be determined)
     *   #### Priority: High
+    
+## Task Backlog:
 
 *   ### Task ID: `CMS-IMP-003`
     *   #### Name: CMS Implementation - Phase 3: Refinement & Advanced Features

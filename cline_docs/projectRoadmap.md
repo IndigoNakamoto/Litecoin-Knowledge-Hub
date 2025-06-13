@@ -82,19 +82,21 @@ This focus on specialized, real-time, and accurate data is the core differentiat
 *   **Milestone 1:** Project Initialization & Documentation Setup (Completed)
 *   **Milestone 2:** Basic Project Scaffold (Next.js Frontend, FastAPI Backend) (Completed)
 *   **Milestone 3:** Core RAG Pipeline Implementation (Data Ingestion, Embedding, Retrieval, Generation) (Completed)
-*   **Milestone 4:** MVP Feature 1 Implementation (Litecoin Basics & FAQ) (Current - Focus on frontend UI development and E2E testing for FAQ)
-*   **Milestone 5:** MVP Feature 2 Implementation (Transaction & Block Explorer)
-*   **Milestone 6: AI-Integrated Knowledge Base CMS Development**
-    *   **Phase 1: Core Setup & Basic Content Management (`CMS-IMP-001`)**
+*   **Milestone 4:** MVP Feature 1 Implementation (Litecoin Basics & FAQ) (Completed)
+*   **Milestone 5:** MVP Feature 2 Implementation (Transaction & Block Explorer) (Planned)
+*   **Milestone 6: AI-Integrated Knowledge Base CMS Development** ([View Details](./milestones/milestone_6_ai_integrated_cms.md))
+    *   **Phase 1: Core Setup & Basic Content Management (`CMS-IMP-001`)** - ✅ Completed
         *   **Goal:** Establish foundational elements for article creation, editing, and management.
         *   **Tasks:** Develop backend structure (FastAPI) with domain-driven modules (`/cms`), implement Pydantic models and CRUD APIs (`/api/v1/articles`), and set up initial JWT authentication with basic roles. On the frontend (Next.js), install dependencies (Tiptap, React Hook Form), create Zod schemas, and build core components (`FrontmatterForm`, `TiptapEditor`) and pages for the CMS.
-    *   **Phase 2: Semantic Search & RAG Synchronization (`CMS-IMP-002`)**
+    *   **Phase 2: Semantic Search & RAG Synchronization (`CMS-IMP-002`)** - ⏳ In Progress
         *   **Goal:** Enhance CMS usability and connect it to the live RAG pipeline.
         *   **Tasks:** Implement a semantic search API and UI for internal CMS use. Establish a robust synchronization mechanism (e.g., webhook) to update the RAG pipeline's vector store in real-time as content is vetted, updated, or archived in the CMS.
-    *   **Phase 3: Refinement & Advanced Features (`CMS-IMP-003`)**
+    *   **Phase 3: Refinement & Advanced Features (`CMS-IMP-003`)** - 📝 Planned
         *   **Goal:** Build a mature, feature-rich CMS with granular security and AI assistance.
         *   **Tasks:** Implement a granular RBAC system tied to content workflows (draft, review, vetted). Integrate cloud storage for large assets. Enhance the Tiptap editor with strict template enforcement and custom blocks. Introduce AI-assisted authoring tools (e.g., summarization, rephrasing) via Tiptap extensions and a secure backend proxy.
-*   **Milestone 7:** Implement User Experience & Accuracy Enhancements (General RAG Chat - Planned)
+*   **Milestone 7:** MVP Feature 4 Implementation (Developer Documentation & Resources) ([View Details](./milestones/milestone_7_developer_documentation.md)) (Planned)
+*   **Milestone 8:** Testing, Refinement & Deployment ([View Details](./milestones/milestone_8_testing_refinement_deployment.md)) (Planned)
+*   **Milestone 9:** MVP Feature 3 Implementation (Market Data & Insights) ([View Details](./milestones/milestone_9_market_data_insights.md)) (Planned)
 *   (Timelines to be determined)
 
 ## Success Metrics
@@ -122,13 +124,14 @@ This focus on specialized, real-time, and accurate data is the core differentiat
     *   The core RAG pipeline is now functional and capable of ingesting data, retrieving relevant chunks, and generating answers with source attribution.
     *   **Enhancement (6/6/2025):** The RAG pipeline was significantly enhanced by implementing hierarchical chunking for Markdown, specific `task_type` usage for `text-embedding-004` (distinguishing between document and query embeddings), and an improved LLM prompt template. These changes optimize retrieval accuracy and contextual understanding.
     *   **Enhancement (6/6/2025):** Implemented metadata filtering capabilities. This involved updating `embedding_processor.py` to parse frontmatter (including `published_at` date conversion), `vector_store_manager.py` to handle flattened metadata for deletion, and confirming the correct Atlas Vector Search index definition for filtering on root-level fields.
-*   **Milestone 4: Backend & Knowledge Base Completion** - Completed 6/7/2025
+*   **Milestone 4: Backend & Knowledge Base Completion (MVP Feature 1: Litecoin Basics & FAQ)** - Completed 6/7/2025
     *   **Data Source CRUD API:** Implemented a full suite of CRUD API endpoints (`/api/v1/sources`) for managing data sources, providing a foundational mechanism for controlling the knowledge base.
-    *   **Full Knowledge Base Ingestion:** Successfully ingested and validated the entire (initial 7 articles and 4 deep research articles) knowledge base, including `articles` and `deep_research` content, resolving multiple bugs in the process. Contributors needed for the knowledge base. 
+    *   **Full Knowledge Base Ingestion:** Successfully ingested and validated the entire (initial 7 articles and 4 deep research articles) knowledge base, including `articles` and `deep_research` content, resolving multiple bugs in the process.
     *   **Advanced Metadata Filtering:** Enhanced the vector search index to support filtering on all available metadata fields, enabling more powerful and granular queries.
-    *   With these tasks completed, the entire backend and data pipeline for the MVP FAQ feature is now functional and validated. The project's focus now shifts to frontend UI development.
+    *   With these tasks completed, the entire backend and data pipeline for the MVP FAQ feature is now functional and validated.
 *   **Milestone 6: AI-Integrated Knowledge Base CMS Development - Phase 1: Core Setup & Basic Content Management (`CMS-IMP-001`)** - Completed 6/9/2025
     *   **Core Setup:** Integrated selected frontend technologies (Tiptap, React Hook Form with Zod, ShadCN) into the Next.js application.
     *   **Basic Article CRUD:** Developed basic article CRUD API endpoints (`/api/v1/articles`) in the FastAPI backend, capable of creating, reading, updating, and deleting article data in MongoDB. Frontend components for article creation/editing (including frontmatter form and Tiptap editor) were developed and connected to the backend API.
     *   **Initial Authentication:** Implemented initial JWT-based authentication for CMS access, including login and registration endpoints.
     *   **Basic User Roles:** Defined basic user roles (e.g., Writer, Editor) for core CMS actions.
+    *   This milestone corresponds to Feature 6 in the "Key Features & User Stories" section.

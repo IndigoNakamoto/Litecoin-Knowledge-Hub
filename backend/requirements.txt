@@ -16,3 +16,7 @@ fastapi-users[beanie,jwt]
 passlib[bcrypt]
 python-jose
 email-validator
+httpx
+pytest
+pytest-asyncio
+pytest-mock
