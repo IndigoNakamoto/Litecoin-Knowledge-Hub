@@ -1,17 +1,17 @@
 # Litecoin RAG Chat
 
 ## Project Overview
-The Litecoin RAG (Retrieval-Augmented Generation) Chatbot is an AI-powered conversational tool designed to serve the Litecoin community by providing real-time, accurate answers to a wide range of questions. Its core strength lies in retrieving information from a human-vetted, curated knowledge base managed by the Litecoin Foundation. This ensures the information is not only accurate but also aligned with the Foundation's mission to combat misinformation and provide a single, trustworthy source for everything related to Litecoin. The chatbot aims to enhance user experience, foster greater adoption, and provide clear, reliable information about Litecoin's features, transaction management, development projects, and market insights.
+The Litecoin RAG (Retrieval-Augmented Generation) Chatbot is an AI-powered conversational tool designed to serve the Litecoin community by providing real-time, accurate answers to a wide range of questions. Its core strength lies in retrieving information from a human-vetted, curated knowledge base managed by the Litecoin Foundation through Ghost CMS. This ensures the information is not only accurate but also aligned with the Foundation's mission to combat misinformation and provide a single, trustworthy source for everything related to Litecoin. The chatbot aims to enhance user experience, foster greater adoption, and provide clear, reliable information about Litecoin's features, transaction management, development projects, and market insights.
 
-**Target Users/Audience:** Litecoin users (novice and experienced), Cryptocurrency enthusiasts, Developers building on Litecoin, Potential adopters seeking reliable information about Litecoin’s features, transactions, or market trends.
+**Target Users/Audience:** Litecoin users (novice and experienced), Cryptocurrency enthusiasts, Developers building on Litecoin, Potential adopters seeking reliable information about Litecoin's features, transactions, or market trends.
 
 ## Project Status
 The project has successfully completed:
 *   **Core RAG Pipeline Implementation** (Milestone 3).
 *   **Backend & Knowledge Base Completion** (Milestone 4).
-*   **AI-Integrated Knowledge Base CMS Development - Phase 1: Core Setup & Basic Content Management (`CMS-IMP-001`)** (Milestone 6, Phase 1).
+*   **Ghost CMS Integration Planning** (Milestone 6, Phase 1).
 
-The project is currently focused on **Milestone 6: AI-Integrated Knowledge Base CMS Development - Phase 2: Semantic Search Implementation (`CMS-IMP-002`)**.
+The project is currently focused on **Milestone 6: Ghost CMS Integration - Phase 2: Implementation & RAG Synchronization**.
 
 ## Key Features
 
@@ -30,14 +30,15 @@ Provides quick access to snippets from Litecoin developer documentation, links t
 ### Feature 5: Curated Knowledge Base
 A continuously updated library of well-researched, clearly written articles and data covering all aspects of Litecoin. This content is explicitly structured for optimal machine retrieval and serves as the primary source for the chatbot's answers.
 
-### Feature 6: AI-Integrated Knowledge Base CMS
-A foundational component of the content strategy, this Content Management System (CMS) is designed to ensure the quality, consistency, and accuracy of the Litecoin Knowledge Base. It facilitates the creation, editing, vetting, publishing, and archiving of knowledge base articles, integrating AI assistance to streamline workflows.
+### Feature 6: Ghost CMS Integration
+A robust content management solution leveraging Ghost CMS to ensure the quality, consistency, and accuracy of the Litecoin Knowledge Base. Ghost CMS provides enterprise-grade content management with native Markdown support, facilitating the creation, editing, and publishing of knowledge base articles with proper editorial workflows.
+
 *   **Primary Goals:**
-    *   Enforce strict content structure for optimal RAG pipeline performance.
-    *   Provide a user-friendly editor (Tiptap with React Hook Form).
-    *   Ensure data integrity with schema-driven validation (Zod).
-    *   Seamlessly integrate with the Next.js frontend and backend ingestion pipeline.
-*   **Current Status:** Phase 1 (Core Setup & Basic Content Management) is complete. Phase 2 (Semantic Search Implementation) is in progress.
+    *   Leverage Ghost's native Markdown support for optimal RAG pipeline compatibility.
+    *   Implement foundation-controlled editorial workflows (Contributors create drafts, Foundation team publishes).
+    *   Ensure seamless integration with existing RAG pipeline through Ghost Content API.
+    *   Maintain content structure standards for hierarchical chunking.
+*   **Current Status:** Planning phase complete. Implementation phase in progress.
 
 ## Project Milestones
 This project is organized into several key milestones. For detailed information on each milestone, please refer to the documents in the `cline_docs/milestones/` directory.
@@ -49,7 +50,7 @@ This project is organized into several key milestones. For detailed information 
 | ✅ | [Milestone 3: Core RAG Pipeline](./cline_docs/milestones/milestone_3_core_rag_pipeline.md) | Implementation of the core data ingestion, retrieval, and generation pipeline. |
 | ✅ | [Milestone 4: Backend & Knowledge Base Completion](./cline_docs/milestones/milestone_4_litecoin_basics_faq.md) | Full backend and data pipeline for MVP FAQ feature (Feature 1), including full knowledge base ingestion and advanced metadata filtering. |
 | 📝 | [Milestone 5: Transaction & Block Explorer](./cline_docs/milestones/milestone_5_transaction_block_explorer.md) | MVP Feature 2: Feature for looking up transaction and block details. |
-| 🟨 | [Milestone 6: AI-Integrated Knowledge Base CMS Development](./cline_docs/milestones/milestone_6_ai_integrated_cms.md) | MVP Feature 6: Development of the CMS. Phase 1 (Core Setup & Basic Content Management) ✅. Phase 2 (Semantic Search & RAG Sync) ⏳. Phase 3 (Refinement & Advanced Features) 📝. |
+| 🟨 | [Milestone 6: Ghost CMS Integration](./cline_docs/milestones/milestone_6_ghost_cms_integration.md) | MVP Feature 6: Integration with Ghost CMS. Phase 1 (Planning & Setup) ✅. Phase 2 (Implementation & RAG Sync) ⏳. Phase 3 (Advanced Features & Optimization) 📝. |
 | 📝 | [Milestone 7: Developer Documentation & Resources](./cline_docs/milestones/milestone_7_developer_documentation.md) | MVP Feature 4: Feature for providing access to developer resources. |
 | 📝 | [Milestone 8: Testing, Refinement & Deployment](./cline_docs/milestones/milestone_8_testing_refinement_deployment.md) | Comprehensive testing, optimization, and deployment of all MVP features. |
 | 📝 | [Milestone 9: Market Data & Insights](./cline_docs/milestones/milestone_9_market_data_insights.md) | MVP Feature 3: Feature for delivering real-time Litecoin market data. |
@@ -64,24 +65,27 @@ This project is organized into several key milestones. For detailed information 
 *   **Frontend:**
     *   Framework: Next.js
     *   Styling: Tailwind CSS
-    *   UI Libraries: ShadCN
-    *   Form Management (CMS): React Hook Form with Zod
-    *   Rich Text Editor (CMS): Tiptap
     *   Language: TypeScript
 *   **Backend:**
     *   Language: Python
     *   Framework: FastAPI
     *   RAG & LLM: Langchain (`langchain`, `langchain-core`, `langchain-community`), Google Text Embedding (`text-embedding-004`), `ChatGoogleGenerativeAI` (gemini-pro)
     *   Database Interaction: MongoDB (`pymongo`, `motor`)
-    *   Authentication (CMS): `fastapi-users`, `jose`, `passlib`
-    *   Data Handling: `python-frontmatter`
+    *   Ghost Integration: Ghost Content API, webhook handling
+    *   Data Handling: `python-frontmatter`, HTML-to-Markdown conversion
     *   Other Key Libraries: `requests`, `tweepy`, `GitPython`, `beautifulsoup4`, `lxml`
+*   **Content Management:**
+    *   CMS: Ghost (self-hosted)
+    *   Database: MySQL (Ghost), MongoDB (RAG vectors)
+    *   Content Format: Markdown (native Ghost support)
 *   **Database:**
-    *   Type: MongoDB
-    *   Usage: Vector storage (MongoDB Atlas Vector Search), general application data, CMS content.
+    *   Vector Storage: MongoDB Atlas Vector Search
+    *   Content Storage: MySQL (Ghost CMS)
+    *   General Data: MongoDB
 *   **Deployment:**
     *   Frontend: Vercel
     *   Backend: TBD (e.g., Vercel Functions, Google Cloud Run, AWS Lambda)
+    *   Ghost CMS: Self-hosted (TBD platform)
 *   **Testing:**
     *   Frontend: TBD (e.g., Jest, React Testing Library, Cypress)
     *   Backend: TBD (e.g., Pytest)
@@ -92,20 +96,17 @@ For more details, see `cline_docs/techStack.md`.
 ## Project Structure
 *   **Git Repository Root:** `Litecoin-RAG-Chat/`
 *   `frontend/`: Next.js application.
-    *   `src/app/(cms)/`: CMS-specific routes (dashboard, editor).
-    *   `src/components/cms/`: CMS-specific React components (`ArticleEditor.tsx`, `FrontmatterForm.tsx`, `TiptapEditor.tsx`).
-    *   `src/lib/zod/articleSchema.ts`: Zod schema for CMS article validation.
-    *   `src/contexts/AuthContext.tsx`: Manages JWT tokens for CMS authentication.
+    *   `src/app/`: Main application routes and pages.
+    *   `src/components/`: Reusable React components.
+    *   `src/lib/`: Utility libraries and configurations.
 *   `backend/`: FastAPI application.
-    *   `cms/`: Modules for CMS backend (articles, users, auth).
+    *   `ghost_integration/`: Ghost CMS integration modules.
     *   `data_ingestion/`: Modules for data loading, embedding, vector store management.
-    *   `api/v1/`: API version 1 routers (chat, sources, articles).
+    *   `api/v1/`: API version 1 routers (chat, sources, sync).
     *   `main.py`: Main FastAPI application.
     *   `rag_pipeline.py`: Core RAG logic.
-*   `knowledge_base/`: Curated Markdown articles.
-    *   `articles/`
-    *   `deep_research/`
-    *   `_template.md`
+    *   `embedding_processor_ghost.py`: Ghost-specific content processing.
+*   `knowledge_base/`: Legacy curated Markdown articles (to be migrated to Ghost).
 *   `cline_docs/`: Project documentation.
 *   `cline_agent_workspace/`: Cline's operational files.
 *   `user_instructions/`: User-facing guides.
@@ -115,42 +116,49 @@ For a detailed overview, see `cline_docs/codebaseSummary.md`.
 
 ## Architecture Overview
 
-The project utilizes a Next.js frontend and a Python/FastAPI backend. The architecture is centered around a **content-first RAG pipeline**, where a curated knowledge base is ingested to provide context for the LLM, ensuring responses are grounded in verified information.
+The project utilizes a Next.js frontend, Python/FastAPI backend, and Ghost CMS for content management. The architecture is centered around a **content-first RAG pipeline** with Ghost CMS serving as the authoritative content source.
 
 ```mermaid
 graph TD
-    subgraph "Content Management & Curation (CMS)"
-        A[User/Content Creator] -->|Create/Edit Content in CMS| B(Frontend: Next.js, Tiptap Editor)
-        B -->|API Call - CRUD| C[Backend: FastAPI]
-        C -->|Store/Retrieve Article Data| D[Primary Data Store: MongoDB]
-        C -->|Vetting & Publishing| F[Content Lifecycle Management]
+    subgraph "Content Management (Ghost CMS)"
+        A[Foundation Team] -->|Create/Edit Content| B[Ghost CMS Admin]
+        C[Community Contributors] -->|Submit Drafts| B
+        B -->|Webhook Triggers| D[Content Sync Service]
+        B -->|Content API| E[MySQL Database]
     end
 
-    subgraph "Data Ingestion & RAG Pipeline"
-        A_Raw[Other Data Sources: GitHub, Docs, etc.] -->|Research & Synthesis| G(Human Curation)
-        F -->|Published Articles| H[Curated Knowledge Base]
-        G --> H
-        H -->|ingest_data.py| I["Ingestion Pipeline: Chunking & Embedding"]
-        I --> J[Vector Store: MongoDB Atlas]
+    subgraph "RAG Pipeline Integration"
+        D -->|Process Published Content| F[embedding_processor_ghost.py]
+        F -->|HTML to Markdown| G[Hierarchical Chunking]
+        G -->|Embed with text-embedding-004| H[Vector Store: MongoDB]
     end
 
-    subgraph "Chat & Retrieval"
-        K[User] -->|Sends Query| L[Chat Frontend: Next.js]
-        L -->|API Call| M[RAG API Backend: FastAPI]
-        M -->|Embed Query| N[Embedding Model]
-        N -->|Similarity Search| J
-        J -->|Retrieve Context| M
-        M -->|Generate Answer with Context| O[LLM]
-        O --> M
-        M -->|Sends Response| L
+    subgraph "Chat Interface"
+        I[User] -->|Query| J[Next.js Frontend]
+        J -->|API Call| K[FastAPI Backend]
+        K -->|Embed Query| L[Embedding Model]
+        L -->|Vector Search| H
+        H -->|Retrieve Context| K
+        K -->|Generate Response| M[LLM]
+        M -->|Structured Answer| J
     end
 
+    subgraph "External Integrations"
+        N[Ghost Webhooks] -->|Content Events| D
+        O[Ghost Content API] -->|Fetch Full Content| F
+    end
 ```
 
-## Content-First Approach
-This project emphasizes a **content-first strategy**. The accuracy and reliability of the chatbot are directly tied to the quality of the information in its `knowledge_base/`. This directory houses meticulously researched, well-structured Markdown articles covering various Litecoin topics. These articles are the "golden source" for the RAG pipeline.
+## Content-First Approach with Ghost CMS
+This project emphasizes a **content-first strategy** powered by Ghost CMS. The accuracy and reliability of the chatbot are directly tied to the quality of the information managed through Ghost's editorial workflow. Ghost CMS provides:
 
-While the system can ingest data from other sources (web, GitHub, etc.), the primary focus for high-quality, trusted answers will always be the content within `knowledge_base/`.
+*   **Foundation-controlled editorial workflow**: Contributors create drafts, Foundation team reviews and publishes
+*   **Native Markdown support**: Optimal compatibility with existing RAG pipeline
+*   **Rich content API**: Comprehensive access to content and metadata
+*   **Webhook system**: Real-time synchronization with RAG pipeline
+*   **Professional editorial interface**: Streamlined content creation and management
+
+The Ghost CMS serves as the "golden source" for the RAG pipeline, replacing the previous custom CMS approach while maintaining the same high standards for content quality and structure.
 
 ## Getting Started
 
@@ -160,10 +168,10 @@ While the system can ingest data from other sources (web, GitHub, etc.), the pri
 *   **Python:** Version 3.x.
 *   **pip:** Python package installer (comes with Python).
 *   **Virtual Environment:** Recommended for Python projects.
+*   **Ghost CMS:** Self-hosted Ghost instance with Content API access.
+*   **MySQL:** Database for Ghost CMS.
 
 ### Running Development Servers
-
-This document provides instructions to run the Next.js frontend and FastAPI backend development servers to access the functional chat interface.
 
 #### Frontend (Next.js)
 
@@ -179,7 +187,7 @@ This document provides instructions to run the Next.js frontend and FastAPI back
     The Next.js development server should start, typically on `http://localhost:3000`.
 
 3.  **Verify:**
-    Open your web browser and go to `http://localhost:3001`. You should see the Litecoin RAG Chat interface.
+    Open your web browser and go to `http://localhost:3000`. You should see the Litecoin RAG Chat interface.
 
 #### Backend (FastAPI)
 
@@ -189,114 +197,75 @@ This document provides instructions to run the Next.js frontend and FastAPI back
     ```
 
 2.  **Create a virtual environment (recommended):**
-    *   Create the environment:
-        ```bash
-        python3 -m venv venv
-        ```
-    *   Activate the environment:
-        *   On macOS/Linux:
-            ```bash
-            source venv/bin/activate
-            ```
-        *   On Windows:
-            ```bash
-            .\venv\Scripts\activate
-            ```
+    ```bash
+    python3 -m venv venv
+    source venv/bin/activate  # On macOS/Linux
+    # .\venv\Scripts\activate  # On Windows
+    ```
 
 3.  **Install dependencies:**
     ```bash
     pip install -r requirements.txt
     ```
 
-4.  **Run the development server:**
+4.  **Set up environment variables:**
+    ```bash
+    cp .env.example .env
+    # Edit .env with your Ghost CMS URL, API keys, and database credentials
+    ```
+
+5.  **Run the development server:**
     ```bash
     uvicorn main:app --reload
     ```
     The FastAPI development server should start, typically on `http://localhost:8000`.
 
-5.  **Verify:**
-    Open your web browser or a tool like Postman and go to `http://localhost:8000/`. You should see a JSON response:
-    ```json
-    {"message":"Hello World"}
-    ```
+### Ghost CMS Setup
 
-### Running Data Ingestion
+1.  **Install Ghost CMS** following the official documentation
+2.  **Configure Content API** in Ghost Admin → Settings → Integrations
+3.  **Set up webhooks** for content synchronization with RAG pipeline
+4.  **Configure user roles** (Contributors for community, Editors/Admins for Foundation)
 
-The `ingest_data.py` script has been refactored to support multiple data sources. You can specify the source type and identifier using command-line arguments.
+### Running Data Ingestion from Ghost
 
 1.  **Navigate to the backend directory:**
     ```bash
     cd backend
     ```
 
-2.  **Activate your virtual environment** (if you haven't already):
-    *   On macOS/Linux:
-        ```bash
-        source venv/bin/activate
-        ```
-    *   On Windows:
-        ```bash
-        .\venv\Scripts\activate
-        ```
-
-3.  **Ensure MongoDB Atlas Vector Search index is set up** as per `user_instructions/setup_mongodb_vector_index.md`.
-
-4.  **Run the ingestion script with desired source:**
-
-    *   **Litecoin Docs (Sample):**
-        ```bash
-        python ingest_data.py --source_type litecoin_docs --source_identifier data_ingestion/sample_litecoin_docs.md
-        ```
-    *   **YouTube (via Citeio API):**
-        ```bash
-        python ingest_data.py --source_type youtube --source_identifier "https://www.youtube.com/watch?v=your_video_id"
-        ```
-        (Replace `your_video_id` with an actual YouTube video ID)
-    *   **Twitter (X) Posts:**
-        ```bash
-        python ingest_data.py --source_type twitter --source_identifier "litecoin,satoshi"
-        ```
-        (Replace `litecoin,satoshi` with comma-separated Twitter handles)
-    *   **GitHub Repository (Markdown files):**
-        ```bash
-        python ingest_data.py --source_type github --source_identifier "https://github.com/litecoin-project/litecoin"
-        ```
-        (Replace with a valid GitHub repository URL)
-    *   **Web Article:**
-        ```bash
-        python ingest_data.py --source_type web_article --source_identifier "https://litecoin.com/en/"
-        ```
-        (Replace with a valid web article URL)
-
-5.  **Verify:**
-    Confirm the script runs successfully and data is populated in your MongoDB Atlas collection.
-
-    **Prioritizing Curated Content:**
-    For the highest quality results, especially for the "Litecoin Basics & FAQ" feature, prioritize ingesting content from the `knowledge_base/` directory:
+2.  **Run Ghost content ingestion:**
     ```bash
-    python ingest_data.py --source_type markdown --source_identifier ../knowledge_base
+    python ingest_ghost_content.py --ghost_url https://your-ghost-site.com --api_key your_content_api_key
     ```
-    (This assumes you are in the `backend/` directory. Adjust the path if necessary.)
 
-If you encounter any issues, please check the terminal output for error messages.
+3.  **Verify:**
+    Confirm content is processed and vectors are stored in MongoDB Atlas.
 
 ## Security Considerations
 *   Input validation for all user queries and API inputs.
 *   Protection against common web vulnerabilities (OWASP Top 10).
 *   Secure handling of API keys and credentials (not hardcoded).
-*   Authentication and authorization for CMS functionalities.
+*   Ghost CMS authentication and authorization for content management.
+*   Webhook security for Ghost-to-RAG synchronization.
 
 ## Documentation
 The project's core documentation is maintained in the `cline_docs/` directory:
 *   `projectRoadmap.md`: High-level project vision, goals, architecture, and major milestones.
-*   `currentTask.md`: Details active tasks, backlog, progress, and Cline's immediate plan.
+*   `currentTask.md`: Details active tasks, backlog, progress, and immediate development plan.
 *   `techStack.md`: Documents all technology choices, frameworks, tools, and their rationale.
 *   `codebaseSummary.md`: Provides an overview of the project's structure, key components, data flow, and dependencies.
 
 ## Contributing
-This project thrives on community contributions, especially to its core knowledge base. To ensure quality and consistency, we have a structured contribution process.
+This project thrives on community contributions to its knowledge base through Ghost CMS. The Litecoin Foundation maintains editorial control while enabling community participation.
 
-For detailed instructions on how to contribute articles to the knowledge base, including topic selection, article structure, frontmatter requirements, and the submission process, please see the **[Knowledge Base Contribution Guide](./user_instructions/knowledge_base_contribution_guide.md)**.
+### Content Contribution Process
+1.  **Request Contributor Access**: Contact the Litecoin Foundation for Ghost CMS contributor credentials
+2.  **Create Draft Content**: Use Ghost's Markdown editor to create well-structured articles
+3.  **Foundation Review**: Foundation team reviews and publishes approved content
+4.  **Automatic Sync**: Published content automatically updates the RAG pipeline
+
+For detailed guidelines on content structure and submission, see the Ghost CMS editorial guidelines (to be provided by Foundation team).
 
 ## License
 (To be determined - e.g., MIT License)
