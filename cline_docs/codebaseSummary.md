@@ -12,6 +12,7 @@
         *   `contexts/`: React contexts for state management.
         *   `lib/`: Utility libraries and configurations.
 *   `backend/`: Contains the FastAPI application.
+    *   `cms/`: Contains the self-hosted Strapi CMS application. This is the content authoring and management system.
     *   `strapi/`: Directory for Strapi CMS integration modules.
         *   `client.py`: Strapi REST API client implementation.
         *   `webhook_handler.py`: Strapi webhook processing logic.
@@ -52,6 +53,9 @@
 *   `backend/data_ingestion/embedding_processor.py`: Handles hierarchical chunking of Markdown documents (prepending titles/sections to content) and standard text splitting for other formats. Generates vector embeddings using Google Text Embedding 004 with `task_type='retrieval_document'` for knowledge base content.
 *   `backend/data_ingestion/vector_store_manager.py`: Manages connections to MongoDB Atlas. Facilitates the insertion and retrieval of vector embeddings. Handles deletion of documents based on flattened metadata fields.
 
+### Strapi CMS Application
+*   `backend/cms/`: The self-hosted Strapi application. It provides the admin UI for content creation, role-based access control, and the API endpoints for the frontend and RAG pipeline to consume.
+
 ### Strapi CMS Integration Components
 *   `backend/strapi/client.py`: Strapi REST API client for fetching content collections, handling authentication, and managing API requests.
 *   `backend/strapi/webhook_handler.py`: Processes Strapi webhook events (e.g., entry.publish, entry.unpublish) and triggers the appropriate RAG pipeline updates.
@@ -60,7 +64,6 @@
 
 ### Legacy Components (To be Modified/Removed)
 *   `backend/data_ingestion/litecoin_docs_loader.py`: Legacy loader for Markdown files. Will be used by the migration script but deprecated for direct ingestion.
-*   `backend/cms/`: Directory containing a deprecated custom CMS implementation. This will be removed.
 
 ### Utility and Support Components
 *   `backend/ingest_data.py`: A standalone script to orchestrate the data ingestion process, to be updated to support Strapi as a content source.

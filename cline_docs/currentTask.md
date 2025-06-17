@@ -7,6 +7,25 @@
 
 ## Recently Completed Tasks:
 
+*   ### Task ID: `STRAPI-INT-001`
+    *   #### Name: Strapi Setup and Configuration
+    *   #### Detailed Description & Business Context:
+        Establish a self-hosted Strapi instance tailored to our content management needs. This includes provisioning the necessary infrastructure, defining the content models that will structure our knowledge base, and configuring role-based access control (RBAC) to enforce the Foundation's editorial workflow.
+    *   #### Acceptance Criteria:
+        1.  A Strapi instance is provisioned and running on a secure hosting platform.
+        2.  Content types (e.g., FAQs, Articles, Documentation) are defined in Strapi.
+        3.  RBAC is configured for Contributor, Editor, and Administrator roles.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Feature 6: Strapi CMS Integration
+        *   Milestone 6: Strapi CMS Integration - Phase 1
+    *   #### Status: Done
+    *   #### Notes on Completion:
+        *   Successfully initialized the Strapi application in `backend/cms` using `npx create-strapi-app`.
+        *   The application is running with a default SQLite database for local development.
+        *   The first administrative user has been created.
+    *   #### Estimated Effort: 3-5 days
+    *   #### Priority: High
+
 *   ### Task ID: `CMS-PIVOT-001`
     *   #### Name: CMS Strategy Pivot to Strapi
     *   #### Detailed Description & Business Context:
@@ -25,21 +44,6 @@
         *   All high-level project documents have been updated to reflect this pivot.
 
 ## Task Backlog:
-
-*   ### Task ID: `STRAPI-INT-001`
-    *   #### Name: Strapi Setup and Configuration
-    *   #### Detailed Description & Business Context:
-        Establish a self-hosted Strapi instance tailored to our content management needs. This includes provisioning the necessary infrastructure, defining the content models that will structure our knowledge base, and configuring role-based access control (RBAC) to enforce the Foundation's editorial workflow.
-    *   #### Acceptance Criteria:
-        1.  A Strapi instance is provisioned and running on a secure hosting platform.
-        2.  Content types (e.g., FAQs, Articles, Documentation) are defined in Strapi.
-        3.  RBAC is configured for Contributor, Editor, and Administrator roles.
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Feature 6: Strapi CMS Integration
-        *   Milestone 6: Strapi CMS Integration - Phase 1
-    *   #### Status: To Do
-    *   #### Estimated Effort: 3-5 days
-    *   #### Priority: High
 
 *   ### Task ID: `STRAPI-INT-002`
     *   #### Name: Content API Integration
