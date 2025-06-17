@@ -14,49 +14,46 @@
     *   Google Text Embedding (specifically `text-embedding-004`)
     *   Libraries for interacting with MongoDB (e.g., `pymongo`, `motor`)
     *   Libraries for RAG pipeline: Langchain (chosen - core packages: `langchain`, `langchain-core`, `langchain-community`)
-    *   `requests`: For making HTTP requests to Ghost Content API and external services.
+    *   `requests`: For making HTTP requests to Strapi's REST API and other external services.
     *   `tweepy`: For interacting with the Twitter (X) API.
     *   `GitPython`: For cloning and interacting with Git repositories (e.g., GitHub).
     *   `beautifulsoup4`: For parsing HTML and XML documents (e.g., web scraping).
     *   `lxml`: A fast XML and HTML parser, often used as a backend for BeautifulSoup.
-    *   `python-frontmatter`: For parsing YAML front matter from legacy Markdown files during migration.
-    *   `markdownify` or `html2text`: For converting Ghost HTML content to Markdown for RAG processing.
-    *   **Ghost Integration Libraries:**
-        *   Native HTTP requests via `requests` for Ghost Content API
-        *   `jwt`: For Ghost Admin API authentication (if needed)
+    *   `python-frontmatter`: For parsing YAML front matter from legacy Markdown files during migration to Strapi.
+    *   **Strapi Integration Libraries:**
+        *   Native HTTP requests via `requests` for the Strapi REST API.
     *   **RAG Pipeline Specifics:**
-        *   **Hierarchical Chunking:** Ghost HTML content converted to Markdown, then parsed hierarchically. For each chunk, its parent titles (e.g., "Title: Document Title\nSection: Section Name\nSubsection: Subsection Name") are prepended to the content before embedding. This provides rich contextual information directly into the vector.
+        *   **Hierarchical Chunking:** Strapi's structured JSON content (e.g., rich text editor blocks) will be parsed and converted to a Markdown-like format. For each chunk, its parent titles will be prepended to the content before embedding, preserving the hierarchical context.
         *   **Embedding `task_type`:**
             *   Knowledge base documents are embedded using `task_type='retrieval_document'`.
             *   User queries are embedded using `task_type='retrieval_query'`.
             *   This asymmetric approach is critical for optimal performance with the `text-embedding-004` model.
 
 ## Content Management System
-*   **CMS Platform:** Ghost (self-hosted)
-*   **CMS Database:** MySQL 8.0+ (Ghost requirement)
-*   **Content Format:** Native Markdown support via Ghost editor
+*   **CMS Platform:** Strapi (self-hosted)
+*   **CMS Database:** PostgreSQL (preferred) or MySQL
+*   **Content Format:** Customizable content types with a rich text editor (JSON output).
 *   **Editorial Workflow:** Foundation-controlled (Contributors → Foundation review → Publish)
-*   **Integration Method:** Ghost Content API + Webhooks for real-time synchronization
-*   **Access Control:** Ghost's built-in role system (Owner, Administrator, Editor, Author, Contributor)
+*   **Integration Method:** Strapi REST API + Webhooks for real-time synchronization
+*   **Access Control:** Strapi's built-in Role-Based Access Control (RBAC).
 
 ## Database Architecture
-*   **Content Storage:** MySQL (Ghost CMS)
+*   **Content Storage:** PostgreSQL or MySQL (for Strapi CMS)
 *   **Vector Storage:** MongoDB Atlas Vector Search (RAG pipeline)
 *   **General Application Data:** MongoDB (if needed for additional features)
 *   **ORM/ODM:** 
     *   Direct `pymongo` usage for MongoDB operations
-    *   Ghost handles MySQL operations internally
+    *   Strapi handles its database operations internally.
     *   Pydantic models for data validation and serialization in FastAPI layer
 
 ## RAG Pipeline Components
 *   **Data Sources:**
-    *   **Primary:** Ghost CMS via Content API
+    *   **Primary:** Strapi CMS via REST API
     *   **Secondary:** Legacy Markdown files (during migration), GitHub, Web scraping
 *   **Content Processing:**
-    *   Ghost content fetched via Content API (HTML format)
-    *   HTML converted to Markdown using `markdownify` or `html2text`
-    *   Processed by `embedding_processor_ghost.py` for hierarchical chunking
-    *   Metadata extracted from Ghost API (authors, tags, publish dates, etc.)
+    *   Strapi content fetched via REST API (JSON format)
+    *   JSON content processed by `embedding_processor_strapi.py` to extract text and structure for hierarchical chunking.
+    *   Metadata extracted from Strapi API (authors, tags, publish dates, etc.)
 *   **Embedding Model:** Google Text Embedding 004 (`text-embedding-004`)
     *   Knowledge base documents: `task_type='retrieval_document'`
     *   User queries: `task_type='retrieval_query'`
@@ -64,38 +61,37 @@
 *   **Retriever:** Implemented via `VectorStoreManager` using similarity search (default k=3)
 *   **Generator:** Langchain with `ChatGoogleGenerativeAI` (gemini-pro)
 *   **Orchestration:** Langchain
-*   **Synchronization:** Ghost webhooks trigger RAG pipeline updates
+*   **Synchronization:** Strapi webhooks trigger RAG pipeline updates
 
-## Ghost CMS Integration Architecture
+## Strapi CMS Integration Architecture
 *   **Content Retrieval:**
     ```python
-    # Ghost Content API integration pattern
-    async def fetch_ghost_posts():
-        response = await ghost_client.posts.browse({
-            'include': 'authors,tags',
-            'formats': ['html', 'plaintext'],
-            'filter': 'status:published'
-        })
-        return response
+    # Strapi REST API integration pattern
+    async def fetch_strapi_articles():
+        response = await strapi_client.get('/api/articles', params={'populate': '*'})
+        return response.json()['data']
     ```
 *   **Webhook Processing:**
     ```python
     # Webhook handler for content synchronization
-    async def process_ghost_webhook(payload):
-        event_type = payload.get('event')  # post.published, post.updated, etc.
-        if event_type in ['post.published', 'post.published.edited']:
-            await sync_content_to_rag(payload['post'])
-        elif event_type == 'post.deleted':
-            await remove_from_rag(payload['post']['id'])
+    async def process_strapi_webhook(payload):
+        event = payload.get('event')  # e.g., 'entry.publish', 'entry.unpublish'
+        model = payload.get('model')  # e.g., 'article'
+        entry = payload.get('entry')
+
+        if event == 'entry.publish':
+            await sync_content_to_rag(entry)
+        elif event == 'entry.unpublish':
+            await remove_from_rag(entry['id'])
     ```
 *   **Content Processing Pipeline:**
     ```
-    Ghost Content API → HTML Content → Markdown Conversion → 
+    Strapi REST API → JSON Content → Structured Text Conversion → 
     Hierarchical Chunking → Embedding → MongoDB Vector Store
     ```
 
 ## Vector Search Configuration
-*   **Metadata Handling:** Ghost API metadata (authors, tags, published_at, etc.) mapped to MongoDB document fields for filtering
+*   **Metadata Handling:** Strapi API metadata (author, tags, publishedAt, etc.) mapped to MongoDB document fields for filtering.
 *   **Atlas Vector Search Index Definition:**
     ```json
     {
@@ -108,15 +104,15 @@
         },
         {
           "type": "filter",
-          "path": "ghost_id"
+          "path": "strapi_id"
         },
         {
           "type": "filter",
-          "path": "ghost_slug"
+          "path": "slug"
         },
         {
           "type": "filter",
-          "path": "authors"
+          "path": "author"
         },
         {
           "type": "filter",
@@ -124,7 +120,7 @@
         },
         {
           "type": "filter",
-          "path": "published_at"
+          "path": "publishedAt"
         },
         {
           "type": "filter",
@@ -137,24 +133,24 @@
 ## DevOps & Infrastructure
 *   **Frontend Deployment:** Vercel
 *   **Backend Deployment:** TBD (Vercel Functions, Google Cloud Run, AWS Lambda, etc.)
-*   **Ghost CMS Hosting:** Self-hosted (DigitalOcean, AWS EC2, Google Cloud Compute, etc.)
+*   **Strapi CMS Hosting:** Self-hosted (DigitalOcean, AWS EC2, Google Cloud Compute, etc.)
 *   **Database Hosting:**
     *   MongoDB: MongoDB Atlas (cloud)
-    *   MySQL: Co-located with Ghost CMS instance
+    *   PostgreSQL/MySQL: Co-located with Strapi CMS instance or as a managed service.
 *   **CI/CD Tools:** TBD (GitHub Actions, GitLab CI, etc.)
-*   **Containerization:** Docker (for Ghost CMS deployment consistency)
-*   **Monitoring:** TBD (Ghost has basic built-in monitoring, external services for comprehensive monitoring)
+*   **Containerization:** Docker (for Strapi CMS deployment consistency)
+*   **Monitoring:** TBD (External services for comprehensive monitoring of the Strapi instance)
 
 ## Testing
 *   **Frontend Frameworks:** TBD (Jest, React Testing Library, Cypress)
 *   **Backend Frameworks:** TBD (Pytest)
-*   **Integration Testing:** Ghost API integration tests, webhook delivery testing
-*   **Content Pipeline Testing:** End-to-end testing of Ghost → RAG synchronization
+*   **Integration Testing:** Strapi API integration tests, webhook delivery testing
+*   **Content Pipeline Testing:** End-to-end testing of Strapi → RAG synchronization
 
 ## Build Tools & Package Managers
 *   **Frontend:** npm (standard with Next.js)
 *   **Backend:** pip with `requirements.txt`
-*   **Ghost CMS:** Ghost-CLI for installation and management
+*   **Strapi CMS:** `npx create-strapi-app` or Docker for installation and management
 
 ## Key Libraries & Justifications
 
@@ -163,78 +159,77 @@
 *   **Tailwind CSS:** Chosen for utility-first CSS development, enabling rapid UI construction.
 *   **Python/FastAPI:** Chosen for backend due to Python's strong AI/ML ecosystem and FastAPI's high performance and ease of use for building APIs.
 
-### Ghost CMS Integration
-*   **Ghost CMS:** Selected for its:
-    *   **Native Markdown support:** Perfect alignment with existing RAG pipeline requirements
-    *   **Foundation-friendly RBAC:** Contributors create drafts, Foundation controls publishing
-    *   **Robust Content API:** Comprehensive access to content and metadata
-    *   **Professional editorial interface:** Streamlined content creation and management
-    *   **Webhook system:** Real-time synchronization capabilities
-    *   **Enterprise reliability:** Mature, battle-tested platform used by major organizations
-*   **MySQL (Ghost requirement):** Accepted as necessary for Ghost CMS, maintains separation from MongoDB vector storage
-*   **Ghost Content API:** Provides rich JSON responses with content, metadata, and relationships
-*   **HTML-to-Markdown conversion:** Necessary bridge between Ghost's HTML output and RAG pipeline's Markdown processing
+### Strapi CMS Integration
+*   **Strapi CMS:** Selected for its:
+    *   **Superior Database Control:** Full ownership and optimization of the data layer.
+    *   **Flexible Content Structuring:** Customizable content types are ideal for RAG.
+    *   **Open-Source and Self-Hosted:** Aligns with project's control and ownership principles.
+    *   **Built-in RBAC:** Enforces Foundation-controlled editorial workflows out-of-the-box.
+    *   **REST API & Webhooks:** Robust mechanisms for integration with the RAG pipeline.
+*   **PostgreSQL/MySQL:** Standard, powerful database options for Strapi.
+*   **Strapi REST API:** Provides flexible and powerful ways to query content.
+*   **JSON Content Processing:** Direct handling of structured JSON from Strapi is more robust than converting from HTML.
 
 ### RAG Pipeline Libraries
 *   **Google Text Embedding 004:** Specified for generating text embeddings with critical `task_type` usage:
-    *   `task_type='retrieval_document'` for stored Ghost content
+    *   `task_type='retrieval_document'` for stored Strapi content
     *   `task_type='retrieval_query'` for user queries
     *   Hierarchical chunking strategy maintained for optimal context preservation
 *   **MongoDB Atlas Vector Search:** Chosen for vector storage and similarity search capabilities
 *   **Langchain:** Core RAG orchestration framework
-*   **markdownify/html2text:** Bridge libraries for converting Ghost HTML to Markdown
+*   **`requests`:** Used to interact with the Strapi REST API.
 
 ### Content Processing
-*   **`embedding_processor_ghost.py`:** New specialized processor for Ghost content:
-    *   Handles Ghost Content API JSON responses
-    *   Converts HTML to Markdown while preserving structure
-    *   Maps Ghost metadata to RAG pipeline metadata schema
-    *   Maintains hierarchical chunking for optimal retrieval
-*   **Webhook handlers:** Real-time synchronization between Ghost and RAG pipeline
-*   **Ghost API clients:** Robust integration with Ghost's REST API
+*   **`embedding_processor_strapi.py`:** New specialized processor for Strapi content:
+    *   Handles Strapi REST API JSON responses.
+    *   Parses structured JSON to extract text and create a hierarchical context.
+    *   Maps Strapi metadata to the RAG pipeline metadata schema.
+    *   Maintains hierarchical chunking for optimal retrieval.
+*   **Webhook handlers:** Real-time synchronization between Strapi and the RAG pipeline.
+*   **Strapi API client:** A module to handle communication with the Strapi API.
 
-## Migration Strategy from Custom CMS
-*   **Phase 1:** Set up Ghost CMS infrastructure and Content API integration
-*   **Phase 2:** Develop `embedding_processor_ghost.py` and webhook handlers
-*   **Phase 3:** Migrate existing `knowledge_base/` Markdown content to Ghost
-*   **Phase 4:** Establish Foundation editorial workflows in Ghost
-*   **Phase 5:** Deprecate custom CMS components and redirect development focus
+## Migration Strategy
+*   **Phase 1:** Set up Strapi CMS infrastructure and define content types.
+*   **Phase 2:** Develop `embedding_processor_strapi.py` and webhook handlers.
+*   **Phase 3:** Create a script to migrate existing `knowledge_base/` Markdown content to Strapi.
+*   **Phase 4:** Establish Foundation editorial workflows in Strapi.
+*   **Phase 5:** Deprecate any remaining legacy CMS components.
 
 ## Security Considerations
-*   **Ghost CMS Security:**
-    *   Regular Ghost version updates
-    *   Secure Ghost hosting configuration
-    *   SSL/TLS encryption for Ghost admin and API access
-    *   Strong authentication for Ghost admin accounts
+*   **Strapi CMS Security:**
+    *   Regular Strapi version updates.
+    *   Secure Strapi hosting configuration.
+    *   SSL/TLS encryption for Strapi admin and API access.
+    *   Strong authentication for Strapi admin accounts.
 *   **API Security:**
-    *   Ghost Content API key management
-    *   Webhook signature verification
-    *   Rate limiting on webhook endpoints
+    *   Secure management of Strapi API tokens.
+    *   Webhook signature verification (if available/implemented).
+    *   Rate limiting on API and webhook endpoints.
 *   **Database Security:**
-    *   MySQL access restricted to Ghost instance
+    *   Database access restricted to the Strapi instance.
     *   MongoDB Atlas security best practices
     *   Secure network configurations
 
 ## Performance Considerations
-*   **Ghost CMS Performance:**
-    *   Ghost instance sizing appropriate for content volume
-    *   Database optimization for Ghost MySQL instance
-    *   CDN integration for Ghost-served content (if public-facing)
+*   **Strapi CMS Performance:**
+    *   Strapi instance sizing appropriate for content volume.
+    *   Database optimization for the chosen database (PostgreSQL/MySQL).
+    *   CDN integration for Strapi-served assets.
 *   **RAG Pipeline Performance:**
-    *   Efficient webhook processing to avoid blocking Ghost
-    *   Asynchronous content processing
-    *   Vector search optimization
-    *   Caching strategies for frequently accessed content
+    *   Efficient webhook processing to avoid blocking Strapi.
+    *   Asynchronous content processing.
+    *   Vector search optimization.
+    *   Caching strategies for frequently accessed content.
 
 ## Operational Monitoring
-*   **Ghost CMS Monitoring:**
-    *   Ghost instance health monitoring
-    *   MySQL database performance monitoring
-    *   Content publishing workflow monitoring
+*   **Strapi CMS Monitoring:**
+    *   Strapi instance health monitoring.
+    *   Database performance monitoring.
+    *   Content publishing workflow monitoring.
 *   **Integration Monitoring:**
-    *   Webhook delivery success rates
-    *   Content synchronization lag monitoring
-    *   RAG pipeline processing times
-    *   Vector store update verification
+    *   Webhook delivery success rates.
+    *   Content synchronization lag monitoring.
+    *   RAG pipeline processing times.
+    *   Vector store update verification.
 
-This revised tech stack reflects the strategic decision to leverage Ghost CMS for content management while maintaining the existing RAG pipeline architecture, providing a mature, reliable foundation for the Litecoin knowledge base with optimal integration characteristics.
+This revised tech stack reflects the strategic decision to leverage Strapi for content management, providing greater data control and flexibility for the RAG pipeline while establishing a mature, reliable foundation for the Litecoin knowledge base.

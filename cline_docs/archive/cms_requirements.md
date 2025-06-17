@@ -6,12 +6,6 @@
 
 This document outlines the requirements, features, and technical architecture for the Content Management System (CMS) for the Litecoin Knowledge Base. This system is a foundational component of our content strategy, designed to ensure the quality, consistency, and accuracy of the information served to our users. This plan is informed by the detailed analysis in `cline_docs/cms_research.md`.
 
-**Primary Goals:**
--   **Enforce Content Structure:** Ensure all knowledge base articles strictly adhere to the predefined template (`knowledge_base/_template.md`), including both frontmatter metadata and the main body structure.
--   **Streamline Content Creation:** Provide a user-friendly and efficient editor for both human and AI content creators.
--   **Ensure Data Integrity:** Use schema-driven validation to guarantee that all content is well-formed and accurate before being saved.
--   **Seamless Integration:** The editor must integrate smoothly into the existing Next.js frontend and produce output compatible with the backend ingestion pipeline.
-
 *   **Enforce Content Structure:** Ensure all articles strictly adhere to a predefined format. This is the most critical technical requirement, as the backend `embedding_processor.py` relies on this predictable structure for its hierarchical chunking strategy. Deviations would corrupt vector context and severely degrade RAG pipeline accuracy.
 *   **Streamline Content Creation:** Provide a user-friendly, intuitive, and efficient editor for content creators to encourage the production of high-quality articles.
 *   **Ensure Data Integrity:** Use schema-driven validation to guarantee all content is well-formed before being saved, protecting the entire downstream system from data corruption.
