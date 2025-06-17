@@ -120,15 +120,12 @@ The project utilizes a Next.js frontend, Python/FastAPI backend, and Strapi CMS 
 
 ```mermaid
 graph TD
+    %% Define all nodes first
     subgraph "Content Management (Strapi CMS)"
         A[Foundation Team]
         C[Community Contributors]
         B[Strapi Admin Panel]
         E[PostgreSQL/MySQL Database]
-        
-        A -->|Create/Edit Content| B
-        C -->|Submit Drafts| B
-        B -->|REST API| E
     end
 
     subgraph "RAG Pipeline Integration"
@@ -136,10 +133,6 @@ graph TD
         F[embedding_processor_strapi.py]
         G[Hierarchical Chunking]
         H[Vector Store: MongoDB]
-        
-        D -->|Process Published Content| F
-        F -->|Parse JSON| G
-        G -->|Embed with text-embedding-004| H
     end
 
     subgraph "Chat Interface"
@@ -148,24 +141,33 @@ graph TD
         K[FastAPI Backend]
         L[Embedding Model]
         M[LLM]
-        
-        I -->|Query| J
-        J -->|API Call| K
-        K -->|Embed Query| L
-        L -->|Vector Search| H
-        H -->|Retrieve Context| K
-        K -->|Generate Response| M
-        M -->|Structured Answer| J
     end
 
-    subgraph "External Integrations & Connections"
+    subgraph "External Integrations"
         N[Strapi Webhooks]
         O[Strapi REST API]
-        
-        B -->|Webhook Triggers| D
-        N -->|Content Events| D
-        O -->|Fetch Full Content| F
     end
+
+    %% Define all connections at the end
+    A -->|Create/Edit Content| B
+    C -->|Submit Drafts| B
+    B -->|REST API| E
+    B -->|Webhook Triggers| D
+    
+    D -->|Process Published Content| F
+    F -->|Parse JSON| G
+    G -->|Embed with text-embedding-004| H
+    
+    I -->|Query| J
+    J -->|API Call| K
+    K -->|Embed Query| L
+    L -->|Vector Search| H
+    H -->|Retrieve Context| K
+    K -->|Generate Response| M
+    M -->|Structured Answer| J
+
+    N -->|Content Events| D
+    O -->|Fetch Full Content| F
 ```
 
 ## Content-First Approach with Strapi CMS
