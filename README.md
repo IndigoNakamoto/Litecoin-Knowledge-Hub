@@ -1,7 +1,7 @@
 # Litecoin Knowledge Hub
 
 ## Project Overview
-The Litecoin RAG (Retrieval-Augmented Generation) Chatbot is an AI-powered conversational tool designed to serve the Litecoin community by providing real-time, accurate answers to a wide range of questions. Its core strength lies in retrieving information from a human-vetted, curated knowledge base managed by the Litecoin Foundation through Ghost CMS. This ensures the information is not only accurate but also aligned with the Foundation's mission to combat misinformation and provide a single, trustworthy source for everything related to Litecoin. The chatbot aims to enhance user experience, foster greater adoption, and provide clear, reliable information about Litecoin's features, transaction management, development projects, and market insights.
+The Litecoin RAG (Retrieval-Augmented Generation) Chatbot is an AI-powered conversational tool designed to serve the Litecoin community by providing real-time, accurate answers to a wide range of questions. Its core strength lies in retrieving information from a human-vetted, curated knowledge base managed by the Litecoin Foundation through Strapi CMS. This ensures the information is not only accurate but also aligned with the Foundation's mission to combat misinformation and provide a single, trustworthy source for everything related to Litecoin. The chatbot aims to enhance user experience, foster greater adoption, and provide clear, reliable information about Litecoin's features, transaction management, development projects, and market insights.
 
 **Target Users/Audience:** Litecoin users (novice and experienced), Cryptocurrency enthusiasts, Developers building on Litecoin, Potential adopters seeking reliable information about Litecoin's features, transactions, or market trends.
 
@@ -9,9 +9,9 @@ The Litecoin RAG (Retrieval-Augmented Generation) Chatbot is an AI-powered conve
 The project has successfully completed:
 *   **Core RAG Pipeline Implementation** (Milestone 3).
 *   **Backend & Knowledge Base Completion** (Milestone 4).
-*   **Ghost CMS Integration Planning** (Milestone 6, Phase 1).
+*   **CMS Strategy Pivot** (Milestone 6).
 
-The project is currently focused on **Milestone 6: Ghost CMS Integration - Phase 2: Implementation & RAG Synchronization**.
+The project is currently focused on **Milestone 6: Strapi CMS Integration - Phase 1: Strapi Setup and Configuration**.
 
 ## Key Features
 
@@ -30,13 +30,13 @@ Provides quick access to snippets from Litecoin developer documentation, links t
 ### Feature 5: Curated Knowledge Base
 A continuously updated library of well-researched, clearly written articles and data covering all aspects of Litecoin. This content is explicitly structured for optimal machine retrieval and serves as the primary source for the chatbot's answers.
 
-### Feature 6: Ghost CMS Integration
-A robust content management solution leveraging Ghost CMS to ensure the quality, consistency, and accuracy of the Litecoin Knowledge Base. Ghost CMS provides enterprise-grade content management with native Markdown support, facilitating the creation, editing, and publishing of knowledge base articles with proper editorial workflows.
+### Feature 6: Strapi CMS Integration
+A robust content management solution leveraging Strapi CMS to ensure the quality, consistency, and accuracy of the Litecoin Knowledge Base. Strapi provides superior database control and content-structuring flexibility, facilitating the creation, editing, and publishing of knowledge base articles with proper editorial workflows.
 
 *   **Primary Goals:**
-    *   Leverage Ghost's native Markdown support for optimal RAG pipeline compatibility.
+    *   Leverage Strapi's flexible content types for optimal RAG pipeline compatibility.
     *   Implement foundation-controlled editorial workflows (Contributors create drafts, Foundation team publishes).
-    *   Ensure seamless integration with existing RAG pipeline through Ghost Content API.
+    *   Ensure seamless integration with existing RAG pipeline through the Strapi REST API.
     *   Maintain content structure standards for hierarchical chunking.
 *   **Current Status:** Planning phase complete. Implementation phase in progress.
 
@@ -50,7 +50,7 @@ This project is organized into several key milestones. For detailed information 
 | ✅ | [Milestone 3: Core RAG Pipeline](./cline_docs/milestones/milestone_3_core_rag_pipeline.md) | Implementation of the core data ingestion, retrieval, and generation pipeline. |
 | ✅ | [Milestone 4: Backend & Knowledge Base Completion](./cline_docs/milestones/milestone_4_litecoin_basics_faq.md) | Full backend and data pipeline for MVP FAQ feature (Feature 1), including full knowledge base ingestion and advanced metadata filtering. |
 | 📝 | [Milestone 5: Transaction & Block Explorer](./cline_docs/milestones/milestone_5_transaction_block_explorer.md) | MVP Feature 2: Feature for looking up transaction and block details. |
-| 🟨 | [Milestone 6: Ghost CMS Integration](./cline_docs/milestones/milestone_6_ghost_cms_integration.md) | MVP Feature 6: Integration with Ghost CMS. Phase 1 (Planning & Setup) ✅. Phase 2 (Implementation & RAG Sync) ⏳. Phase 3 (Advanced Features & Optimization) 📝. |
+| 🟨 | [Milestone 6: Strapi CMS Integration](./cline_docs/milestones/milestone_6_ai_integrated_cms.md) | MVP Feature 6: Integration with Strapi CMS. Phase 1 (Setup & Config) 📝. Phase 2 (API Integration) 📝. Phase 3 (Sync Mechanism) 📝. |
 | 📝 | [Milestone 7: Developer Documentation & Resources](./cline_docs/milestones/milestone_7_developer_documentation.md) | MVP Feature 4: Feature for providing access to developer resources. |
 | 📝 | [Milestone 8: Testing, Refinement & Deployment](./cline_docs/milestones/milestone_8_testing_refinement_deployment.md) | Comprehensive testing, optimization, and deployment of all MVP features. |
 | 📝 | [Milestone 9: Market Data & Insights](./cline_docs/milestones/milestone_9_market_data_insights.md) | MVP Feature 3: Feature for delivering real-time Litecoin market data. |
@@ -71,21 +71,21 @@ This project is organized into several key milestones. For detailed information 
     *   Framework: FastAPI
     *   RAG & LLM: Langchain (`langchain`, `langchain-core`, `langchain-community`), Google Text Embedding (`text-embedding-004`), `ChatGoogleGenerativeAI` (gemini-pro)
     *   Database Interaction: MongoDB (`pymongo`, `motor`)
-    *   Ghost Integration: Ghost Content API, webhook handling
-    *   Data Handling: `python-frontmatter`, HTML-to-Markdown conversion
+    *   Strapi Integration: Strapi REST API, webhook handling
+    *   Data Handling: `python-frontmatter`
     *   Other Key Libraries: `requests`, `tweepy`, `GitPython`, `beautifulsoup4`, `lxml`
 *   **Content Management:**
-    *   CMS: Ghost (self-hosted)
-    *   Database: MySQL (Ghost), MongoDB (RAG vectors)
-    *   Content Format: Markdown (native Ghost support)
+    *   CMS: Strapi (self-hosted)
+    *   Database: PostgreSQL/MySQL (Strapi), MongoDB (RAG vectors)
+    *   Content Format: JSON
 *   **Database:**
     *   Vector Storage: MongoDB Atlas Vector Search
-    *   Content Storage: MySQL (Ghost CMS)
+    *   Content Storage: PostgreSQL/MySQL (Strapi CMS)
     *   General Data: MongoDB
 *   **Deployment:**
     *   Frontend: Vercel
     *   Backend: TBD (e.g., Vercel Functions, Google Cloud Run, AWS Lambda)
-    *   Ghost CMS: Self-hosted (TBD platform)
+    *   Strapi CMS: Self-hosted (TBD platform)
 *   **Testing:**
     *   Frontend: TBD (e.g., Jest, React Testing Library, Cypress)
     *   Backend: TBD (e.g., Pytest)
@@ -100,13 +100,13 @@ For more details, see `cline_docs/techStack.md`.
     *   `src/components/`: Reusable React components.
     *   `src/lib/`: Utility libraries and configurations.
 *   `backend/`: FastAPI application.
-    *   `ghost_integration/`: Ghost CMS integration modules.
+    *   `strapi/`: Strapi CMS integration modules.
     *   `data_ingestion/`: Modules for data loading, embedding, vector store management.
     *   `api/v1/`: API version 1 routers (chat, sources, sync).
     *   `main.py`: Main FastAPI application.
     *   `rag_pipeline.py`: Core RAG logic.
-    *   `embedding_processor_ghost.py`: Ghost-specific content processing.
-*   `knowledge_base/`: Legacy curated Markdown articles (to be migrated to Ghost).
+    *   `embedding_processor_strapi.py`: Strapi-specific content processing.
+*   `knowledge_base/`: Legacy curated Markdown articles (to be migrated to Strapi).
 *   `cline_docs/`: Project documentation.
 *   `cline_agent_workspace/`: Cline's operational files.
 *   `user_instructions/`: User-facing guides.
@@ -116,49 +116,68 @@ For a detailed overview, see `cline_docs/codebaseSummary.md`.
 
 ## Architecture Overview
 
-The project utilizes a Next.js frontend, Python/FastAPI backend, and Ghost CMS for content management. The architecture is centered around a **content-first RAG pipeline** with Ghost CMS serving as the authoritative content source.
+The project utilizes a Next.js frontend, Python/FastAPI backend, and Strapi CMS for content management. The architecture is centered around a **content-first RAG pipeline** with Strapi CMS serving as the authoritative content source.
 
 ```mermaid
 graph TD
-    subgraph "Content Management (Ghost CMS)"
-        A[Foundation Team] -->|Create/Edit Content| B[Ghost CMS Admin]
-        C[Community Contributors] -->|Submit Drafts| B
-        B -->|Webhook Triggers| D[Content Sync Service]
-        B -->|Content API| E[MySQL Database]
+    subgraph "Content Management (Strapi CMS)"
+        A[Foundation Team]
+        C[Community Contributors]
+        B[Strapi Admin Panel]
+        E[PostgreSQL/MySQL Database]
+        
+        A -->|Create/Edit Content| B
+        C -->|Submit Drafts| B
+        B -->|REST API| E
     end
 
     subgraph "RAG Pipeline Integration"
-        D -->|Process Published Content| F[embedding_processor_ghost.py]
-        F -->|HTML to Markdown| G[Hierarchical Chunking]
-        G -->|Embed with text-embedding-004| H[Vector Store: MongoDB]
+        D[Content Sync Service]
+        F[embedding_processor_strapi.py]
+        G[Hierarchical Chunking]
+        H[Vector Store: MongoDB]
+        
+        D -->|Process Published Content| F
+        F -->|Parse JSON| G
+        G -->|Embed with text-embedding-004| H
     end
 
     subgraph "Chat Interface"
-        I[User] -->|Query| J[Next.js Frontend]
-        J -->|API Call| K[FastAPI Backend]
-        K -->|Embed Query| L[Embedding Model]
+        I[User]
+        J[Next.js Frontend]
+        K[FastAPI Backend]
+        L[Embedding Model]
+        M[LLM]
+        
+        I -->|Query| J
+        J -->|API Call| K
+        K -->|Embed Query| L
         L -->|Vector Search| H
         H -->|Retrieve Context| K
-        K -->|Generate Response| M[LLM]
+        K -->|Generate Response| M
         M -->|Structured Answer| J
     end
 
-    subgraph "External Integrations"
-        N[Ghost Webhooks] -->|Content Events| D
-        O[Ghost Content API] -->|Fetch Full Content| F
+    subgraph "External Integrations & Connections"
+        N[Strapi Webhooks]
+        O[Strapi REST API]
+        
+        B -->|Webhook Triggers| D
+        N -->|Content Events| D
+        O -->|Fetch Full Content| F
     end
 ```
 
-## Content-First Approach with Ghost CMS
-This project emphasizes a **content-first strategy** powered by Ghost CMS. The accuracy and reliability of the chatbot are directly tied to the quality of the information managed through Ghost's editorial workflow. Ghost CMS provides:
+## Content-First Approach with Strapi CMS
+This project emphasizes a **content-first strategy** powered by Strapi CMS. The accuracy and reliability of the chatbot are directly tied to the quality of the information managed through Strapi's editorial workflow. Strapi CMS provides:
 
-*   **Foundation-controlled editorial workflow**: Contributors create drafts, Foundation team reviews and publishes
-*   **Native Markdown support**: Optimal compatibility with existing RAG pipeline
-*   **Rich content API**: Comprehensive access to content and metadata
-*   **Webhook system**: Real-time synchronization with RAG pipeline
-*   **Professional editorial interface**: Streamlined content creation and management
+*   **Foundation-controlled editorial workflow**: Contributors create drafts, Foundation team reviews and publishes.
+*   **Flexible Content Types**: Customizable content structures are ideal for RAG.
+*   **Robust REST API**: Comprehensive access to content and metadata.
+*   **Webhook system**: Real-time synchronization with the RAG pipeline.
+*   **Professional Admin Panel**: A powerful interface for content management.
 
-The Ghost CMS serves as the "golden source" for the RAG pipeline, replacing the previous custom CMS approach while maintaining the same high standards for content quality and structure.
+The Strapi CMS serves as the "golden source" for the RAG pipeline, providing greater data control and flexibility.
 
 ## Getting Started
 
@@ -168,8 +187,8 @@ The Ghost CMS serves as the "golden source" for the RAG pipeline, replacing the 
 *   **Python:** Version 3.x.
 *   **pip:** Python package installer (comes with Python).
 *   **Virtual Environment:** Recommended for Python projects.
-*   **Ghost CMS:** Self-hosted Ghost instance with Content API access.
-*   **MySQL:** Database for Ghost CMS.
+*   **Strapi CMS:** Self-hosted Strapi instance with REST API access.
+*   **PostgreSQL/MySQL:** Database for Strapi CMS.
 
 ### Running Development Servers
 
@@ -211,7 +230,7 @@ The Ghost CMS serves as the "golden source" for the RAG pipeline, replacing the 
 4.  **Set up environment variables:**
     ```bash
     cp .env.example .env
-    # Edit .env with your Ghost CMS URL, API keys, and database credentials
+    # Edit .env with your Strapi API URL, tokens, and other credentials
     ```
 
 5.  **Run the development server:**
@@ -220,23 +239,23 @@ The Ghost CMS serves as the "golden source" for the RAG pipeline, replacing the 
     ```
     The FastAPI development server should start, typically on `http://localhost:8000`.
 
-### Ghost CMS Setup
+### Strapi CMS Setup
 
-1.  **Install Ghost CMS** following the official documentation
-2.  **Configure Content API** in Ghost Admin → Settings → Integrations
-3.  **Set up webhooks** for content synchronization with RAG pipeline
-4.  **Configure user roles** (Contributors for community, Editors/Admins for Foundation)
+1.  **Install Strapi CMS** following the official documentation.
+2.  **Configure API Tokens** in Strapi Admin → Settings → API Tokens.
+3.  **Set up webhooks** for content synchronization with the RAG pipeline.
+4.  **Configure user roles** (Contributors for community, Editors/Admins for Foundation).
 
-### Running Data Ingestion from Ghost
+### Running Data Ingestion from Strapi
 
 1.  **Navigate to the backend directory:**
     ```bash
     cd backend
     ```
 
-2.  **Run Ghost content ingestion:**
+2.  **Run Strapi content ingestion (example):**
     ```bash
-    python ingest_ghost_content.py --ghost_url https://your-ghost-site.com --api_key your_content_api_key
+    python ingest_strapi_content.py --api_url http://localhost:1337 --api_token your_api_token
     ```
 
 3.  **Verify:**
@@ -246,8 +265,8 @@ The Ghost CMS serves as the "golden source" for the RAG pipeline, replacing the 
 *   Input validation for all user queries and API inputs.
 *   Protection against common web vulnerabilities (OWASP Top 10).
 *   Secure handling of API keys and credentials (not hardcoded).
-*   Ghost CMS authentication and authorization for content management.
-*   Webhook security for Ghost-to-RAG synchronization.
+*   Strapi CMS authentication and authorization for content management.
+*   Webhook security for Strapi-to-RAG synchronization.
 
 ## Documentation
 The project's core documentation is maintained in the `cline_docs/` directory:
@@ -257,15 +276,15 @@ The project's core documentation is maintained in the `cline_docs/` directory:
 *   `codebaseSummary.md`: Provides an overview of the project's structure, key components, data flow, and dependencies.
 
 ## Contributing
-This project thrives on community contributions to its knowledge base through Ghost CMS. The Litecoin Foundation maintains editorial control while enabling community participation.
+This project thrives on community contributions to its knowledge base through Strapi CMS. The Litecoin Foundation maintains editorial control while enabling community participation.
 
 ### Content Contribution Process
-1.  **Request Contributor Access**: Contact the Litecoin Foundation for Ghost CMS contributor credentials
-2.  **Create Draft Content**: Use Ghost's Markdown editor to create well-structured articles
-3.  **Foundation Review**: Foundation team reviews and publishes approved content
-4.  **Automatic Sync**: Published content automatically updates the RAG pipeline
+1.  **Request Contributor Access**: Contact the Litecoin Foundation for Strapi CMS contributor credentials.
+2.  **Create Draft Content**: Use Strapi's rich text editor to create well-structured articles.
+3.  **Foundation Review**: The Foundation team reviews and publishes approved content.
+4.  **Automatic Sync**: Published content automatically updates the RAG pipeline.
 
-For detailed guidelines on content structure and submission, see the Ghost CMS editorial guidelines (to be provided by Foundation team).
+For detailed guidelines on content structure and submission, see the Strapi CMS editorial guidelines (to be provided by Foundation team).
 
 ## License
 (To be determined - e.g., MIT License)
