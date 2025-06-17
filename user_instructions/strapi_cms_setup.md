@@ -39,3 +39,32 @@ This guide provides the steps to start the local Strapi development server and c
 5.  **Access the Admin Panel:**
     After creating your account, you will be logged in and redirected to the Strapi admin dashboard. You can now begin creating content types, defining roles, and managing content.
 
+## Configuring Webhooks for RAG Synchronization
+
+To ensure that the RAG pipeline stays synchronized with the content in Strapi, you need to configure webhooks. These webhooks will notify the backend whenever content is created, updated, or deleted.
+
+1.  **Navigate to Webhooks Settings:**
+    In the Strapi admin panel, go to `Settings` -> `Webhooks`.
+
+2.  **Create a New Webhook:**
+    Click the "Add new webhook" button.
+
+3.  **Configure the Webhook:**
+    -   **Name:** Give the webhook a descriptive name, such as `RAG Sync`.
+    -   **URL:** Enter the URL of the backend's webhook receiver endpoint. For local development, this will typically be `http://localhost:8000/api/v1/sync/strapi`.
+    -   **Headers:** Add a new header for security.
+        -   **Key:** `X-Strapi-Webhook-Secret`
+        -   **Value:** The secret token you defined in your backend's `.env` file for the `STRAPI_WEBHOOK_SECRET` variable. This must be a strong, unguessable string.
+
+4.  **Select Events:**
+    Choose the events that will trigger this webhook. For complete synchronization, select the following events under the "Entry" section:
+    -   `entry.create`
+    -   `entry.update`
+    -   `entry.delete`
+    -   `entry.publish`
+    -   `entry.unpublish`
+
+5.  **Save the Webhook:**
+    Click the "Save" button to create the webhook.
+
+Now, whenever you perform one of the selected actions on an entry (like publishing an article), Strapi will send a notification to your backend, and the RAG pipeline's knowledge base will be updated automatically.

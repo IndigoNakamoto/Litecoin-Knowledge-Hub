@@ -115,6 +115,25 @@ class VectorStoreManager:
         print(f"Deleted {result.deleted_count} documents matching filter: {metadata_filter}")
         return result.deleted_count
 
+    def delete_documents_by_strapi_id(self, strapi_id: int):
+        """
+        Deletes all document chunks associated with a specific Strapi entry ID.
+
+        Args:
+            strapi_id: The integer ID of the Strapi entry.
+        """
+        if not isinstance(strapi_id, int):
+            print("Invalid Strapi ID provided for deletion.")
+            return 0
+        
+        # The filter targets the 'strapi_id' field which is stored at the root of the document.
+        mongo_filter = {"strapi_id": strapi_id}
+        
+        print(f"Attempting to delete documents with Strapi ID: {strapi_id}")
+        result = self.collection.delete_many(mongo_filter)
+        print(f"Deleted {result.deleted_count} documents for Strapi ID: {strapi_id}")
+        return result.deleted_count
+
     def clear_all_documents(self):
         """
         Deletes all documents from the collection. Use with caution.

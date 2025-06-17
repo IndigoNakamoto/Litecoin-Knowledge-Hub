@@ -90,3 +90,55 @@ class StrapiArticle(BaseModel):
     """
     id: int
     attributes: StrapiArticleAttributes
+
+
+# Models for Strapi Webhook Payloads
+
+class WebhookEntry(BaseModel):
+    """
+    Pydantic model for the 'entry' part of a Strapi webhook payload.
+    This is intentionally flexible to accommodate different content types.
+    """
+    id: int
+    # The rest of the fields are dynamic and will be handled as a dict
+    # For a specific content type like 'article', you could create a more specific model
+    # that inherits from this, e.g., WebhookArticleEntry(WebhookEntry, StrapiArticleAttributes)
+    # But for a generic handler, this is sufficient.
+    title: Optional[str] = None
+    slug: Optional[str] = None
+    content: Optional[str] = None
+    author: Optional[str] = None
+    tags: Optional[str] = None
+    published_at: Optional[datetime] = Field(None, alias="publishedAt")
+    created_at: datetime = Field(..., alias="createdAt")
+    updated_at: datetime = Field(..., alias="updatedAt")
+
+
+class StrapiWebhookPayload(BaseModel):
+    """
+    Pydantic model for a Strapi webhook payload.
+    """
+    event: str = Field(..., description="The type of event (e.g., 'entry.publish', 'entry.unpublish').")
+    model: str = Field(..., description="The content type of the entry (e.g., 'article').")
+    entry: WebhookEntry = Field(..., description="The content entry that triggered the webhook.")
+    created_at: Optional[datetime] = Field(None, alias="createdAt")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "event": "entry.publish",
+                "createdAt": "2024-06-17T19:30:00.000Z",
+                "model": "article",
+                "entry": {
+                    "id": 1,
+                    "title": "What is Litecoin?",
+                    "slug": "what-is-litecoin",
+                    "content": "Litecoin is a peer-to-peer cryptocurrency...",
+                    "author": "Charlie Lee",
+                    "tags": "crypto, litecoin, beginner",
+                    "publishedAt": "2024-06-17T19:30:00.000Z",
+                    "createdAt": "2024-06-17T19:25:00.000Z",
+                    "updatedAt": "2024-06-17T19:30:00.000Z"
+                }
+            }
+        }

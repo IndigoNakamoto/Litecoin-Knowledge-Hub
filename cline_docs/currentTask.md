@@ -77,7 +77,13 @@
     *   #### Link to projectRoadmap.md goal(s):
         *   Feature 6: Strapi CMS Integration
         *   Milestone 6: Strapi CMS Integration - Phase 3
-    *   #### Status: To Do
+    *   #### Status: Done
+    *   #### Notes on Completion:
+        *   Created `backend/api/v1/sync/strapi.py` to define the secure webhook endpoint.
+        *   Implemented `backend/strapi/webhook_handler.py` to process `publish`, `update`, and `unpublish` events.
+        *   Added `delete_documents_by_strapi_id` to `VectorStoreManager` for content removal.
+        *   Updated `backend/data_models.py` with webhook payload validation models.
+        *   Registered the new router in `main.py` and added the secret to `.env.example`.
     *   #### Estimated Effort: 4-6 days
     *   #### Priority: High
 

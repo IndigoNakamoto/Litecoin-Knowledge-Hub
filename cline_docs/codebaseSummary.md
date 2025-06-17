@@ -54,9 +54,9 @@
 
 ### Strapi CMS Integration Components
 *   `backend/strapi/client.py`: **(Implemented)** Strapi REST API client for fetching content collections, handling authentication, and managing API requests.
-*   `backend/strapi/webhook_handler.py`: **(Planned)** Processes Strapi webhook events (e.g., entry.publish, entry.unpublish) and triggers the appropriate RAG pipeline updates.
+*   `backend/strapi/webhook_handler.py`: **(Implemented)** Processes Strapi webhook events (e.g., entry.publish, entry.unpublish) and triggers the appropriate RAG pipeline updates.
 *   `backend/data_ingestion/embedding_processor_strapi.py`: **(Implemented)** Specialized processor for Strapi content that parses JSON, extracts text, performs hierarchical chunking, and maps Strapi metadata to the RAG pipeline's schema.
-*   `backend/api/v1/sync/strapi.py`: **(Planned)** FastAPI router containing the Strapi webhook endpoint for real-time content synchronization.
+*   `backend/api/v1/sync/strapi.py`: **(Implemented)** FastAPI router containing the Strapi webhook endpoint for real-time content synchronization.
 
 ### Legacy Components (To be Modified/Removed)
 *   `backend/data_ingestion/litecoin_docs_loader.py`: Legacy loader for Markdown files. Will be used by the migration script but deprecated for direct ingestion.
