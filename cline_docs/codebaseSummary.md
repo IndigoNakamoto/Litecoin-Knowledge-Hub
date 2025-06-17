@@ -37,10 +37,6 @@
     *   `_template.md`: Template for knowledge base articles.
     *   `index.md`: Master index of all knowledge base articles.
     *   `deep_research/`: Subdirectory for deep research articles.
-*   `strapi_setup/`: Directory for Strapi CMS related configurations and scripts.
-    *   `migration/`: Scripts for migrating legacy content to Strapi.
-    *   `config/`: Strapi CMS configuration files and templates.
-    *   `backups/`: Strapi content backups and exports.
 *   `cline_agent_workspace/`: Contains agent's operational files.
 *   `reference_docs/`: Contains documentation for frameworks, services, and APIs used in the project.
 *   `user_instructions/`: Contains instructions for the user.

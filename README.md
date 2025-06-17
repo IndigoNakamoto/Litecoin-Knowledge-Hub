@@ -100,6 +100,7 @@ For more details, see `cline_docs/techStack.md`.
     *   `src/components/`: Reusable React components.
     *   `src/lib/`: Utility libraries and configurations.
 *   `backend/`: FastAPI application.
+    *   `cms/`: Contains the self-hosted Strapi CMS application. This is the content authoring and management system.
     *   `strapi/`: Strapi CMS integration modules.
     *   `data_ingestion/`: Modules for data loading, embedding, vector store management.
     *   `api/v1/`: API version 1 routers (chat, sources, sync).
