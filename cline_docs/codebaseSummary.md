@@ -53,18 +53,18 @@
 *   `backend/cms/`: The self-hosted Strapi application. It provides the admin UI for content creation, role-based access control, and the API endpoints for the frontend and RAG pipeline to consume.
 
 ### Strapi CMS Integration Components
-*   `backend/strapi/client.py`: Strapi REST API client for fetching content collections, handling authentication, and managing API requests.
-*   `backend/strapi/webhook_handler.py`: Processes Strapi webhook events (e.g., entry.publish, entry.unpublish) and triggers the appropriate RAG pipeline updates.
-*   `backend/data_ingestion/embedding_processor_strapi.py`: Specialized processor for Strapi content that parses JSON, extracts text, performs hierarchical chunking, and maps Strapi metadata to the RAG pipeline's schema.
-*   `backend/api/v1/sync/strapi.py`: FastAPI router containing the Strapi webhook endpoint for real-time content synchronization.
+*   `backend/strapi/client.py`: **(Implemented)** Strapi REST API client for fetching content collections, handling authentication, and managing API requests.
+*   `backend/strapi/webhook_handler.py`: **(Planned)** Processes Strapi webhook events (e.g., entry.publish, entry.unpublish) and triggers the appropriate RAG pipeline updates.
+*   `backend/data_ingestion/embedding_processor_strapi.py`: **(Implemented)** Specialized processor for Strapi content that parses JSON, extracts text, performs hierarchical chunking, and maps Strapi metadata to the RAG pipeline's schema.
+*   `backend/api/v1/sync/strapi.py`: **(Planned)** FastAPI router containing the Strapi webhook endpoint for real-time content synchronization.
 
 ### Legacy Components (To be Modified/Removed)
 *   `backend/data_ingestion/litecoin_docs_loader.py`: Legacy loader for Markdown files. Will be used by the migration script but deprecated for direct ingestion.
 
 ### Utility and Support Components
-*   `backend/ingest_data.py`: A standalone script to orchestrate the data ingestion process, to be updated to support Strapi as a content source.
+*   `backend/ingest_data.py`: **(Updated)** A standalone script to orchestrate the data ingestion process, now supporting Strapi as a content source.
 *   `backend/utils/clear_litecoin_docs_collection.py`: A utility script to clear all documents from collections in MongoDB.
-*   `backend/data_models.py`: Contains core Pydantic data models for the application, to be updated with models for Strapi integration.
+*   `backend/data_models.py`: **(Updated)** Contains core Pydantic data models for the application, now including models for Strapi integration.
 *   `backend/api/v1/sources.py`: Contains the API router and CRUD endpoints for managing data sources, to be updated to include Strapi as a source type.
 
 ## Core Data Models & Entities

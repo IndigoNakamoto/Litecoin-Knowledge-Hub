@@ -8,7 +8,7 @@ class DataSource(BaseModel):
     """
     id: Optional[str] = None # MongoDB _id will be converted to string and assigned here
     name: str = Field(..., description="A human-readable name for the data source.")
-    type: str = Field(..., description="The type of the data source (e.g., 'markdown', 'web', 'github', 'youtube', 'twitter').")
+    type: str = Field(..., description="The type of the data source (e.g., 'markdown', 'web', 'github', 'youtube', 'twitter', 'strapi').")
     uri: str = Field(..., description="The URI or path to the data source (e.g., file path, URL, GitHub repo URL).")
     status: str = Field("active", description="The current status of the data source (e.g., 'active', 'inactive', 'ingesting', 'error').")
     last_ingested_at: Optional[datetime] = Field(None, description="Timestamp of the last successful ingestion.")
@@ -69,3 +69,24 @@ class ChatRequest(BaseModel):
                 ]
             }
         }
+
+
+class StrapiArticleAttributes(BaseModel):
+    """
+    Pydantic model for the 'attributes' of a Strapi article entry.
+    """
+    title: str
+    slug: str
+    content: str
+    author: Optional[str] = None
+    tags: Optional[str] = None
+    published_at: Optional[datetime] = Field(None, alias="publishedAt")
+    created_at: datetime = Field(..., alias="createdAt")
+    updated_at: datetime = Field(..., alias="updatedAt")
+
+class StrapiArticle(BaseModel):
+    """
+    Pydantic model for a complete Strapi article entry, including its ID and attributes.
+    """
+    id: int
+    attributes: StrapiArticleAttributes

@@ -1,22 +1,25 @@
 import os
-import argparse # Reason: Import argparse for command-line arguments.
+import argparse
+import asyncio
 from dotenv import load_dotenv
 from data_ingestion.litecoin_docs_loader import load_litecoin_docs
-from data_ingestion.youtube_loader import load_youtube_data # Reason: Import new YouTube loader.
-from data_ingestion.twitter_loader import load_twitter_posts # Reason: Import new Twitter loader.
-from data_ingestion.github_loader import load_github_repo_data # Reason: Import new GitHub loader.
-from data_ingestion.web_article_loader import load_web_article_data # Reason: Import new Web Article loader.
+from data_ingestion.youtube_loader import load_youtube_data
+from data_ingestion.twitter_loader import load_twitter_posts
+from data_ingestion.github_loader import load_github_repo_data
+from data_ingestion.web_article_loader import load_web_article_data
 from data_ingestion.embedding_processor import process_documents
-from data_ingestion.vector_store_manager import VectorStoreManager # Corrected import
-from langchain_core.documents import Document # Reason: Import Document for consistent handling.
+from data_ingestion.vector_store_manager import VectorStoreManager
+from langchain_core.documents import Document
+from strapi.client import StrapiClient
+from data_ingestion.embedding_processor_strapi import StrapiEmbeddingProcessor
 
-def main(source_type: str, source_identifier: str):
+async def main(source_type: str, source_identifier: str):
     """
     Main function to run the data ingestion pipeline, acting as a source router.
 
     Args:
-        source_type: The type of the data source (e.g., "markdown", "youtube", "twitter", "github", "web").
-        source_identifier: The identifier for the source (e.g., file path, URL, Twitter handle).
+        source_type: The type of the data source (e.g., "markdown", "youtube", "twitter", "github", "web", "strapi").
+        source_identifier: The identifier for the source (e.g., file path, URL, collection name).
     """
     load_dotenv()
 
@@ -56,8 +59,16 @@ def main(source_type: str, source_identifier: str):
         article_data = load_web_article_data(source_identifier)
         if article_data:
             documents.append(Document(page_content=article_data["content"], metadata=article_data["metadata"]))
+    elif source_type == "strapi":
+        print(f"Loading data from Strapi collection: {source_identifier}...")
+        strapi_client = StrapiClient()
+        strapi_processor = StrapiEmbeddingProcessor()
+        entries = await strapi_client.get_entries(source_identifier, params={"populate": "*"})
+        for entry in entries:
+            content, metadata = strapi_processor.process_entry(entry)
+            documents.append(Document(page_content=content, metadata=metadata))
     else:
-        print(f"Error: Unknown source type '{source_type}'. Supported types: markdown, youtube, twitter, github, web.")
+        print(f"Error: Unknown source type '{source_type}'. Supported types: markdown, youtube, twitter, github, web, strapi.")
         return
 
     if not documents:
@@ -79,7 +90,7 @@ def main(source_type: str, source_identifier: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Ingest data from various sources into MongoDB Atlas Vector Store.")
-    parser.add_argument("--source_type", required=True, help="Type of the data source (e.g., markdown, youtube, twitter, github, web).")
-    parser.add_argument("--source_identifier", required=True, help="Identifier for the source (e.g., file path, URL, Twitter handle(s) comma-separated).")
+    parser.add_argument("--source_type", required=True, help="Type of the data source (e.g., markdown, youtube, twitter, github, web, strapi).")
+    parser.add_argument("--source_identifier", required=True, help="Identifier for the source (e.g., file path, URL, collection name).")
     args = parser.parse_args()
-    main(args.source_type, args.source_identifier)
+    asyncio.run(main(args.source_type, args.source_identifier))

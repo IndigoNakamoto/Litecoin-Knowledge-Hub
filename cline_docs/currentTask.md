@@ -7,6 +7,27 @@
 
 ## Recently Completed Tasks:
 
+*   ### Task ID: `STRAPI-INT-002`
+    *   #### Name: Content API Integration
+    *   #### Detailed Description & Business Context:
+        Develop the backend components to enable seamless content retrieval from Strapi for the RAG pipeline. This involves creating a Python client to communicate with Strapi's REST API, building a content processor to handle Strapi's JSON format, and mapping Strapi metadata to the RAG pipeline's schema.
+    *   #### Acceptance Criteria:
+        1.  A Python client for the Strapi REST API is implemented.
+        2.  An `embedding_processor_strapi.py` is created to process Strapi JSON content.
+        3.  Strapi metadata is correctly mapped to the RAG pipeline's metadata schema.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Feature 6: Strapi CMS Integration
+        *   Milestone 6: Strapi CMS Integration - Phase 2
+    *   #### Status: Done
+    *   #### Notes on Completion:
+        *   Created `backend/strapi/client.py` with a `StrapiClient` to handle async requests.
+        *   Created `backend/data_ingestion/embedding_processor_strapi.py` to parse Strapi's rich text JSON.
+        *   Updated `backend/data_models.py` with Pydantic models for Strapi articles.
+        *   Updated `backend/ingest_data.py` to support the new `strapi` source type.
+        *   Successfully tested the end-to-end ingestion pipeline for Strapi content.
+    *   #### Estimated Effort: 5-7 days
+    *   #### Priority: High
+
 *   ### Task ID: `STRAPI-INT-001`
     *   #### Name: Strapi Setup and Configuration
     *   #### Detailed Description & Business Context:
@@ -44,21 +65,6 @@
         *   All high-level project documents have been updated to reflect this pivot.
 
 ## Task Backlog:
-
-*   ### Task ID: `STRAPI-INT-002`
-    *   #### Name: Content API Integration
-    *   #### Detailed Description & Business Context:
-        Develop the backend components to enable seamless content retrieval from Strapi for the RAG pipeline. This involves creating a Python client to communicate with Strapi's REST API, building a content processor to handle Strapi's JSON format, and mapping Strapi metadata to the RAG pipeline's schema.
-    *   #### Acceptance Criteria:
-        1.  A Python client for the Strapi REST API is implemented.
-        2.  An `embedding_processor_strapi.py` is created to process Strapi JSON content.
-        3.  Strapi metadata is correctly mapped to the RAG pipeline's metadata schema.
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Feature 6: Strapi CMS Integration
-        *   Milestone 6: Strapi CMS Integration - Phase 2
-    *   #### Status: To Do
-    *   #### Estimated Effort: 5-7 days
-    *   #### Priority: High
 
 *   ### Task ID: `STRAPI-INT-003`
     *   #### Name: Synchronization Mechanism
