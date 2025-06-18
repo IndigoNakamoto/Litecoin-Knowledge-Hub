@@ -5,7 +5,46 @@
 
 ## High-Priority Initiatives: Strapi CMS Integration
 
+## Active Task(s):
+*   ### Task ID: `STRAPI-INT-004`
+    *   #### Name: Test and Verify Strapi Webhook Synchronization
+    *   #### Detailed Description & Business Context:
+        Thoroughly test the end-to-end synchronization process between Strapi CMS and the MongoDB vector store. This involves creating, updating, publishing, unpublishing, and deleting content in Strapi and verifying that the changes are accurately and promptly reflected in the vector database. This is a critical step to ensure data integrity for the RAG pipeline.
+    *   #### Acceptance Criteria:
+        1.  When an article is **published** in Strapi, its content is correctly chunked, embedded, and stored in MongoDB.
+        2.  When a published article is **updated** in Strapi, the corresponding documents in MongoDB are updated.
+        3.  When an article is **unpublished** in Strapi, its corresponding documents are deleted from MongoDB.
+        4.  When an article is **deleted** from Strapi, its corresponding documents are deleted from MongoDB.
+        5.  The webhook endpoint correctly validates the secret token and handles valid/invalid requests securely.
+        6.  The entire process has minimal and acceptable latency.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Feature 6: Strapi CMS Integration
+        *   Milestone 6: Strapi CMS Integration - Phase 3
+    *   #### Status: In Progress
+    *   #### Estimated Effort: 2-3 days
+    *   #### Priority: High
+
 ## Recently Completed Tasks:
+*   ### Task ID: `STRAPI-INT-003`
+    *   #### Name: Synchronization Mechanism
+    *   #### Detailed Description & Business Context:
+        Implement a real-time synchronization mechanism between Strapi and the RAG vector store. This will be achieved by using Strapi's webhooks to notify the RAG pipeline of content changes and implementing corresponding webhook endpoints in the FastAPI backend to process these notifications.
+    *   #### Acceptance Criteria:
+        1.  Strapi webhooks are configured to fire on content creation, update, and deletion events.
+        2.  A FastAPI endpoint (e.g., `/api/v1/sync/strapi`) is implemented to receive and process these webhooks.
+        3.  End-to-end synchronization is tested and confirmed to have minimal lag.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Feature 6: Strapi CMS Integration
+        *   Milestone 6: Strapi CMS Integration - Phase 3
+    *   #### Status: Done
+    *   #### Notes on Completion:
+        *   Created `backend/api/v1/sync/strapi.py` to define the secure webhook endpoint.
+        *   Implemented `backend/strapi/webhook_handler.py` to process `publish`, `update`, and `unpublish` events.
+        *   Added `delete_documents_by_strapi_id` to `VectorStoreManager` for content removal.
+        *   Updated `backend/data_models.py` with webhook payload validation models.
+        *   Registered the new router in `main.py` and added the secret to `.env.example`.
+    *   #### Estimated Effort: 4-6 days
+    *   #### Priority: High
 
 *   ### Task ID: `STRAPI-INT-002`
     *   #### Name: Content API Integration
@@ -65,48 +104,5 @@
         *   All high-level project documents have been updated to reflect this pivot.
 
 ## Task Backlog:
-
-*   ### Task ID: `STRAPI-INT-003`
-    *   #### Name: Synchronization Mechanism
-    *   #### Detailed Description & Business Context:
-        Implement a real-time synchronization mechanism between Strapi and the RAG vector store. This will be achieved by using Strapi's webhooks to notify the RAG pipeline of content changes and implementing corresponding webhook endpoints in the FastAPI backend to process these notifications.
-    *   #### Acceptance Criteria:
-        1.  Strapi webhooks are configured to fire on content creation, update, and deletion events.
-        2.  A FastAPI endpoint (e.g., `/api/v1/sync/strapi`) is implemented to receive and process these webhooks.
-        3.  End-to-end synchronization is tested and confirmed to have minimal lag.
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Feature 6: Strapi CMS Integration
-        *   Milestone 6: Strapi CMS Integration - Phase 3
-    *   #### Status: Done
-    *   #### Notes on Completion:
-        *   Created `backend/api/v1/sync/strapi.py` to define the secure webhook endpoint.
-        *   Implemented `backend/strapi/webhook_handler.py` to process `publish`, `update`, and `unpublish` events.
-        *   Added `delete_documents_by_strapi_id` to `VectorStoreManager` for content removal.
-        *   Updated `backend/data_models.py` with webhook payload validation models.
-        *   Registered the new router in `main.py` and added the secret to `.env.example`.
-    *   #### Estimated Effort: 4-6 days
-    *   #### Priority: High
-
-*   ### Task ID: `STRAPI-INT-004`
-    *   #### Name: Content Migration
-    *   #### Detailed Description & Business Context:
-        Transfer the existing knowledge base content from the legacy Markdown files in `knowledge_base/` to the new Strapi CMS. This requires a migration script that can parse the Markdown files and use the Strapi API to create corresponding entries.
-    *   #### Acceptance Criteria:
-        1.  A migration script is developed to import content from Markdown files into Strapi.
-        2.  Metadata (title, tags, authors) and content structure are preserved during migration.
-        3.  All migrated content is validated for accuracy in the Strapi admin panel.
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Feature 6: Strapi CMS Integration
-        *   Milestone 6: Strapi CMS Integration - Phase 4
-    *   #### Status: To Do
-    *   #### Estimated Effort: 3-4 days
-    *   #### Priority: Medium
-
-## Legacy Tasks (Deprecated):
-
-*   ### Task ID: `GHOST-INT-*` - DEPRECATED
-    *   #### Name: All Ghost CMS Integration Tasks
-    *   #### Status: Deprecated
-    *   #### Notes: All tasks related to the Ghost CMS integration (`GHOST-INT-001` through `GHOST-INT-004`) are now obsolete due to the strategic pivot to Strapi CMS.
 
 [View Task Archive](task_archive.md)

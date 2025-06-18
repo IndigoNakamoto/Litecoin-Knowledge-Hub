@@ -32,7 +32,7 @@
     *   `techStack.md`: Key technology choices and justifications.
     *   `codebaseSummary.md`: Overview of project structure and components.
     *   `task_archive.md`: Archive of completed tasks.
-*   `knowledge_base/`: Contains the legacy curated knowledge base (to be migrated to Strapi CMS).
+*   `knowledge_base/`
     *   `articles/`: Subdirectory containing the curated markdown articles.
     *   `_template.md`: Template for knowledge base articles.
     *   `index.md`: Master index of all knowledge base articles.

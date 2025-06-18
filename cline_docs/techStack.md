@@ -191,9 +191,8 @@
 ## Migration Strategy
 *   **Phase 1:** Set up Strapi CMS infrastructure and define content types.
 *   **Phase 2:** Develop `embedding_processor_strapi.py` and webhook handlers.
-*   **Phase 3:** Create a script to migrate existing `knowledge_base/` Markdown content to Strapi.
-*   **Phase 4:** Establish Foundation editorial workflows in Strapi.
-*   **Phase 5:** Deprecate any remaining legacy CMS components.
+*   **Phase 3:** Establish Foundation editorial workflows in Strapi.
+*   **Phase 4:** Deprecate any remaining legacy CMS components.
 
 ## Security Considerations
 *   **Strapi CMS Security:**

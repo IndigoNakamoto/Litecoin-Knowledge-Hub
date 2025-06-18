@@ -17,14 +17,10 @@ load_dotenv()
 
 # Import the RAG chain constructor and data models
 from backend.rag_pipeline import RAGPipeline
-from backend.data_models import ChatRequest, ChatMessage # Import ChatRequest and ChatMessage
+from backend.data_models import ChatRequest, ChatMessage
 from backend.api.v1.sources import router as sources_router
 from backend.api.v1.sync.strapi import router as strapi_sync_router
-from backend.cms.articles.router import router as articles_router
-from backend.cms.auth.router import router as auth_router
-from backend.cms.sync.router import router as sync_router # Added RAG Sync router
-
-from bson import ObjectId # Import ObjectId
+from bson import ObjectId
 from fastapi.encoders import jsonable_encoder # Import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -50,9 +46,6 @@ app.add_middleware(
 # Include API routers
 app.include_router(sources_router, prefix="/api/v1/sources", tags=["Data Sources"])
 app.include_router(strapi_sync_router, prefix="/api/v1/sync", tags=["Strapi Sync"])
-app.include_router(articles_router) # The prefix is already in the router
-app.include_router(auth_router) # The prefix is already in the router
-app.include_router(sync_router) # The prefix is already in the router
 
 # Initialize RAGPipeline globally or as a dependency
 # For simplicity, initializing globally for now. Consider dependency injection for better testability.

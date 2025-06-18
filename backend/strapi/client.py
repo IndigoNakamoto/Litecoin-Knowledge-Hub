@@ -83,6 +83,18 @@ class StrapiClient:
                 return None
             raise
 
+    async def get_article(self, article_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Fetches a single article by its ID, ensuring all relations are populated.
+
+        Args:
+            article_id (int): The ID of the article to retrieve.
+
+        Returns:
+            Optional[Dict[str, Any]]: The article object, or None if not found.
+        """
+        return await self.get_entry("articles", article_id, params={"populate": "*"})
+
 # Example usage (for testing purposes)
 async def main():
     print("Initializing Strapi Client...")
