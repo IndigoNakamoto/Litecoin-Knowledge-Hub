@@ -41,7 +41,7 @@ This milestone outlines the strategic pivot from a custom-built CMS to Strapi, a
     *   Validate content creation, update, publish, unpublish, and deletion events.
     *   Confirm data integrity between Strapi and the vector store.
     *   Verify webhook security and error handling.
-*   **Status:** � **In Progress**
+*   **Status:** 🟨 **In Progress**
 
 ### Phase 4: Editorial Workflow Setup
 *   **Objective:** Establish a Foundation-controlled editorial process within Strapi.
@@ -49,7 +49,7 @@ This milestone outlines the strategic pivot from a custom-built CMS to Strapi, a
     *   Configure Strapi user roles (e.g., Contributors, Editors, Administrators).
     *   Define workflows for content creation, review, and publishing.
     *   Train the Foundation team on Strapi’s admin panel.
-*   **Status:** �📝 Planned
+*   **Status:** 📝 Planned
 
 ### Phase 5: Optimization and Advanced Features
 *   **Objective:** Enhance Strapi’s functionality and performance for the RAG application.
