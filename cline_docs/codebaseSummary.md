@@ -55,7 +55,9 @@
 ### Strapi CMS Integration Components
 *   `backend/strapi/client.py`: **(Implemented)** Strapi REST API client for fetching content collections, handling authentication, and managing API requests.
 *   `backend/strapi/webhook_handler.py`: **(Implemented)** Processes Strapi webhook events (e.g., entry.publish, entry.unpublish) and triggers the appropriate RAG pipeline updates.
-*   `backend/data_ingestion/embedding_processor_strapi.py`: **(Implemented)** Specialized processor for Strapi content that parses JSON, extracts text, performs hierarchical chunking, and maps Strapi metadata to the RAG pipeline's schema.
+*   `backend/strapi/rich_text_chunker.py`: **(Enhanced)** This module now implements a sophisticated, stateful algorithm to perform hierarchical chunking of Strapi's rich text JSON. It creates structured documents based on heading levels, prepends hierarchical context to the content, and generates rich metadata for each chunk.
+*   `backend/strapi/webhook_handler.py`: **(Updated)** The webhook handler now directly uses the `StrapiRichTextChunker` to process incoming article content, ensuring that all published and updated articles are correctly chunked before being sent to the vector store.
+*   `backend/data_ingestion/embedding_processor_strapi.py`: **(Updated)** This processor's core chunking responsibility has been superseded by the webhook handler's direct use of the chunker. It remains as a potential tool for manual or bulk ingestion.
 *   `backend/api/v1/sync/strapi.py`: **(Implemented)** FastAPI router containing the Strapi webhook endpoint for real-time content synchronization.
 
 ### Legacy Components (To be Modified/Removed)
@@ -77,16 +79,21 @@
 ### Strapi CMS Integration Data Flow
 ```mermaid
 graph TD
-    A[Strapi CMS] -->|REST API| B[Strapi Client]
-    A -->|Webhooks| C[Webhook Handler]
-    B -->|Fetch Content (JSON)| D[embedding_processor_strapi.py]
-    C -->|Trigger Sync| D
-    D -->|Parse & Chunk| E[Vector Embeddings]
-    E -->|Store| F[MongoDB Vector Store]
-    G[User Query] -->|Chat API| H[RAG Pipeline]
-    H -->|Vector Search| F
-    F -->|Retrieved Context| H
-    H -->|Generated Answer| I[User Response]
+    A[Strapi CMS] -- "Publish/Update Event" -->|Webhook| B(FastAPI Backend)
+    
+    subgraph B
+        C[Webhook Handler] --> D[Strapi Rich Text Chunker]
+        D -- "Creates structured chunks" --> E[Multiple Documents w/ Hierarchical Metadata]
+    end
+
+    E -- "Enriched with base metadata" --> F(Vector Embeddings)
+    H --> I[MongoDB Vector Store]
+
+    J[User Query] --> K[RAG Pipeline]
+    K -->|Vector Search w/ Metadata Filter| I
+    I -->|Retrieved Chunks| K
+    K --> L[Generated Answer]
+    L --> M[User Response]
 ```
 
 ### Legacy Knowledge Base Integration Flow (for reference)

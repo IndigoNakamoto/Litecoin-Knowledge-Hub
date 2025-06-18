@@ -1,6 +1,40 @@
-from datetime import datetime
-from typing import List, Literal, Optional
+# backend/data_models.py
+
 from pydantic import BaseModel, Field
+from datetime import datetime
+from typing import List, Literal, Optional, Dict, Any
+
+
+class StrapiDocumentMetadata(BaseModel):
+    """
+    Pydantic model for the metadata of a single document chunk derived from Strapi.
+    """
+    # Core Identifiers
+    strapi_id: int = Field(..., description="The Strapi ID of the source article.")
+    document_id: Optional[str] = Field(None, description="A unique ID for the document chunk.")
+    source: str = Field("strapi", description="The source of the content.")
+    content_type: str = Field("article", description="The type of content.")
+
+    # Content Classification
+    chunk_type: Literal["title_summary", "section", "text"] = Field(..., description="The type of the content chunk.")
+    chunk_index: int = Field(..., description="The index of the chunk within the article.")
+    is_title_chunk: bool = Field(False, description="Indicates if this chunk represents the main title and summary.")
+    section_title: Optional[str] = Field(None, description="The title of the section this chunk belongs to.")
+
+    # Searchable Fields
+    title: str = Field(..., description="The main title of the article.")
+    author: Optional[str] = Field(None, description="The author of the article.")
+    tags_array: List[str] = Field([], description="A list of tags for filtering.")
+    tags: Optional[str] = Field(None, description="A comma-separated string of tags.")
+
+    # Filtering & Sorting
+    published_date: Optional[datetime] = Field(None, description="The date the article was published.")
+    locale: str = Field("en", description="The locale of the content.")
+    content_length: int = Field(..., description="The character length of the content in this chunk.")
+
+    # Technical
+    slug: Optional[str] = Field(None, description="The URL slug for the article.")
+
 
 class DataSource(BaseModel):
     """
@@ -71,74 +105,33 @@ class ChatRequest(BaseModel):
         }
 
 
-class StrapiArticleAttributes(BaseModel):
+class ArticleEntry(BaseModel):
     """
-    Pydantic model for the 'attributes' of a Strapi article entry.
-    """
-    title: str
-    slug: str
-    content: str
-    author: Optional[str] = None
-    tags: Optional[str] = None
-    published_at: Optional[datetime] = Field(None, alias="publishedAt")
-    created_at: datetime = Field(..., alias="createdAt")
-    updated_at: datetime = Field(..., alias="updatedAt")
-
-class StrapiArticle(BaseModel):
-    """
-    Pydantic model for a complete Strapi article entry, including its ID and attributes.
+    Represents the 'entry' part of a Strapi webhook payload for the 'article' content type.
+    This model should reflect the raw structure of the data sent by Strapi.
     """
     id: int
-    attributes: StrapiArticleAttributes
+    createdAt: datetime
+    updatedAt: datetime
+    publishedAt: Optional[datetime] = None
+    Title: str
+    Summary: Optional[str] = None
+    Content: Optional[List[Dict[str, Any]]] = None
+    Author: Optional[str] = None
+    Slug: Optional[str] = None
+    Tags: Optional[str] = None
 
-
-# Models for Strapi Webhook Payloads
-
-class WebhookEntry(BaseModel):
-    """
-    Pydantic model for the 'entry' part of a Strapi webhook payload.
-    This is intentionally flexible to accommodate different content types.
-    """
-    id: int
-    # The rest of the fields are dynamic and will be handled as a dict
-    # For a specific content type like 'article', you could create a more specific model
-    # that inherits from this, e.g., WebhookArticleEntry(WebhookEntry, StrapiArticleAttributes)
-    # But for a generic handler, this is sufficient.
-    title: Optional[str] = None
-    slug: Optional[str] = None
-    content: Optional[str] = None
-    author: Optional[str] = None
-    tags: Optional[str] = None
-    published_at: Optional[datetime] = Field(None, alias="publishedAt")
-    created_at: datetime = Field(..., alias="createdAt")
-    updated_at: datetime = Field(..., alias="updatedAt")
-
+    class Config:
+        extra = "allow"  # Allow extra fields from Strapi
 
 class StrapiWebhookPayload(BaseModel):
     """
-    Pydantic model for a Strapi webhook payload.
+    The root model for a Strapi webhook payload.
     """
-    event: str = Field(..., description="The type of event (e.g., 'entry.publish', 'entry.unpublish').")
-    model: str = Field(..., description="The content type of the entry (e.g., 'article').")
-    entry: WebhookEntry = Field(..., description="The content entry that triggered the webhook.")
-    created_at: Optional[datetime] = Field(None, alias="createdAt")
+    event: str
+    createdAt: datetime
+    model: str
+    entry: ArticleEntry
 
     class Config:
-        json_schema_extra = {
-            "example": {
-                "event": "entry.publish",
-                "createdAt": "2024-06-17T19:30:00.000Z",
-                "model": "article",
-                "entry": {
-                    "id": 1,
-                    "title": "What is Litecoin?",
-                    "slug": "what-is-litecoin",
-                    "content": "Litecoin is a peer-to-peer cryptocurrency...",
-                    "author": "Charlie Lee",
-                    "tags": "crypto, litecoin, beginner",
-                    "publishedAt": "2024-06-17T19:30:00.000Z",
-                    "createdAt": "2024-06-17T19:25:00.000Z",
-                    "updatedAt": "2024-06-17T19:30:00.000Z"
-                }
-            }
-        }
+        extra = "allow"

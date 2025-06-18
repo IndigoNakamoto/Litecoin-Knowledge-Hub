@@ -6,6 +6,58 @@
 ## High-Priority Initiatives: Strapi CMS Integration
 
 ## Active Task(s):
+*   ### Task ID: `STRAPI-INT-005`
+    *   #### Name: Implement and Verify Hierarchical Chunking for Strapi Content
+    *   #### Detailed Description & Business Context:
+        The initial Strapi integration did not correctly chunk rich text content, leading to poor retrieval quality. This task involved implementing a sophisticated, hierarchical chunker to split Strapi articles into meaningful sections based on headings. This is critical for providing accurate, context-aware answers in the RAG pipeline.
+    *   #### Acceptance Criteria:
+        1.  Strapi rich text content is split into separate documents for each heading section.
+        2.  Each document's content is prepended with its hierarchical heading structure (e.g., "H1 > H2").
+        3.  Each document's metadata is enriched with `chunk_type`, `section_title`, `parent_headings`, and `heading_level`.
+        4.  The `entry.publish` webhook event successfully triggers the new chunking logic.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Feature 6: Strapi CMS Integration
+        *   Milestone 6: Strapi CMS Integration - Phase 3
+    *   #### Status: Done
+    *   #### Notes on Completion:
+        *   Refactored `backend/strapi/rich_text_chunker.py` with a stateful algorithm to create hierarchical chunks.
+        *   Updated `backend/strapi/webhook_handler.py` to use the new chunker and correctly merge metadata.
+        *   Successfully verified the end-to-end `publish` event, confirming that articles are chunked and stored correctly in MongoDB.
+    *   #### Estimated Effort: 1 day
+    *   #### Priority: High
+
+## Task Backlog:
+*   ### Task ID: `STRAPI-INT-006`
+    *   #### Name: Verify Strapi `update`, `unpublish`, and `delete` Webhook Events
+    *   #### Detailed Description & Business Context:
+        While the `publish` event has been confirmed to work with the new hierarchical chunker, the other critical content lifecycle events (`update`, `unpublish`, `delete`) have not been explicitly tested. This task is to ensure that all webhook events are handled correctly by the RAG pipeline, ensuring data integrity and consistency between the CMS and the vector store.
+    *   #### Acceptance Criteria:
+        1.  Updating an article in Strapi correctly deletes the old document chunks and creates new, updated chunks in the vector store.
+        2.  Unpublishing an article in Strapi correctly deletes all associated document chunks from the vector store.
+        3.  Deleting an article from Strapi correctly deletes all associated document chunks from the vector store.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Feature 6: Strapi CMS Integration
+        *   Milestone 6: Strapi CMS Integration - Phase 3
+    *   #### Status: To Do
+    *   #### Estimated Effort: 1 day
+    *   #### Priority: High
+
+*   ### Task ID: `RAG-OPT-001`
+    *   #### Name: Implement Query Optimization and Hybrid Search
+    *   #### Detailed Description & Business Context:
+        Update the RAG retrieval logic to leverage the new structured chunks and rich metadata. This involves implementing hybrid search (a combination of vector search and metadata-based filtering) to improve the accuracy and relevance of retrieved documents. This is the final step to fully realize the benefits of the new chunking strategy.
+    *   #### Acceptance Criteria:
+        1.  The core retrieval function in `rag_pipeline.py` is updated to accept metadata filters.
+        2.  The chat API is updated to intelligently construct filters based on the user's query.
+        3.  Section-aware retrieval is implemented (e.g., prioritizing `title_summary` chunks for overview questions).
+        4.  End-to-end tests validate that hybrid search improves retrieval relevance for a variety of query types.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Phase 2: User Experience & Accuracy Enhancements
+    *   #### Status: To Do
+    *   #### Estimated Effort: 3-4 days
+    *   #### Priority: High
+
+## Recently Completed Tasks:
 *   ### Task ID: `STRAPI-INT-004`
     *   #### Name: Test and Verify Strapi Webhook Synchronization
     *   #### Detailed Description & Business Context:
@@ -20,11 +72,16 @@
     *   #### Link to projectRoadmap.md goal(s):
         *   Feature 6: Strapi CMS Integration
         *   Milestone 6: Strapi CMS Integration - Phase 3
-    *   #### Status: In Progress
+    *   #### Status: Done
+    *   #### Notes on Completion:
+        *   The initial testing and verification of the webhook synchronization is complete.
+        *   As part of this task, the entire chunking and metadata strategy was overhauled to support more granular, structure-aware retrieval.
+        *   Created `backend/strapi/rich_text_chunker.py` to handle intelligent chunking of Strapi's rich text format.
+        *   Updated `backend/data_ingestion/embedding_processor_strapi.py` to use the new chunker and to enrich documents with a detailed metadata schema defined in `backend/data_models.py`.
+        *   Updated `cline_docs/techStack.md` with the new, recommended MongoDB Vector Search index definitions.
+        *   Updated `cline_docs/codebaseSummary.md` to reflect the new architecture.
     *   #### Estimated Effort: 2-3 days
     *   #### Priority: High
-
-## Recently Completed Tasks:
 *   ### Task ID: `STRAPI-INT-003`
     *   #### Name: Synchronization Mechanism
     *   #### Detailed Description & Business Context:

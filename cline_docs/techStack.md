@@ -108,7 +108,11 @@
         },
         {
           "type": "filter",
-          "path": "slug"
+          "path": "chunk_type"
+        },
+        {
+          "type": "filter",
+          "path": "content_type"
         },
         {
           "type": "filter",
@@ -116,18 +120,27 @@
         },
         {
           "type": "filter",
-          "path": "tags"
+          "path": "tags_array"
         },
         {
           "type": "filter",
-          "path": "publishedAt"
-        },
-        {
-          "type": "filter",
-          "path": "source_type"
+          "path": "published_date"
         }
       ]
     }
+    ```
+
+*   **Recommended Metadata Indexes for Filtering:**
+    ```javascript
+    // Vector Search Index (defined above)
+
+    // Metadata Indexes for Filtering
+    db.litecoin_docs.createIndex({"strapi_id": 1})
+    db.litecoin_docs.createIndex({"chunk_type": 1, "content_type": 1})
+    db.litecoin_docs.createIndex({"author": 1})
+    db.litecoin_docs.createIndex({"tags_array": 1})
+    db.litecoin_docs.createIndex({"published_date": -1})
+    db.litecoin_docs.createIndex({"title": "text", "section_title": "text"})
     ```
 
 ## DevOps & Infrastructure

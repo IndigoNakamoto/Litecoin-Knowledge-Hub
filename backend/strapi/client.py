@@ -15,11 +15,17 @@ class StrapiClient:
         """
         Initializes the StrapiClient, loading configuration from environment variables.
         """
-        self.base_url = os.getenv("STRAPI_API_URL", "http://localhost:1337/api")
-        self.api_token = os.getenv("STRAPI_FULL_ACCESS_TOKEN")
+        base_url = os.getenv("STRAPI_API_URL", "http://127.0.0.1:1337")
+        # Ensure the base URL does not end with /api, as the client endpoints add it.
+        if base_url.endswith('/api'):
+            base_url = base_url[:-4]
+        if not base_url.endswith('/'):
+            base_url += '/'
+        self.base_url = f"{base_url}api"
 
+        self.api_token = os.getenv("STRAPI_FULL_ACCESS_TOKEN")
         if not self.api_token:
-            raise ValueError("STRAPI_FULL_ACCESS_TOKEN environment variable not set.")
+            raise ValueError("The backend StrapiClient requires a STRAPI_FULL_ACCESS_TOKEN to be set in the environment variables.")
 
         self.headers = {
             "Authorization": f"Bearer {self.api_token}",
@@ -86,14 +92,16 @@ class StrapiClient:
     async def get_article(self, article_id: int) -> Optional[Dict[str, Any]]:
         """
         Fetches a single article by its ID, ensuring all relations are populated.
-
+        Includes draft content.
+        
         Args:
             article_id (int): The ID of the article to retrieve.
 
         Returns:
             Optional[Dict[str, Any]]: The article object, or None if not found.
         """
-        return await self.get_entry("articles", article_id, params={"populate": "*"})
+        params = {"populate": "*", "publicationState": "preview"}
+        return await self.get_entry("articles", article_id, params=params)
 
 # Example usage (for testing purposes)
 async def main():

@@ -1,0 +1,43 @@
+flowchart TD
+    %% Nodes - User / Content Team
+    A("fa:fa-user Content Editor")
+
+    %% Nodes - Strapi CMS (Headless)
+    B("fa:fa-laptop-code Admin UI")
+    C("fa:fa-database Strapi Database")
+    D("fa:fa-bell Webhook Emitter")
+
+    %% Nodes - RAG Backend (FastAPI Application)
+    E("fa:fa-cloud-download-alt /api/v1/sync/strapi (Webhook Endpoint)")
+    F("fa:fa-cogs WebhookHandler")
+    G("fa:fa-brain EmbeddingProcessorStrapi")
+    H("fa:fa-vector-square VectorStoreManager")
+
+    %% Nodes - Data Storage
+    I("fa:fa-cloud-upload-alt MongoDB Atlas Vector Store")
+
+    %% Define connections and data flows
+
+    %% Flow: Real-Time CRUD Synchronization (Event-Driven)
+    A -- "Performs Action: (Publish, Update, Unpublish, Delete)" --> B
+    B -- "Saves Content" --> C
+    C -- "Triggers Event on" --> D
+    D -- "Fires Webhook:(POST with JSON Payload)" --> E
+    E -- "Validates & Forwards Payload to" --> F
+    F -- "Processes Event" --> J{Event Type?}
+    J -- "Publish/Update" --> G
+    J -- "Unpublish/Delete" --> H
+    G -- "Parses, Chunks, & Embeds Content" --> H
+    H -- "Upserts or Deletes <br> Vector Embeddings in MongoDB" --> I
+
+    %% Styling
+    style A fill:#FFD966,stroke:#FFD966,color:#333;
+    style B fill:#A8CAFF,stroke:#A8CAFF,color:#333;
+    style C fill:#A8CAFF,stroke:#A8CAFF,color:#333;
+    style D fill:#A8CAFF,stroke:#A8CAFF,color:#333;
+    style E fill:#A9D18E,stroke:#A9D18E,color:#333;
+    style F fill:#A9D18E,stroke:#A9D18E,color:#333;
+    style G fill:#A9D18E,stroke:#A9D18E,color:#333;
+    style H fill:#A9D18E,stroke:#A9D18E,color:#333;
+    style I fill:#F4B183,stroke:#F4B183,color:#333;
+    style J fill:#D9EAD3,stroke:#9CC396,color:#333;
