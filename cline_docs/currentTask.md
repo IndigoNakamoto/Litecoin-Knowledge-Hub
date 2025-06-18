@@ -6,6 +6,58 @@
 ## High-Priority Initiatives: Strapi CMS Integration
 
 ## Active Task(s):
+*   ### Task ID: `STRAPI-INT-006`
+    *   #### Name: Verify Strapi `update`, `unpublish`, and `delete` Webhook Events
+    *   #### Detailed Description & Business Context:
+        While the `publish` event has been confirmed to work with the new hierarchical chunker, the other critical content lifecycle events (`update`, `unpublish`, `delete`) have not been explicitly tested. This task is to ensure that all webhook events are handled correctly by the RAG pipeline, ensuring data integrity and consistency between the CMS and the vector store.
+    *   #### Acceptance Criteria:
+        1.  Updating an article in Strapi correctly deletes the old document chunks and creates new, updated chunks in the vector store.
+        2.  Unpublishing an article in Strapi correctly deletes all associated document chunks from the vector store.
+        3.  Deleting an article from Strapi correctly deletes all associated document chunks from the vector store.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Feature 6: Strapi CMS Integration
+        *   Milestone 6: Strapi CMS Integration - Phase 3
+    *   #### Status: Done
+    *   #### Estimated Effort: 1 day
+    *   #### Priority: High
+    *   #### Plan:
+        *   **Objective:** To confirm that `update`, `unpublish`, and `delete` events in Strapi correctly trigger the corresponding actions (update or delete) in the MongoDB vector store, ensuring data consistency.
+        *   **Test Case 1: Baseline (`entry.publish`)**
+            *   **Action:** Create and publish a new article in Strapi.
+            *   **Verification:** Confirm document creation in logs and MongoDB.
+        *   **Test Case 2: `entry.update`**
+            *   **Action:** Update the previously published article.
+            *   **Verification:** Confirm old documents are deleted and new ones are created.
+        *   **Test Case 3: `entry.unpublish`**
+            *   **Action:** Unpublish the article.
+            *   **Verification:** Confirm all associated documents are deleted from MongoDB.
+        *   **Test Case 4: `entry.delete`**
+            *   **Action:** Re-publish and then permanently delete the article.
+            *   **Verification:** Confirm all associated documents are deleted from MongoDB.
+    *   #### Notes on Completion:
+        *   Identified and fixed a critical bug where `entry.unpublish` and `entry.update` events failed to delete documents due to using the volatile `entry.id` instead of the stable `entry.documentId`.
+        *   Updated `VectorStoreManager` to include a `delete_documents_by_document_id` method.
+        *   Updated the `webhook_handler` to use the new deletion method, ensuring data integrity.
+        *   Added `document_id` to the metadata for all chunks.
+        *   Successfully re-ran the E2E test plan and verified that `publish`, `update`, `unpublish`, and `delete` events are all now handled correctly and robustly.
+
+## Task Backlog:
+*   ### Task ID: `RAG-OPT-001`
+    *   #### Name: Implement Query Optimization and Hybrid Search
+    *   #### Detailed Description & Business Context:
+        Update the RAG retrieval logic to leverage the new structured chunks and rich metadata. This involves implementing hybrid search (a combination of vector search and metadata-based filtering) to improve the accuracy and relevance of retrieved documents. This is the final step to fully realize the benefits of the new chunking strategy.
+    *   #### Acceptance Criteria:
+        1.  The core retrieval function in `rag_pipeline.py` is updated to accept metadata filters.
+        2.  The chat API is updated to intelligently construct filters based on the user's query.
+        3.  Section-aware retrieval is implemented (e.g., prioritizing `title_summary` chunks for overview questions).
+        4.  End-to-end tests validate that hybrid search improves retrieval relevance for a variety of query types.
+    *   #### Link to projectRoadmap.md goal(s):
+        *   Phase 2: User Experience & Accuracy Enhancements
+    *   #### Status: To Do
+    *   #### Estimated Effort: 3-4 days
+    *   #### Priority: High
+
+## Recently Completed Tasks:
 *   ### Task ID: `STRAPI-INT-005`
     *   #### Name: Implement and Verify Hierarchical Chunking for Strapi Content
     *   #### Detailed Description & Business Context:
@@ -26,38 +78,6 @@
     *   #### Estimated Effort: 1 day
     *   #### Priority: High
 
-## Task Backlog:
-*   ### Task ID: `STRAPI-INT-006`
-    *   #### Name: Verify Strapi `update`, `unpublish`, and `delete` Webhook Events
-    *   #### Detailed Description & Business Context:
-        While the `publish` event has been confirmed to work with the new hierarchical chunker, the other critical content lifecycle events (`update`, `unpublish`, `delete`) have not been explicitly tested. This task is to ensure that all webhook events are handled correctly by the RAG pipeline, ensuring data integrity and consistency between the CMS and the vector store.
-    *   #### Acceptance Criteria:
-        1.  Updating an article in Strapi correctly deletes the old document chunks and creates new, updated chunks in the vector store.
-        2.  Unpublishing an article in Strapi correctly deletes all associated document chunks from the vector store.
-        3.  Deleting an article from Strapi correctly deletes all associated document chunks from the vector store.
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Feature 6: Strapi CMS Integration
-        *   Milestone 6: Strapi CMS Integration - Phase 3
-    *   #### Status: To Do
-    *   #### Estimated Effort: 1 day
-    *   #### Priority: High
-
-*   ### Task ID: `RAG-OPT-001`
-    *   #### Name: Implement Query Optimization and Hybrid Search
-    *   #### Detailed Description & Business Context:
-        Update the RAG retrieval logic to leverage the new structured chunks and rich metadata. This involves implementing hybrid search (a combination of vector search and metadata-based filtering) to improve the accuracy and relevance of retrieved documents. This is the final step to fully realize the benefits of the new chunking strategy.
-    *   #### Acceptance Criteria:
-        1.  The core retrieval function in `rag_pipeline.py` is updated to accept metadata filters.
-        2.  The chat API is updated to intelligently construct filters based on the user's query.
-        3.  Section-aware retrieval is implemented (e.g., prioritizing `title_summary` chunks for overview questions).
-        4.  End-to-end tests validate that hybrid search improves retrieval relevance for a variety of query types.
-    *   #### Link to projectRoadmap.md goal(s):
-        *   Phase 2: User Experience & Accuracy Enhancements
-    *   #### Status: To Do
-    *   #### Estimated Effort: 3-4 days
-    *   #### Priority: High
-
-## Recently Completed Tasks:
 *   ### Task ID: `STRAPI-INT-004`
     *   #### Name: Test and Verify Strapi Webhook Synchronization
     *   #### Detailed Description & Business Context:

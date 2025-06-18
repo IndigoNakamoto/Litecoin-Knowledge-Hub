@@ -56,7 +56,8 @@
 *   `backend/strapi/client.py`: **(Implemented)** Strapi REST API client for fetching content collections, handling authentication, and managing API requests.
 *   `backend/strapi/webhook_handler.py`: **(Implemented)** Processes Strapi webhook events (e.g., entry.publish, entry.unpublish) and triggers the appropriate RAG pipeline updates.
 *   `backend/strapi/rich_text_chunker.py`: **(Enhanced)** This module now implements a sophisticated, stateful algorithm to perform hierarchical chunking of Strapi's rich text JSON. It creates structured documents based on heading levels, prepends hierarchical context to the content, and generates rich metadata for each chunk.
-*   `backend/strapi/webhook_handler.py`: **(Updated)** The webhook handler now directly uses the `StrapiRichTextChunker` to process incoming article content, ensuring that all published and updated articles are correctly chunked before being sent to the vector store.
+*   `backend/strapi/webhook_handler.py`: **(Enhanced)** The webhook handler now uses the stable `documentId` from Strapi payloads to reliably delete and update documents, fixing a critical data integrity bug. It continues to use the `StrapiRichTextChunker` for content processing.
+*   `backend/data_ingestion/vector_store_manager.py`: **(Enhanced)** Added a `delete_documents_by_document_id` method to allow for robust deletion of Strapi entries based on their stable `documentId`.
 *   `backend/data_ingestion/embedding_processor_strapi.py`: **(Updated)** This processor's core chunking responsibility has been superseded by the webhook handler's direct use of the chunker. It remains as a potential tool for manual or bulk ingestion.
 *   `backend/api/v1/sync/strapi.py`: **(Implemented)** FastAPI router containing the Strapi webhook endpoint for real-time content synchronization.
 

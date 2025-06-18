@@ -134,6 +134,26 @@ class VectorStoreManager:
         print(f"Deleted {result.deleted_count} documents for Strapi ID: {strapi_id}")
         return result.deleted_count
 
+    def delete_documents_by_document_id(self, document_id: str):
+        """
+        Deletes all document chunks associated with a specific Strapi document ID.
+        This is the correct way to delete an article and all its localizations.
+
+        Args:
+            document_id: The string ID of the Strapi document.
+        """
+        if not isinstance(document_id, str):
+            print("Invalid Strapi document_id provided for deletion.")
+            return 0
+        
+        # The filter targets the 'document_id' field which is stored at the root of the document.
+        mongo_filter = {"document_id": document_id}
+        
+        print(f"Attempting to delete documents with document_id: {document_id}")
+        result = self.collection.delete_many(mongo_filter)
+        print(f"Deleted {result.deleted_count} documents for document_id: {document_id}")
+        return result.deleted_count
+
     def clear_all_documents(self):
         """
         Deletes all documents from the collection. Use with caution.

@@ -41,10 +41,15 @@ async def handle_webhook(payload: StrapiWebhookPayload, background_tasks: Backgr
                 strapi_id = payload.entry.id
                 logger.info(f"Processing '{payload.event}' for article '{payload.entry.Title}' (ID: {strapi_id})")
 
+                document_id = payload.entry.documentId
+                if not document_id:
+                    logger.error(f"CRITICAL: 'documentId' is missing in the payload for entry {strapi_id}. Cannot reliably delete.")
+                    raise HTTPException(status_code=400, detail="Payload missing 'documentId'")
+
                 try:
                     # Delete existing documents first to ensure consistency
-                    logger.info(f"Deleting existing documents for article {strapi_id}")
-                    deletion_result = vector_store_manager.delete_documents_by_strapi_id(strapi_id)
+                    logger.info(f"Deleting existing documents for article {strapi_id} using documentId: {document_id}")
+                    deletion_result = vector_store_manager.delete_documents_by_document_id(document_id)
                     logger.info(f"Deletion result: {deletion_result}")
                 except Exception as e:
                     logger.error(f"Error deleting existing documents: {str(e)}")
@@ -92,16 +97,23 @@ async def handle_webhook(payload: StrapiWebhookPayload, background_tasks: Backgr
         elif payload.event in ["entry.unpublish", "entry.delete"]:
             if payload.model == "article":
                 strapi_id = payload.entry.id
+                document_id = payload.entry.documentId
                 article_title = getattr(payload.entry, 'Title', f'ID {strapi_id}')
-                logger.info(f"Processing '{payload.event}' for article '{article_title}' (ID: {strapi_id})")
+
+                if not document_id:
+                    logger.error(f"CRITICAL: 'documentId' is missing in the payload for entry {strapi_id}. Cannot reliably delete.")
+                    # Do not proceed with deletion if the stable ID is missing
+                    return
+
+                logger.info(f"Processing '{payload.event}' for article '{article_title}' (ID: {strapi_id}, documentId: {document_id})")
                 
                 background_tasks.add_task(
                     safe_delete_documents, 
                     vector_store_manager, 
-                    strapi_id,
+                    document_id,
                     article_title
                 )
-                logger.info(f"Successfully queued deletion for article '{article_title}' (ID: {strapi_id})")
+                logger.info(f"Successfully queued deletion for article '{article_title}' (documentId: {document_id})")
                 
         # Handle other events
         else:
@@ -142,6 +154,7 @@ def process_article_for_embedding(entry) -> dict:
     # Build metadata
     metadata = {
         'strapi_id': entry.id,
+        'document_id': entry.documentId, # Add the stable document ID
         'source': 'strapi',
         'content_type': 'article',
         'title': getattr(entry, 'Title', ''),
@@ -238,15 +251,15 @@ async def safe_add_documents(vector_store_manager: VectorStoreManager, documents
         logger.error(f"❌ Failed to add documents for article '{title}' (ID: {strapi_id}): {str(e)}")
         logger.error(f"Traceback: {traceback.format_exc()}")
 
-async def safe_delete_documents(vector_store_manager: VectorStoreManager, strapi_id: int, title: str = ""):
-    """Safely delete documents from vector store with enhanced logging."""
+async def safe_delete_documents(vector_store_manager: VectorStoreManager, document_id: str, title: str = ""):
+    """Safely delete documents from vector store with enhanced logging using the stable document_id."""
     try:
-        logger.info(f"Deleting documents from vector store for article '{title}' (ID: {strapi_id})")
-        result = vector_store_manager.delete_documents_by_strapi_id(strapi_id)
-        logger.info(f"✅ Successfully deleted documents for article '{title}' (ID: {strapi_id})")
+        logger.info(f"Deleting documents from vector store for article '{title}' (documentId: {document_id})")
+        result = vector_store_manager.delete_documents_by_document_id(document_id)
+        logger.info(f"✅ Successfully deleted documents for article '{title}' (documentId: {document_id})")
         if result:
             logger.info(f"   Result: {result}")
             
     except Exception as e:
-        logger.error(f"❌ Failed to delete documents for article '{title}' (ID: {strapi_id}): {str(e)}")
+        logger.error(f"❌ Failed to delete documents for article '{title}' (documentId: {document_id}): {str(e)}")
         logger.error(f"Traceback: {traceback.format_exc()}")

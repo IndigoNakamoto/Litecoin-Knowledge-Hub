@@ -99,10 +99,10 @@ This focus on specialized, real-time, and accurate data is the core differentiat
     *   **Phase 2: Content API Integration** - ✅ Completed
         *   **Goal:** Enable seamless content retrieval from Strapi for the RAG pipeline.
         *   **Tasks:** Develop Python client for Strapi REST API, create `embedding_processor_strapi.py`, map Strapi metadata to RAG schema.
-    *   **Phase 3: Synchronization Mechanism** - 🟩🟨 **Partially Implemented & Verified**
+    *   **Phase 3: Synchronization Mechanism** - ✅ **Completed & Verified**
         *   **Goal:** Ensure real-time synchronization between Strapi and the RAG vector store.
         *   **Tasks:** Configure Strapi webhooks, implement FastAPI webhook endpoints, and test end-to-end synchronization.
-        *   **Current Status:** The `entry.publish` event is fully tested and verified. The system now correctly performs hierarchical chunking of rich text content, creating structured and context-aware documents in the vector store. Testing for `update`, `unpublish`, and `delete` events is pending.
+        *   **Current Status:** All webhook events (`publish`, `update`, `unpublish`, `delete`) are now fully tested and verified. A critical bug related to using volatile entry IDs for deletion was fixed by switching to the stable `documentId`, ensuring robust data integrity between the CMS and the vector store.
     *   **Phase 5: Editorial Workflow Setup** - 📝 Planned
         *   **Goal:** Establish a Foundation-controlled editorial process within Strapi.
         *   **Tasks:** Configure Strapi user roles, define workflows, train Foundation team.

@@ -41,7 +41,9 @@ This milestone outlines the strategic pivot from a custom-built CMS to Strapi, a
     *   Validate content creation, update, publish, unpublish, and deletion events.
     *   Confirm data integrity between Strapi and the vector store.
     *   Verify webhook security and error handling.
-*   **Status:** 🟨 **In Progress**
+*   **Status:** ✅ **Completed**
+*   **Notes:** Successfully identified and fixed a critical bug related to the use of volatile entry IDs for deletion. The system now uses the stable `documentId` for all webhook events, ensuring robust data integrity.
+
 
 ### Phase 4: Editorial Workflow Setup
 *   **Objective:** Establish a Foundation-controlled editorial process within Strapi.
