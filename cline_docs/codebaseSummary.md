@@ -12,17 +12,17 @@
         *   `contexts/`: React contexts for state management.
         *   `lib/`: Utility libraries and configurations.
 *   `backend/`: Contains the FastAPI application.
-    *   `cms/`: Contains the self-hosted Strapi CMS application. This is the content authoring and management system.
-    *   `strapi/`: Directory for Strapi CMS integration modules.
-        *   `client.py`: Strapi REST API client implementation.
-        *   `webhook_handler.py`: Strapi webhook processing logic.
+    *   `payload-cms/`: (New) Contains the self-hosted Payload CMS application. This is the content authoring and management system.
+    *   `payload_integration/`: (New) Directory for Payload CMS integration modules.
+        *   `client.py`: Payload REST/GraphQL API client implementation.
+        *   `webhook_handler.py`: Payload `afterChange` hook processing logic (conceptual, actual implementation might be within Payload itself or a dedicated service).
     *   `data_ingestion/`: Contains modules for data loading, embedding, and vector store management.
-        *   `embedding_processor_strapi.py`: Strapi-specific content processor for JSON parsing and hierarchical chunking.
+        *   `embedding_processor.py`: (Adapted) Handles content processing for hierarchical chunking and embedding, now adapted for Payload content.
     *   `api/v1/`: API version 1 routers.
         *   `chat.py`: Chat endpoint for RAG queries.
         *   `sources.py`: Data source management endpoints.
         *   `sync/`: Synchronization endpoints.
-            *   `strapi.py`: Strapi webhook endpoints for content synchronization.
+            *   `payload.py`: (New) Payload `afterChange` hook endpoints for content synchronization.
     *   `utils/`: Contains utility scripts.
     *   `main.py`: Main FastAPI application file.
     *   `rag_pipeline.py`: Encapsulates Langchain-related logic for the RAG pipeline.
@@ -49,46 +49,50 @@
 *   `backend/data_ingestion/embedding_processor.py`: Handles hierarchical chunking of Markdown documents (prepending titles/sections to content) and standard text splitting for other formats. Generates vector embeddings using Google Text Embedding 004 with `task_type='retrieval_document'` for knowledge base content.
 *   `backend/data_ingestion/vector_store_manager.py`: Manages connections to MongoDB Atlas. Facilitates the insertion and retrieval of vector embeddings. Handles deletion of documents based on flattened metadata fields.
 
-### Strapi CMS Application
-*   `backend/cms/`: The self-hosted Strapi application. It provides the admin UI for content creation, role-based access control, and the API endpoints for the frontend and RAG pipeline to consume.
+### Payload CMS Application
+*   `backend/payload-cms/`: The self-hosted Payload application. It provides the admin UI for content creation, role-based access control, and the API endpoints for the frontend and RAG pipeline to consume.
 
-### Strapi CMS Integration Components
-*   `backend/strapi/client.py`: **(Implemented)** Strapi REST API client for fetching content collections, handling authentication, and managing API requests.
-*   `backend/strapi/webhook_handler.py`: **(Implemented)** Processes Strapi webhook events (e.g., entry.publish, entry.unpublish) and triggers the appropriate RAG pipeline updates.
-*   `backend/strapi/rich_text_chunker.py`: **(Enhanced)** This module now implements a sophisticated, stateful algorithm to perform hierarchical chunking of Strapi's rich text JSON. It creates structured documents based on heading levels, prepends hierarchical context to the content, and generates rich metadata for each chunk.
-*   `backend/strapi/webhook_handler.py`: **(Enhanced)** The webhook handler now uses the stable `documentId` from Strapi payloads to reliably delete and update documents, fixing a critical data integrity bug. It continues to use the `StrapiRichTextChunker` for content processing.
-*   `backend/data_ingestion/vector_store_manager.py`: **(Enhanced)** Added a `delete_documents_by_document_id` method to allow for robust deletion of Strapi entries based on their stable `documentId`.
-*   `backend/data_ingestion/embedding_processor_strapi.py`: **(Updated)** This processor's core chunking responsibility has been superseded by the webhook handler's direct use of the chunker. It remains as a potential tool for manual or bulk ingestion.
-*   `backend/api/v1/sync/strapi.py`: **(Implemented)** FastAPI router containing the Strapi webhook endpoint for real-time content synchronization.
+### Payload CMS Integration Components
+*   `backend/payload_integration/client.py`: **(New)** Payload REST/GraphQL API client for fetching content collections, handling authentication, and managing API requests.
+*   `backend/payload_integration/webhook_handler.py`: **(Conceptual)** Processes Payload `afterChange` events and triggers the appropriate RAG pipeline updates. This logic might be integrated directly into Payload's custom server or a separate microservice.
+*   `backend/data_ingestion/embedding_processor.py`: **(Adapted)** This module will be adapted to process Payload's rich text JSON content. It will implement a sophisticated, stateful algorithm to perform hierarchical chunking, create structured documents based on heading levels, prepend hierarchical context to the content, and generate rich metadata for each chunk.
+*   `backend/data_ingestion/vector_store_manager.py`: **(Enhanced)** Will be updated to include methods for robust deletion and updating of Payload entries based on their stable IDs.
+*   `backend/api/v1/sync/payload.py`: **(New)** FastAPI router containing the Payload `afterChange` hook endpoint for real-time content synchronization.
 
 ### Legacy Components (To be Modified/Removed)
+*   `backend/cms/`: (To be removed) The old Strapi CMS directory.
+*   `backend/strapi/`: (To be removed) Directory for Strapi CMS integration modules.
+*   `backend/data_ingestion/embedding_processor_strapi.py`: (To be removed/refactored) Strapi-specific content processor.
+*   `backend/api/v1/sync/strapi.py`: (To be removed) Strapi webhook endpoints.
+*   `backend/debug_strapi_client.py`: (To be removed) Debugging script for Strapi.
+*   `backend/test_strapi_webhook.py`: (To be removed) Test script for Strapi webhook.
 *   `backend/data_ingestion/litecoin_docs_loader.py`: Legacy loader for Markdown files. Will be used by the migration script but deprecated for direct ingestion.
 
 ### Utility and Support Components
-*   `backend/ingest_data.py`: **(Updated)** A standalone script to orchestrate the data ingestion process, now supporting Strapi as a content source.
+*   `backend/ingest_data.py`: **(Updated)** A standalone script to orchestrate the data ingestion process, now supporting Payload as a content source.
 *   `backend/utils/clear_litecoin_docs_collection.py`: A utility script to clear all documents from collections in MongoDB.
-*   `backend/data_models.py`: **(Updated)** Contains core Pydantic data models for the application, now including models for Strapi integration.
-*   `backend/api/v1/sources.py`: Contains the API router and CRUD endpoints for managing data sources, to be updated to include Strapi as a source type.
+*   `backend/data_models.py`: **(Updated)** Contains core Pydantic data models for the application, now including models for Payload integration.
+*   `backend/api/v1/sources.py`: Contains the API router and CRUD endpoints for managing data sources, to be updated to include Payload as a source type.
 
 ## Core Data Models & Entities
-*   **`DataSource`**: A Pydantic model representing a data source for the RAG pipeline. To be updated to include Strapi as a source type.
-*   **`StrapiArticle`**: New Pydantic model representing a Strapi content type with all relevant metadata fields.
-*   **`StrapiWebhookPayload`**: Model for handling Strapi webhook payloads with event type and entry data.
+*   **`DataSource`**: A Pydantic model representing a data source for the RAG pipeline. To be updated to include Payload as a source type.
+*   **`PayloadArticle`**: New Pydantic model representing a Payload content type (collection) with all relevant metadata fields.
+*   **`PayloadAfterChangePayload`**: Model for handling Payload `afterChange` hook payloads with event type and entry data.
 
 ## Critical Data Flow Diagrams
 
-### Strapi CMS Integration Data Flow
+### Payload CMS Integration Data Flow
 ```mermaid
 graph TD
-    A[Strapi CMS] -- "Publish/Update Event" -->|Webhook| B(FastAPI Backend)
+    A[Payload CMS] -- "Publish/Update Event" -->|`afterChange` Hook| B(FastAPI Backend)
     
     subgraph B
-        C[Webhook Handler] --> D[Strapi Rich Text Chunker]
+        C[Payload Integration Service] --> D[Embedding Processor (Adapted)]
         D -- "Creates structured chunks" --> E[Multiple Documents w/ Hierarchical Metadata]
     end
 
     E -- "Enriched with base metadata" --> F(Vector Embeddings)
-    H --> I[MongoDB Vector Store]
+    F --> I[MongoDB Vector Store]
 
     J[User Query] --> K[RAG Pipeline]
     K -->|Vector Search w/ Metadata Filter| I
@@ -100,8 +104,8 @@ graph TD
 ### Legacy Knowledge Base Integration Flow (for reference)
 ```mermaid
 graph TD
-    A[Legacy Markdown Files] -->|Migration Script| B[Strapi CMS]
-    B -->|Standard Flow| C[Strapi Integration Pipeline]
+    A[Legacy Markdown Files] -->|Migration Script| B[Payload CMS]
+    B -->|Standard Flow| C[Payload Integration Pipeline]
     C -->|Processed Content| D[RAG Vector Store]
 ```
 
@@ -114,5 +118,5 @@ graph TD
     *   **Response Body**: `{"answer": "string", "sources": [...]}`
 
 ### Data Source Management
-*   **`POST /api/v1/sources`**: Creates a new data source record (to be updated for Strapi support).
+*   **`POST /api/v1/sources`**: Creates a new data source record (to be updated for Payload support).
 *   **`GET /api/v1/sources`**:
