@@ -107,7 +107,6 @@ class StrapiRichTextChunker:
     def _blocks_to_markdown(self, blocks: List[Dict[str, Any]]) -> str:
         """
         Converts Strapi's rich text JSON to a Markdown-like string.
-        This is a simplified version for placeholder purposes.
         """
         markdown_lines = []
         for block in blocks:
@@ -123,5 +122,26 @@ class StrapiRichTextChunker:
         return "\n\n".join(markdown_lines)
 
     def _get_text_from_children(self, children: List[Dict[str, Any]]) -> str:
-        """Extracts plain text from the 'children' array of a block."""
-        return "".join(child.get('text', '') for child in children)
+        """
+        Recursively extracts and formats text from the 'children' array of a block,
+        handling different node types like text and links.
+        """
+        text_parts = []
+        for child in children:
+            node_type = child.get('type')
+
+            if node_type == 'link':
+                # For links, recursively process children to get the link text
+                link_text = self._get_text_from_children(child.get('children', []))
+                link_url = child.get('url', '')
+                text_parts.append(f"[{link_text}]({link_url})")
+            elif 'text' in child:
+                # For text nodes, get the text and apply formatting
+                text = child['text']
+                if child.get('bold'):
+                    text = f"**{text}**"
+                if child.get('italic'):
+                    text = f"*{text}*"
+                text_parts.append(text)
+                
+        return "".join(text_parts)
