@@ -114,55 +114,81 @@ For a detailed overview, see `cline_docs/codebaseSummary.md`.
 The project utilizes a Next.js frontend, Python/FastAPI backend, and Payload CMS for content management. The architecture is centered around a **content-first RAG pipeline** with Payload CMS serving as the authoritative content source.
 
 ```mermaid
-graph TD
-    %% Define all nodes first
-    subgraph "Content Management (Payload CMS)"
-        A[Foundation Team]
-        C[Community Contributors]
-        B[Payload Admin Panel]
-        E[MongoDB Database]
+flowchart TD
+    %% -------------------
+    %% Node Definitions
+    %% -------------------
+
+    subgraph "User Interface"
+        style UI fill:#D5E8D4,stroke:#82B366,color:#333,stroke-width:2px
+        U("fa:fa-user User"):::uiStyle
+        FE("fa:fa-window-maximize Next.js Frontend"):::uiStyle
     end
 
-    subgraph "RAG Pipeline Integration"
-        D[Content Sync Service]
-        F[Embedding Processor (Adapted)]
-        G[Hierarchical Chunking]
-        H[Vector Store: MongoDB]
+    subgraph "Application Backend (FastAPI)"
+        style Backend fill:#DAE8FC,stroke:#6C8EBF,color:#333,stroke-width:2px
+        API("fa:fa-cloud FastAPI Backend"):::backendStyle
+        RAG("fa:fa-brain Langchain RAG Orchestrator"):::backendStyle
+        LLM("fa:fa-robot LLM (e.g., Gemini Pro)"):::backendStyle
     end
 
-    subgraph "Chat Interface"
-        I[User]
-        J[Next.js Frontend]
-        K[FastAPI Backend]
-        L[Embedding Model]
-        M[LLM]
+    subgraph "Content Ingestion & Processing"
+        style Ingestion fill:#FFE6CC,stroke:#D79B00,color:#333,stroke-width:2px
+        SYNC("fa:fa-sync-alt Content Sync Service"):::ingestionStyle
+        PROC("fa:fa-cogs Embedding Processor"):::ingestionStyle
+        CHUNK("fa:fa-vector-square Hierarchical Chunking & Embedding"):::ingestionStyle
     end
 
-    subgraph "External Integrations"
-        N[Payload `afterChange` Hooks]
-        O[Payload REST/GraphQL API]
+    subgraph "Content Management System (Payload)"
+        style CMS fill:#E6E0F8,stroke:#A094C4,color:#333,stroke-width:2px
+        AUTHORS("fa:fa-users Foundation Team & Contributors"):::cmsStyle
+        ADMIN("fa:fa-desktop Payload Admin Panel"):::cmsStyle
+        PAYLOAD_DB("fa:fa-database Payload DB (MongoDB)"):::cmsStyle
+        HOOK("fa:fa-bell Payload 'afterChange' Hook"):::cmsStyle
+        PAYLOAD_API("fa:fa-code Payload REST/GraphQL API"):::cmsStyle
     end
 
-    %% Define all connections at the end
-    A -->|Create/Edit Content| B
-    C -->|Submit Drafts| B
-    B -->|API| E
-    B -->|`afterChange` Hook Triggers| D
-    
-    D -->|Process Published Content| F
-    F -->|Parse JSON| G
-    G -->|Embed with text-embedding-004| H
-    
-    I -->|Query| J
-    J -->|API Call| K
-    K -->|Embed Query| L
-    L -->|Vector Search| H
-    H -->|Retrieve Context| K
-    K -->|Generate Response| M
-    M -->|Structured Answer| J
+    subgraph "Data Stores"
+        style Storage fill:#F8CECC,stroke:#B85450,color:#333,stroke-width:2px
+        VDB("fa:fa-layer-group Vector Store (MongoDB Atlas)"):::storageStyle
+    end
 
-    N -->|Content Events| D
-    O -->|Fetch Full Content| F
+    %% -------------------
+    %% Connection Definitions
+    %% -------------------
+
+    %% Flow 1: Content Ingestion & Indexing
+    AUTHORS -- "Create/Publish Content" --> ADMIN
+    ADMIN -- "Saves to" --> PAYLOAD_DB
+    ADMIN -- "On Publish/Update" --> HOOK
+    HOOK -- "Triggers Sync Service" --> SYNC
+    SYNC -- "Fetches full content via" --> PAYLOAD_API
+    PAYLOAD_API -- "Returns Content" --> SYNC
+    SYNC -- "Sends to Processor" --> PROC
+    PROC -- "Parses & Chunks" --> CHUNK
+    CHUNK -- "Embeds (text-embedding-004) & Stores" --> VDB
+
+    %% Flow 2: User Query & RAG
+    U -- "Submits Query" --> FE
+    FE -- "Sends API Request" --> API
+    API -- "Forwards to" --> RAG
+    RAG -- "1 Embeds Query & Performs Vector Search" --> VDB
+    VDB -- "2 Returns Relevant Context" --> RAG
+    RAG -- "3 Constructs Prompt w/ Context" --> LLM
+    LLM -- "4 Generates Response" --> RAG
+    RAG -- "5 Returns Structured Answer" --> API
+    API -- "Streams Response" --> FE
+    FE -- "Displays Answer" --> U
+
+
+    %% -------------------
+    %% Class-Based Styling
+    %% -------------------
+    classDef uiStyle fill:#D5E8D4,stroke:#333,color:#333
+    classDef backendStyle fill:#DAE8FC,stroke:#333,color:#333
+    classDef ingestionStyle fill:#FFE6CC,stroke:#333,color:#333
+    classDef cmsStyle fill:#E6E0F8,stroke:#333,color:#333
+    classDef storageStyle fill:#F8CECC,stroke:#333,color:#333
 ```
 
 ## Content-First Approach with Payload CMS
