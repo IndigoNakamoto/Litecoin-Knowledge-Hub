@@ -77,6 +77,14 @@
         }
       },
       "required": true
+    },
+    "ContentMarkdown": {
+      "type": "richtext",
+      "pluginOptions": {
+        "i18n": {
+          "localized": true
+        }
+      }
     }
   }
 }

@@ -1,0 +1,46 @@
+flowchart TD
+    %% -------------------
+    %% Node Definitions
+    %% -------------------
+
+    subgraph "User Interface"
+        style UI fill:#D5E8D4,stroke:#82B366,color:#333,stroke-width:2px
+        U("fa:fa-user User"):::uiStyle
+        DASH("fa:fa-tachometer-alt Knowledge Base Dashboard (React)"):::uiStyle
+    end
+
+    subgraph "Application Backend"
+        style Backend fill:#DAE8FC,stroke:#6C8EBF,color:#333,stroke-width:2px
+        API("fa:fa-cloud-arrow-up Backend Service (e.g., Node/FastAPI)"):::backendStyle
+        LLM("fa:fa-robot Gemini API"):::backendStyle
+    end
+
+    subgraph "Content Management System"
+        style CMS fill:#E1D5E7,stroke:#9673A6,color:#333,stroke-width:2px
+        STRAPI_API("fa:fa-code Strapi REST API"):::cmsStyle
+        STRAPI_DB("fa:fa-database Strapi DB (Postgres)"):::cmsStyle
+    end
+
+    %% -------------------
+    %% Connection Definitions
+    %% -------------------
+
+    %% Flow 1: Article Generation
+    U -- "1 Enters prompt & clicks 'Generate'" --> DASH
+    DASH -- "2 Sends API request with prompt" --> API
+    API -- "3 Constructs structured JSON prompt" --> LLM
+    LLM -- "4 Returns structured article JSON (Title, Summary, Content, etc.)" --> API
+    API -- "5 Returns article data to dashboard" --> DASH
+    DASH -- "6 Updates UI with new generated article" --> U
+
+    %% Flow 2: Save to CMS
+    U -- "7 Clicks 'Save to Strapi'" --> DASH
+    DASH -- "8 POSTs article data as a draft" --> STRAPI_API
+    STRAPI_API -- "9 Creates draft entry in" --> STRAPI_DB
+
+    %% -------------------
+    %% Class-Based Styling
+    %% -------------------
+    classDef uiStyle fill:#D5E8D4,stroke:#333,color:#333
+    classDef backendStyle fill:#DAE8FC,stroke:#333,color:#333
+    classDef cmsStyle fill:#E1D5E7,stroke:#333,color:#333
