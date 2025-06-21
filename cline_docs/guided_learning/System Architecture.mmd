@@ -1,0 +1,85 @@
+flowchart TD
+    %% -------------------
+    %% Style Definitions
+    %% -------------------
+    classDef frontendStyle fill:#D5E8D4,stroke:#333, color:#333
+    classDef backendStyle fill:#DAE8FC,stroke:#333, color:#333
+    classDef aiStyle fill:#FFE6CC,stroke:#333, color:#333
+    classDef cmsStyle fill:#E6E0F8,stroke:#333, color:#333
+    classDef storageStyle fill:#F8CECC,stroke:#333, color:#333
+    classDef userStyle stroke:#333,stroke-width:4px
+
+    %% -------------------
+    %% Node Definitions
+    %% -------------------
+
+    subgraph "User Interface"
+        style UI fill:#D5E8D4,stroke:#82B366,color:#333,stroke-width:2px
+        U("fa:fa-user User"):::userStyle
+        FE("fa:fa-react React Frontend"):::frontendStyle
+    end
+
+    subgraph "Application Core"
+        style AppCore fill:#DAE8FC,stroke:#6C8EBF,color:#333,stroke-width:2px
+        API("fa:fa-server FastAPI Backend"):::backendStyle
+        STATE_DB("fa:fa-database MongoDB<br>(Session State)"):::storageStyle
+    end
+
+    subgraph "Content & Logic Management"
+        style CMS fill:#E6E0F8,stroke:#A094C4,color:#333,stroke-width:2px
+        WRITERS("fa:fa-users Writers & PMs"):::cmsStyle
+        ADMIN("fa:fa-edit Payload CMS"):::cmsStyle
+        GUIDED_FLOWS("fa:fa-project-diagram Guided Journeys<br>(Steps, Logic)"):::cmsStyle
+        KNOWLEDGE_BASE("fa:fa-book RAG Knowledge Base<br>(Documents)"):::cmsStyle
+        HOOK("fa:fa-bell 'afterChange' Hook"):::cmsStyle
+    end
+
+    subgraph "AI Orchestration & Data"
+        style AI fill:#FFE6CC,stroke:#D79B00,color:#333,stroke-width:2px
+        LANGCHAIN("fa:fa-cogs LangChain Engine"):::aiStyle
+        ROUTER("fa:fa-random LangGraph Router<br>(Intent Classification)"):::aiStyle
+        CHAIN("fa:fa-link Guided Flow Chain"):::aiStyle
+        AGENT("fa:fa-robot RAG Agent"):::aiStyle
+        VDB("fa:fa-layer-group Vector DB<br>(Embeddings)"):::storageStyle
+        LLM("fa:fa-brain LLM Provider<br>(e.g., Gemini, OpenAI)"):::aiStyle
+    end
+
+    %% -------------------
+    %% Connection Definitions
+    %% -------------------
+
+    %% Flow 1: User Interaction & RAG Query
+    U -- "Interact via Chat UI" --> FE
+    FE -- "Sends message over WebSocket" --> API
+    API -- "1 Loads/Saves Session State" <--> STATE_DB
+    API -- "2 Forwards to Orchestrator" --> LANGCHAIN
+
+    %% Flow 2: AI Orchestration (LangChain)
+    LANGCHAIN -- "3 Routes Input" --> ROUTER
+    ROUTER -- "Free-Text Question?" --> AGENT
+    AGENT -- "4a Embeds Query & Searches Context" --> VDB
+    VDB -- "4b Returns Relevant Chunks" --> AGENT
+    AGENT -- "4c Constructs Prompt w/ Context & History" --> LLM
+    LLM -- "4d Generates Response" --> AGENT
+    AGENT -- "5 Returns Answer" --> LANGCHAIN
+
+    %% Flow 3: Guided Conversation
+    ROUTER -- "Button Click?" --> CHAIN
+    CHAIN -- "6a Requests Next Step from Backend" --> API
+    API -- "6b Fetches Guided Flow Logic" --> ADMIN
+    ADMIN -- "6c Returns Step Content" --> API
+    API -- "6d Provides Content to Chain" --> CHAIN
+    CHAIN -- "7 Returns Formatted Message" --> LANGCHAIN
+
+    %% Final return flow
+    LANGCHAIN -- "Streams Response" --> API
+    API -- "Pushes to Client" --> FE
+    FE -- "Displays to User" --> U
+
+    %% Flow 4: Content Management & Indexing
+    WRITERS -- "Create/Edit Content & Flows" --> ADMIN
+    ADMIN -- "Stores Journeys/Steps" --> GUIDED_FLOWS
+    ADMIN -- "Stores RAG Documents" --> KNOWLEDGE_BASE
+    KNOWLEDGE_BASE -- "On Save/Update" --> HOOK
+    HOOK -- "Triggers Indexing" --> VDB
+    VDB -- "Creates & Stores<br>Embeddings via LLM" --> LLM
