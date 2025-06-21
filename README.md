@@ -1,7 +1,7 @@
 # Litecoin Knowledge Hub
 
 ## Project Overview
-The Litecoin RAG (Retrieval-Augmented Generation) Chatbot is an AI-powered conversational tool designed to serve the Litecoin community by providing real-time, accurate answers to a wide range of questions. Its core strength lies in retrieving information from a human-vetted, curated knowledge base managed by the Litecoin Foundation through Payload CMS. This ensures the information is not only accurate but also aligned with the Foundation's mission to combat misinformation and provide a single, trustworthy source for everything related to Litecoin. The chatbot aims to enhance user experience, foster greater adoption, and provide clear, reliable information about Litecoin's features, transaction management, development projects, and market insights.
+The Litecoin RAG (Retrieval-Augmented Generation) Chatbot is an AI-powered conversational tool designed to serve the Litecoin community by providing real-time, accurate answers to a wide range of questions. Its core strength lies in retrieving information from a human-vetted, curated knowledge base managed by the Litecoin Foundation through Payload CMS. This ensures the information is accurate, reliable, and aligned with the Foundation's mission to provide a single, trustworthy source for everything related to Litecoin. The chatbot aims to enhance user experience, foster greater adoption, and provide clear, reliable information about Litecoin's features, transaction management, development projects, and market insights.
 
 **Target Users/Audience:** Litecoin users (novice and experienced), Cryptocurrency enthusiasts, Developers building on Litecoin, Potential adopters seeking reliable information about Litecoin's features, transactions, or market trends.
 
@@ -115,80 +115,108 @@ The project utilizes a Next.js frontend, Python/FastAPI backend, and Payload CMS
 
 ```mermaid
 flowchart TD
+    %% =================================================================
+    %% ==                 IMPROVED SYSTEM ARCHITECTURE                ==
+    %% ==        High-Contrast, Decoupled, with Feedback Loop         ==
+    %% =================================================================
+
     %% -------------------
-    %% Node Definitions
+    %% Subgraph Definitions & High-Contrast Styling
     %% -------------------
 
-    subgraph "User Interface"
-        style UI fill:#D5E8D4,stroke:#82B366,color:#333,stroke-width:2px
-        U("fa:fa-user User"):::uiStyle
-        FE("fa:fa-window-maximize Next.js Frontend"):::uiStyle
+    subgraph "Actors & UIs"
+        style UILayer fill:#E8F8F5,stroke:#1ABC9C,color:#212121,stroke-width:2px
+        CREATOR("fa:fa-user-edit Content Team"):::uiStyle
+        END_USER("fa:fa-user End User"):::uiStyle
     end
 
-    subgraph "Application Backend (FastAPI)"
-        style Backend fill:#DAE8FC,stroke:#6C8EBF,color:#333,stroke-width:2px
-        API("fa:fa-cloud FastAPI Backend"):::backendStyle
-        RAG("fa:fa-brain Langchain RAG Orchestrator"):::backendStyle
-        LLM("fa:fa-robot LLM (e.g., Gemini Pro)"):::backendStyle
+    subgraph "Content Generation Plane (Control Plane)"
+        style GenPlane fill:#EBF5FB,stroke:#3498DB,color:#212121,stroke-width:2px
+        DASH("fa:fa-tachometer-alt Article Gen Dashboard"):::genStyle
+        API_GEN("fa:fa-cloud-arrow-up Generation API"):::genStyle
+        LLM_GEN("fa:fa-robot Gemini API (Generation)"):::genStyle
     end
 
-    subgraph "Content Ingestion & Processing"
-        style Ingestion fill:#FFE6CC,stroke:#D79B00,color:#333,stroke-width:2px
-        SYNC("fa:fa-sync-alt Content Sync Service"):::ingestionStyle
-        PROC("fa:fa-cogs Embedding Processor"):::ingestionStyle
-        CHUNK("fa:fa-vector-square Hierarchical Chunking & Embedding"):::ingestionStyle
+    subgraph "Retrieval & Serving Plane (Data Plane)"
+        style RagPlane fill:#FCF3CF,stroke:#F1C40F,color:#212121,stroke-width:2px
+        FE("fa:fa-window-maximize Next.js Frontend"):::ragStyle
+        API_RAG("fa:fa-cloud RAG API"):::ragStyle
+        RAG("fa:fa-brain RAG Orchestrator"):::ragStyle
+        LLM_RAG("fa:fa-robot LLM (Q&A)"):::ragStyle
     end
 
-    subgraph "Content Management System (Payload)"
-        style CMS fill:#E6E0F8,stroke:#A094C4,color:#333,stroke-width:2px
-        AUTHORS("fa:fa-users Foundation Team & Contributors"):::cmsStyle
-        ADMIN("fa:fa-desktop Payload Admin Panel"):::cmsStyle
+    subgraph "Content Management & Data Stores"
+        style CMS fill:#F4ECF7,stroke:#9B59B6,color:#212121,stroke-width:2px
+        ADMIN("fa:fa-desktop Payload CMS Admin"):::cmsStyle
+        PAYLOAD_API("fa:fa-code Payload API"):::cmsStyle
+        HOOK("fa:fa-bell 'afterChange' Hook"):::cmsStyle
         PAYLOAD_DB("fa:fa-database Payload DB (MongoDB)"):::cmsStyle
-        HOOK("fa:fa-bell Payload 'afterChange' Hook"):::cmsStyle
-        PAYLOAD_API("fa:fa-code Payload REST/GraphQL API"):::cmsStyle
+        VDB("fa:fa-layer-group Vector Store (Atlas)"):::storageStyle
     end
 
-    subgraph "Data Stores"
-        style Storage fill:#F8CECC,stroke:#B85450,color:#333,stroke-width:2px
-        VDB("fa:fa-layer-group Vector Store (MongoDB Atlas)"):::storageStyle
+    subgraph "Asynchronous Ingestion Pipeline"
+        style Ingestion fill:#FAE5D3,stroke:#E67E22,color:#212121,stroke-width:2px
+        MQ("fa:fa-envelope-open-text Message Queue"):::ingestionStyle
+        INGEST_SVC("fa:fa-gears Content Ingestion Service"):::ingestionStyle
+        CHUNK("fa:fa-vector-square Chunking & Embedding"):::ingestionStyle
     end
+    
+    subgraph "Analytics & Improvement"
+       style Analytics fill:#FDEDEC,stroke:#E74C3C,color:#212121,stroke-width:2px
+       FEEDBACK_API("fa:fa-chart-line Analytics & Feedback API"):::analyticsStyle
+       FEEDBACK_DB("fa:fa-database-alt Feedback DB"):::analyticsStyle
+    end
+
 
     %% -------------------
     %% Connection Definitions
     %% -------------------
 
-    %% Flow 1: Content Ingestion & Indexing
-    AUTHORS -- "Create/Publish Content" --> ADMIN
-    ADMIN -- "Saves to" --> PAYLOAD_DB
-    ADMIN -- "On Publish/Update" --> HOOK
-    HOOK -- "Triggers Sync Service" --> SYNC
-    SYNC -- "Fetches full content via" --> PAYLOAD_API
-    PAYLOAD_API -- "Returns Content" --> SYNC
-    SYNC -- "Sends to Processor" --> PROC
-    PROC -- "Parses & Chunks" --> CHUNK
-    CHUNK -- "Embeds (text-embedding-004) & Stores" --> VDB
+    %% Flow 1: Content Generation & Publishing
+    CREATOR -- "1 Interacts with" --> DASH
+    DASH -- "2 Calls Gen API" --> API_GEN
+    API_GEN -- "3 Prompts for article" --> LLM_GEN
+    LLM_GEN -- "4 Returns structured article" --> API_GEN
+    API_GEN -- "5 Creator saves draft via" --> PAYLOAD_API
+    CREATOR -- "6 Publishes content in" --> ADMIN
+    ADMIN -- "7 Updates content in" --> PAYLOAD_DB
 
-    %% Flow 2: User Query & RAG
-    U -- "Submits Query" --> FE
-    FE -- "Sends API Request" --> API
-    API -- "Forwards to" --> RAG
-    RAG -- "1 Embeds Query & Performs Vector Search" --> VDB
-    VDB -- "2 Returns Relevant Context" --> RAG
-    RAG -- "3 Constructs Prompt w/ Context" --> LLM
-    LLM -- "4 Generates Response" --> RAG
-    RAG -- "5 Returns Structured Answer" --> API
-    API -- "Streams Response" --> FE
-    FE -- "Displays Answer" --> U
+    %% Flow 2: Event-Driven Ingestion
+    ADMIN -- "8 On Publish, hook fires" --> HOOK
+    HOOK -- "9 Publishes event to" --> MQ
+    INGEST_SVC -- "10 Subscribes to queue" --> MQ
+    INGEST_SVC -- "11 Fetches content via" --> PAYLOAD_API
+    PAYLOAD_API -- "12 Returns content" --> INGEST_SVC
+    INGEST_SVC -- "13 Passes content to" --> CHUNK
+    CHUNK -- "14 Embeds & writes to" --> VDB
+
+    %% Flow 3: User Q&A
+    END_USER -- "15 Submits Query via" --> FE
+    FE -- "16 Sends request to" --> API_RAG
+    API_RAG -- "17 Orchestrates query" --> RAG
+    RAG -- "18 Retrieves context from" --> VDB
+    RAG -- "19 Builds prompt for" --> LLM_RAG
+    LLM_RAG -- "20 Generates answer" --> RAG
+    RAG -- "21 Returns answer" --> API_RAG
+    API_RAG -- "22 Streams to" --> FE
+    FE -- "23 Displays answer" --> END_USER
+
+    %% Flow 4: User Feedback Loop
+    END_USER -- "24 Provides feedback (👍/👎)" --> FE
+    FE -- "25 Sends feedback to" --> FEEDBACK_API
+    FEEDBACK_API -- "26 Stores for analysis in" --> FEEDBACK_DB
 
 
     %% -------------------
-    %% Class-Based Styling
+    %% Node Class Definitions (High Contrast Palette)
     %% -------------------
-    classDef uiStyle fill:#D5E8D4,stroke:#333,color:#333
-    classDef backendStyle fill:#DAE8FC,stroke:#333,color:#333
-    classDef ingestionStyle fill:#FFE6CC,stroke:#333,color:#333
-    classDef cmsStyle fill:#E6E0F8,stroke:#333,color:#333
-    classDef storageStyle fill:#F8CECC,stroke:#333,color:#333
+    classDef uiStyle        fill:#E8F8F5,stroke:#16A085,color:#212121
+    classDef genStyle       fill:#EBF5FB,stroke:#2980B9,color:#212121
+    classDef ragStyle       fill:#FCF3CF,stroke:#F39C12,color:#212121
+    classDef cmsStyle       fill:#F4ECF7,stroke:#8E44AD,color:#212121
+    classDef storageStyle   fill:#F6DDCC,stroke:#CA6F1E,color:#212121
+    classDef ingestionStyle fill:#FAE5D3,stroke:#D35400,color:#212121
+    classDef analyticsStyle fill:#FDEDEC,stroke:#C0392B,color:#212121
 ```
 
 ## Content-First Approach with Payload CMS
