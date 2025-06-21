@@ -1,7 +1,7 @@
-# Milestone 4: MVP Feature 1 Implementation (Litecoin Basics & FAQ)
+# Milestone 4: Backend & Knowledge Base Completion (Initial Articles)
 
 ## Description
-This milestone focuses on implementing the first core feature: providing answers to fundamental questions about Litecoin. This involves developing the frontend chat interface, integrating it with the RAG backend, and ensuring the RAG pipeline can accurately retrieve and generate responses for basic Litecoin queries. It also includes the curation and ingestion of relevant FAQ data.
+This milestone focuses on completing the backend work for the MVP and ingesting the initial set of knowledge base articles. This includes implementing a full CRUD API for managing data sources, curating and ingesting the "Litecoin Basics & FAQ" content, and enhancing the vector search index to support advanced metadata filtering.
 
 ## Key Tasks & Status
 
