@@ -1,5 +1,4 @@
 ## Recently Completed Tasks:
-
 *   ### Task ID: `STRAPI-INT-006`
     *   #### Name: Verify Strapi `update`, `unpublish`, and `delete` Webhook Events
     *   #### Detailed Description & Business Context:

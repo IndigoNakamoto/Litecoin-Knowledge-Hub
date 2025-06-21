@@ -1,117 +1,65 @@
-# Litecoin Knowledge Hub
+# **Litecoin Knowledge Hub**
 
-## Project Overview
-The Litecoin RAG (Retrieval-Augmented Generation) Chatbot is an AI-powered conversational tool designed to serve the Litecoin community by providing real-time, accurate answers to a wide range of questions. Its core strength lies in retrieving information from a human-vetted, curated knowledge base managed by the Litecoin Foundation through Payload CMS. This ensures the information is not only accurate but also aligned with the Foundation's mission to combat misinformation and provide a single, trustworthy source for everything related to Litecoin. The chatbot aims to enhance user experience, foster greater adoption, and provide clear, reliable information about Litecoin's features, transaction management, development projects, and market insights.
+## **Project Overview**
 
-**Target Users/Audience:** Litecoin users (novice and experienced), Cryptocurrency enthusiasts, Developers building on Litecoin, Potential adopters seeking reliable information about Litecoin's features, transactions, or market trends.
+The Litecoin Knowledge Hub is an AI-powered conversational tool designed to serve the Litecoin community by providing real-time, accurate answers to a wide range of questions. Its core strength lies in its Retrieval-Augmented Generation (RAG) pipeline, which retrieves information from a human-vetted, curated knowledge base managed by the Litecoin Foundation through **Payload CMS**.
 
-## Project Status
-The project has successfully completed the implementation of the core RAG pipeline, backend services, and is now actively migrating from Strapi CMS to Payload CMS. The current focus is on setting up Payload, defining content schemas, and integrating it with the RAG pipeline.
+This project's value is not in competing with general-purpose AI models like ChatGPT or Grok, but in providing a specialized, high-accuracy information utility for the Litecoin ecosystem. By grounding responses in a canonical, trusted knowledge base, it aims to combat misinformation, enhance user experience, foster greater adoption, and provide a single, trustworthy source for everything related to Litecoin.
 
-## Key Features
+**Target Users/Audience:** Litecoin users (novice and experienced), cryptocurrency enthusiasts, developers building on Litecoin, and potential adopters seeking reliable information.
 
-### Feature 1: Litecoin Basics & FAQ
-Provides clear, concise answers to fundamental questions about Litecoin, its history, how it works, and common terminology. Caters especially to new users.
+## **Project Status: 📝 In Progress**
 
-### Feature 2: Transaction & Block Explorer
-Allows users to look up details of Litecoin transactions (e.g., status, confirmations, fees) using a transaction ID, and explore block information (e.g., height, timestamp, included transactions).
+The project has successfully completed the implementation of the core RAG pipeline and backend services. The current focus is on executing the migration from a proof-of-concept CMS to the production-ready **Payload CMS**, defining the final content schemas, and fully integrating it with the RAG pipeline's ingestion and synchronization services.
 
-### Feature 3: Market Data & Insights
-Delivers real-time Litecoin price information, market capitalization, trading volume, and basic chart data from reliable market APIs.
+## **Key Features & User Stories**
 
-### Feature 4: Developer Documentation & Resources
-Provides quick access to snippets from Litecoin developer documentation, links to key resources, and answers to common technical questions for developers building on Litecoin.
+* **Primary Goals:**  
+  * Deliver accurate, real-time responses to Litecoin-related queries.  
+  * Simplify user access to Litecoin information, reducing reliance on fragmented or unverified sources.  
+  * Increase user engagement and trust in the Litecoin ecosystem through reliable, conversational support.
 
-### Feature 5: Curated Knowledge Base
-A continuously updated library of well-researched, clearly written articles and data covering all aspects of Litecoin. This content is explicitly structured for optimal machine retrieval and serves as the primary source for the chatbot's answers.
+| Feature Area | Description |
+| :---- | :---- |
+| **Litecoin Basics & FAQ** | Provides clear, concise answers to fundamental questions about Litecoin, its history, how it works, and common terminology. Caters especially to new users. |
+| **Transaction & Block Explorer** | Allows users to look up details of Litecoin transactions and explore block information. |
+| **Market Data & Insights** | Delivers real-time Litecoin price information, market capitalization, and trading volume from reliable market APIs. |
+| **Developer Documentation** | Provides quick access to snippets from Litecoin developer documentation and technical resources. |
+| **Curated Knowledge Base** | A continuously updated library of well-researched articles and data serving as the primary source for the chatbot's answers. |
+| **Payload CMS Integration** | A robust content management solution ensuring the quality and accuracy of the Knowledge Base with foundation-controlled editorial workflows. |
 
-### Feature 6: Payload CMS Integration
-A robust content management solution leveraging Payload CMS to ensure the quality, consistency, and accuracy of the Litecoin Knowledge Base. Payload provides superior database control and content-structuring flexibility, facilitating the creation, editing, and publishing of knowledge base articles with proper editorial workflows.
+## **Project Roadmap**
 
-*   **Primary Goals:**
-    *   Leverage Payload's flexible content types (collections) for optimal RAG pipeline compatibility.
-    *   Implement foundation-controlled editorial workflows (Contributors create drafts, Foundation team publishes).
-    *   Ensure seamless integration with existing RAG pipeline through the Payload REST/GraphQL API and `afterChange` hooks.
-    *   Maintain content structure standards for hierarchical chunking.
-*   **Current Status:** Migration in progress.
+### **Phase 1: MVP Core Foundation**
 
-## Project Milestones
-This project is organized into several key milestones. For detailed information on each milestone, please refer to the documents in the `cline_docs/milestones/` directory.
+*The goal of this phase is to launch a functional, reliable chatbot based on a trusted, human-vetted knowledge base managed with professional editorial controls.*
 
-| Status | Milestone | Description |
-| :---: | :--- | :--- |
-| ✅ | [Milestone 1: Project Initialization](./cline_docs/milestones/milestone_1_project_initialization.md) | Initial project setup and core documentation. |
-| ✅ | [Milestone 2: Basic Project Scaffold](./cline_docs/milestones/milestone_2_basic_project_scaffold.md) | Scaffolding for the Next.js frontend and FastAPI backend. |
-| ✅ | [Milestone 3: Core RAG Pipeline](./cline_docs/milestones/milestone_3_core_rag_pipeline.md) | Implementation of the core data ingestion, retrieval, and generation pipeline. |
-| ✅ | [Milestone 4: Backend & Knowledge Base Completion](./cline_docs/milestones/milestone_4_litecoin_basics_faq.md) | Full backend and data pipeline for MVP FAQ feature (Feature 1), including full knowledge base ingestion and advanced metadata filtering. |
-| 📝 | [Milestone 5: Transaction & Block Explorer](./cline_docs/milestones/milestone_5_transaction_block_explorer.md) | MVP Feature 2: Feature for looking up transaction and block details. |
-| 🟨 | [Milestone 6: AI-Integrated CMS (Payload CMS Integration)](./cline_docs/milestones/milestone_6_ai_integrated_cms.md) | MVP Feature 6: Integration with Payload CMS. Migration from Strapi in progress. |
-| 📝 | [Milestone 7: Developer Documentation & Resources](./cline_docs/milestones/milestone_7_developer_documentation.md) | MVP Feature 4: Feature for providing access to developer resources. |
-| 📝 | [Milestone 8: Testing, Refinement & Deployment](./cline_docs/milestones/milestone_8_testing_refinement_deployment.md) | Comprehensive testing, optimization, and deployment of all MVP features. |
-| 📝 | [Milestone 9: Market Data & Insights](./cline_docs/milestones/milestone_9_market_data_insights.md) | MVP Feature 3: Feature for delivering real-time Litecoin market data. |
+* **Foundation Editorial Control:** Implement Payload's role-based system where community contributors create drafts and the Foundation team controls publishing decisions.  
+* **Flexible Content Structuring:** Leverage Payload's customizable content types (collections) to structure data for optimal RAG performance.  
+* **Real-time Synchronization:** Establish afterChange hook-based synchronization between Payload CMS and the RAG pipeline for immediate content updates.  
+* **Initial Launch Content:** Provide clear, concise answers to fundamental questions about Litecoin.  
+* **Production Deployment:** Deploy the frontend (Next.js), backend (FastAPI), and Payload CMS applications to their respective hosted services.
 
-**Legend:**
-*   ✅: Completed
-*   🟨: In Progress
-*   📝: Planned
+### **Phase 2: User Experience & Accuracy Enhancements (Post-MVP)**
 
-## Technology Stack
+*The goal of this phase is to increase user trust, engagement, and the precision of the RAG pipeline.*
 
-*   **Frontend:**
-    *   Framework: Next.js
-    *   Styling: Tailwind CSS
-    *   Language: TypeScript
-*   **Backend:**
-    *   Language: Python
-    *   Framework: FastAPI
-    *   RAG & LLM: Langchain (`langchain`, `langchain-core`, `langchain-community`), Google Text Embedding (`text-embedding-004`), `ChatGoogleGenerativeAI` (gemini-pro)
-    *   Database Interaction: MongoDB (`pymongo`, `motor`)
-    *   Payload Integration: Payload REST/GraphQL API, `afterChange` hook handling
-    *   Data Handling: `python-frontmatter`
-    *   Other Key Libraries: `requests`, `tweepy`, `GitPython`, `beautifulsoup4`, `lxml`
-*   **Content Management:**
-    *   CMS: Payload (self-hosted)
-    *   Database: MongoDB
-    *   Content Format: JSON
-*   **Database:**
-    *   Vector Storage: MongoDB Atlas Vector Search
-    *   Content Storage: MongoDB (Payload CMS)
-    *   General Data: MongoDB
-*   **Deployment:**
-    *   Frontend: Vercel
-    *   Backend: TBD (e.g., Vercel Functions, Google Cloud Run, AWS Lambda)
-    *   Payload CMS: Self-hosted (TBD platform)
-*   **Testing:**
-    *   Frontend: TBD (e.g., Jest, React Testing Library, Cypress)
-    *   Backend: TBD (e.g., Pytest)
-*   **Version Control:** Git (hosted on GitHub/GitLab - TBD)
+* **Trust & Transparency (Source Citations):** Implement in-line citations in AI responses, linking directly to source documents.  
+* **Contextual Discovery (AI-Generated Follow-up Questions):** Generate relevant, clickable follow-up questions after each response.  
+* **Upgraded Retrieval Engine (Hybrid Search & Re-ranking):** Enhance retrieval accuracy by combining vector similarity with keyword search.  
+* **User Feedback Loop:** Introduce a mechanism for users to provide direct feedback on AI answer quality.
 
-For more details, see `cline_docs/techStack.md`.
+### **Phase 3: Live Data & Developer Integrations (Post-MVP)**
 
-## Project Structure
-*   **Git Repository Root:** `Litecoin-Knowledge-Hub/`
-*   `frontend/`: Next.js application.
-    *   `src/app/`: Main application routes and pages.
-    *   `src/components/`: Reusable React components.
-    *   `src/lib/`: Utility libraries and configurations.
-*   `backend/`: FastAPI application.
-    *   `payload-cms/`: Contains the self-hosted Payload CMS application. This is the content authoring and management system.
-    *   `payload_integration/`: Payload CMS integration modules.
-    *   `data_ingestion/`: Modules for data loading, embedding, vector store management.
-    *   `api/v1/`: API version 1 routers (chat, sources, sync).
-    *   `main.py`: Main FastAPI application.
-    *   `rag_pipeline.py`: Core RAG logic.
-*   `knowledge_base/`:
-*   `cline_docs/`: Project documentation.
-*   `cline_agent_workspace/`: Cline's operational files.
-*   `user_instructions/`: User-facing guides.
-*   `reference_docs/`: Third-party documentation.
+*The goal of this phase is to expand the chatbot's capabilities by integrating real-time data sources and specialized developer tools.*
 
-For a detailed overview, see `cline_docs/codebaseSummary.md`.
+* **Transaction & Block Explorer:** Integrate live lookups for Litecoin transactions and blocks.  
+* **Market Data & Insights:** Integrate real-time Litecoin price, market cap, and trading volume.  
+* **Developer Documentation & Resources:** Ingest and provide quick access to Litecoin developer documentation.
 
-## Architecture Overview
+## **Architectural Overview**
 
-The project utilizes a Next.js frontend, Python/FastAPI backend, and Payload CMS for content management. The architecture is centered around a **content-first RAG pipeline** with Payload CMS serving as the authoritative content source.
+The architecture is designed around two primary workflows: **Content Ingestion** (managed via Payload CMS) and **User Query Processing** (the RAG pipeline).
 
 ```mermaid
 flowchart TD
@@ -191,123 +139,73 @@ flowchart TD
     classDef storageStyle fill:#F8CECC,stroke:#333,color:#333
 ```
 
-## Content-First Approach with Payload CMS
-This project emphasizes a **content-first strategy** powered by Payload CMS. The accuracy and reliability of the chatbot are directly tied to the quality of the information managed through Payload's editorial workflow. Payload CMS provides:
+## **Major Milestones & Timelines**
 
-*   **Foundation-controlled editorial workflow**: Contributors create drafts, Foundation team reviews and publishes.
-*   **Flexible Content Types (Collections)**: Customizable content structures are ideal for RAG.
-*   **Robust REST/GraphQL API**: Comprehensive access to content and metadata.
-*   **`afterChange` hook system**: Real-time synchronization with the RAG pipeline.
-*   **Professional Admin Panel**: A powerful interface for content management.
+*(Timelines to be determined)*
 
-The Payload CMS serves as the "golden source" for the RAG pipeline, providing greater data control and flexibility.
+| Status | Milestone | Focus |
+| :---- | :---- | :---- |
+| ✅ | **M1: Project Initialization** | Core documentation and project setup. |
+| ✅ | **M2: Basic Project Scaffold** | Initial Next.js frontend and FastAPI backend. |
+| ✅ | **M3: Core RAG Pipeline** | Implemented data ingestion, vector search, and generation. |
+| ✅ | **M4: Backend & KB Completion** | CRUD API for data sources and full ingestion of initial FAQ knowledge base. |
+| 🟨 | **M5: Payload CMS Setup & Integration** | Configure self-hosted Payload CMS and integrate its API and webhooks with the backend. |
+| 📝 | **M6: MVP Content Population** | Populate Payload with the complete "Litecoin Basics & FAQ" knowledge base. |
+| 📝 | **M7: MVP Testing & Deployment** | Conduct comprehensive testing, refine UI, and execute initial production deployment. |
+| 📝 | **M8-M13: Post-MVP Phases** | Implement features from Phase 2 (UX/Accuracy) and Phase 3 (Live Data). |
 
-## Getting Started
+## **Log of Completed Milestones**
 
-### Prerequisites
-*   **Node.js:** Version 18.18.0 or newer (managed via nvm is recommended).
-*   **npm:** Node package manager (comes with Node.js).
-*   **Python:** Version 3.x.
-*   **pip:** Python package installer (comes with Python).
-*   **Virtual Environment:** Recommended for Python projects.
-*   **Payload CMS:** Self-hosted Payload instance with REST/GraphQL API access.
-*   **MongoDB:** Database for Payload CMS.
+* **Strategic Decision: CMS Pivot to Payload (6/19/2025)**  
+  * Conducted a comparative analysis of headless CMS options and selected Payload to better align with the project's long-term RAG and data governance goals. This decision enables the work for Milestone 5\.  
+* **Milestone 4: Backend & Knowledge Base Completion (6/7/2025)**  
+  * Implemented a full suite of CRUD API endpoints (/api/v1/sources) for managing data sources and successfully ingested the entire initial knowledge base.  
+* **Milestone 3: Core RAG Pipeline Implementation (6/6/2025)**  
+  * Implemented and tested the end-to-end pipeline, including multi-source data loaders, Google Text Embedding 004, MongoDB Atlas Vector Search, and a gemini-pro generation layer. Enhanced pipeline with hierarchical chunking and metadata filtering.  
+* **Milestone 2: Basic Project Scaffold (6/5/2025)**  
+  * Frontend (Next.js) and Backend (FastAPI) directory structures established with basic functionality confirmed.  
+* **Milestone 1: Project Initialization & Documentation Setup (6/5/2025)**  
+  * Initial project documentation (cline\_docs) created and populated.
 
-### Running Development Servers
+## **Technology Stack**
 
-#### Frontend (Next.js)
+For more details, see cline\_docs/techStack.md.
 
-1.  **Navigate to the frontend directory:**
-    ```bash
-    cd frontend
-    ```
+* **Frontend:** Next.js, TypeScript, Tailwind CSS  
+* **Backend:** Python, FastAPI, Langchain  
+* **AI/LLM:** Google Text Embedding 004, Gemini Pro  
+* **Content Management:** Payload CMS (self-hosted)  
+* **Database:** MongoDB, MongoDB Atlas Vector Search  
+* **Deployment:** Vercel (Frontend), TBD (Backend, Payload)
 
-2.  **Run the development server:**
-    ```bash
-    npm run dev
-    ```
-    The Next.js development server should start, typically on `http://localhost:3000`.
+## **Getting Started**
 
-3.  **Verify:**
-    Open your web browser and go to `http://localhost:3000`. You should see the Litecoin RAG Chat interface.
+### **Prerequisites**
 
-#### Backend (FastAPI)
+* Node.js v18.18.0+  
+* Python 3.x  
+* Access to a self-hosted Payload CMS instance and MongoDB database.
 
-1.  **Navigate to the backend directory:**
-    ```bash
-    cd backend
-    ```
+### **Running Development Servers**
 
-2.  **Create a virtual environment (recommended):**
-    ```bash
-    python3 -m venv venv
-    source venv/bin/activate  # On macOS/Linux
-    # .\venv\Scripts\activate  # On Windows
-    ```
+1. **Frontend (Next.js):**  
+   cd frontend  
+   npm install  
+   npm run dev  
+   \# Frontend available at http://localhost:3000
 
-3.  **Install dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
+2. **Backend (FastAPI):**  
+   cd backend  
+   python3 \-m venv venv && source venv/bin/activate  
+   pip install \-r requirements.txt  
+   cp .env.example .env && \# Edit .env with your credentials  
+   uvicorn main:app \--reload  
+   \# Backend available at http://localhost:8000
 
-4.  **Set up environment variables:**
-    ```bash
-    cp .env.example .env
-    # Edit .env with your Payload API URL, tokens, and other credentials
-    ```
+## **Contributing**
 
-5.  **Run the development server:**
-    ```bash
-    uvicorn main:app --reload
-    ```
-    The FastAPI development server should start, typically on `http://localhost:8000`.
+This project thrives on community contributions to its knowledge base via Payload CMS. The Litecoin Foundation maintains editorial control while enabling community participation. Please contact the Foundation for contributor access.
 
-### Payload CMS Setup
+## **License**
 
-1.  **Install Payload CMS** following the official documentation.
-2.  **Configure API Tokens** in Payload Admin → Settings → API Tokens (or similar).
-3.  **Set up `afterChange` hooks** for content synchronization with the RAG pipeline.
-4.  **Configure user roles** (Contributors for community, Editors/Admins for Foundation).
-
-### Running Data Ingestion from Payload
-
-1.  **Navigate to the backend directory:**
-    ```bash
-    cd backend
-    ```
-
-2.  **Run Payload content ingestion:**
-    ```bash
-    python ingest_data.py --source-type payload
-    ```
-
-3.  **Verify:**
-    Confirm content is processed and vectors are stored in MongoDB Atlas.
-
-## Security Considerations
-*   Input validation for all user queries and API inputs.
-*   Protection against common web vulnerabilities (OWASP Top 10).
-*   Secure handling of API keys and credentials (not hardcoded).
-*   Payload CMS authentication and authorization for content management.
-*   `afterChange` hook security for Payload-to-RAG synchronization.
-
-## Documentation
-The project's core documentation is maintained in the `cline_docs/` directory:
-*   `projectRoadmap.md`: High-level project vision, goals, architecture, and major milestones.
-*   `currentTask.md`: Details active tasks, backlog, progress, and immediate development plan.
-*   `techStack.md`: Documents all technology choices, frameworks, tools, and their rationale.
-*   `codebaseSummary.md`: Provides an overview of the project's structure, key components, data flow, and dependencies.
-
-## Contributing
-This project thrives on community contributions to its knowledge base through Payload CMS. The Litecoin Foundation maintains editorial control while enabling community participation.
-
-### Content Contribution Process
-1.  **Request Contributor Access**: Contact the Litecoin Foundation for Payload CMS contributor credentials.
-2.  **Create Draft Content**: Use Payload's rich text editor to create well-structured articles.
-3.  **Foundation Review**: The Foundation team reviews and publishes approved content.
-4.  **Automatic Sync**: Published content automatically updates the RAG pipeline.
-
-For detailed guidelines on content structure and submission, see the Payload CMS editorial guidelines (to be provided by Foundation team).
-
-## License
-(To be determined - e.g., MIT License)
+(To be determined \- e.g., MIT License)
