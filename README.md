@@ -145,14 +145,19 @@ flowchart TD
 
 | Status | Milestone | Focus |
 | :---- | :---- | :---- |
-| ✅ | **M1: Project Initialization** | Core documentation and project setup. |
-| ✅ | **M2: Basic Project Scaffold** | Initial Next.js frontend and FastAPI backend. |
-| ✅ | **M3: Core RAG Pipeline** | Implemented data ingestion, vector search, and generation. |
-| ✅ | **M4: Backend & KB Completion** | CRUD API for data sources and full ingestion of initial FAQ knowledge base. |
-| 🟨 | **M5: Payload CMS Setup & Integration** | Configure self-hosted Payload CMS and integrate its API and webhooks with the backend. |
-| 📝 | **M6: MVP Content Population** | Populate Payload with the complete "Litecoin Basics & FAQ" knowledge base. |
-| 📝 | **M7: MVP Testing & Deployment** | Conduct comprehensive testing, refine UI, and execute initial production deployment. |
-| 📝 | **M8-M13: Post-MVP Phases** | Implement features from Phase 2 (UX/Accuracy) and Phase 3 (Live Data). |
+| ✅ | [**M1: Project Initialization**](./cline_docs/milestones/milestone_1_project_initialization.md) | Core documentation and project setup. |
+| ✅ | [**M2: Basic Project Scaffold**](./cline_docs/milestones/milestone_2_basic_project_scaffold.md) | Initial Next.js frontend and FastAPI backend. |
+| ✅ | [**M3: Core RAG Pipeline**](./cline_docs/milestones/milestone_3_core_rag_pipeline.md) | Implemented data ingestion, vector search, and generation. |
+| ✅ | [**M4: Litecoin Basics & FAQ**](./cline_docs/milestones/milestone_4_litecoin_basics_faq.md) | CRUD API for data sources and full ingestion of initial FAQ knowledge base. |
+| 🟨 | [**M5: Payload CMS Setup & Integration**](./cline_docs/milestones/milestone_5_payload_cms_setup_integration.md) | Configure self-hosted Payload CMS and integrate its API and webhooks with the backend. |
+| 📝 | [**M6: MVP Content Population**](./cline_docs/milestones/milestone_6_mvp_content_population_validation.md) | Populate Payload with the complete "Litecoin Basics & FAQ" knowledge base. |
+| 📝 | [**M7: MVP Testing & Deployment**](./cline_docs/milestones/milestone_7_mvp_testing_refinement_deployment.md) | Conduct comprehensive testing, refine UI, and execute initial production deployment. |
+| 📝 | [**M8: Implement Trust & Feedback Features**](./cline_docs/milestones/milestone_8_implement_trust_feedback_features.md) | Implement features from Phase 2 (UX/Accuracy). |
+| 📝 | [**M9: Implement Contextual Discovery**](./cline_docs/milestones/milestone_9_implement_contextual_discovery.md) | Implement features from Phase 2 (UX/Accuracy). |
+| 📝 | [**M10: Upgrade Retrieval Engine**](./cline_docs/milestones/milestone_10_upgrade_retrieval_engine.md) | Implement features from Phase 2 (UX/Accuracy). |
+| 📝 | [**M11: Transaction & Block Explorer**](./cline_docs/milestones/milestone_11_transaction_block_explorer.md) | Implement features from Phase 3 (Live Data). |
+| 📝 | [**M12: Market Data & Insights**](./cline_docs/milestones/milestone_12_market_data_insights.md) | Implement features from Phase 3 (Live Data). |
+| 📝 | [**M13: Developer Documentation**](./cline_docs/milestones/milestone_13_developer_documentation.md) | Implement features from Phase 3 (Live Data). |
 
 ## **Log of Completed Milestones**
 
