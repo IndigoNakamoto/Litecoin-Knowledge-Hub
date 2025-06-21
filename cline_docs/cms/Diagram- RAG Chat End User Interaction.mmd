@@ -1,0 +1,35 @@
+flowchart TD
+    subgraph "End User Experience"
+        U("fa:fa-user RAG Chat End User")
+        FE("fa:fa-window-maximize Next.js Frontend")
+    end
+
+    subgraph "Backend Processing"
+        API("fa:fa-cloud FastAPI Backend")
+        RAG("fa:fa-brain Langchain RAG Orchestrator")
+        LLM("fa:fa-robot LLM (e.g., Gemini Pro)")
+    end
+
+    subgraph "Knowledge Store"
+        VDB("fa:fa-layer-group Vector Store (MongoDB Atlas)")
+    end
+
+    %% User Query Flow
+    U -- "1 Asks question" --> FE
+    FE -- "2 Sends API request" --> API
+    API -- "3 Forwards query" --> RAG
+    RAG -- "4 Embeds query & searches" --> VDB
+    VDB -- "5 Returns relevant context" --> RAG
+    RAG -- "6 Builds prompt with context for" --> LLM
+    LLM -- "7 Generates answer" --> RAG
+    RAG -- "8 Returns structured answer" --> API
+    API -- "9 Streams response" --> FE
+    FE -- "10 Displays answer" --> U
+
+    %% Styling
+    classDef user fill:#D5E8D4,stroke:#333, color:#333;
+    classDef backend fill:#DAE8FC,stroke:#333, color:#333;
+    classDef data fill:#F8CECC,stroke:#333, color:#333;
+    class U,FE user;
+    class API,RAG,LLM backend;
+    class VDB data;

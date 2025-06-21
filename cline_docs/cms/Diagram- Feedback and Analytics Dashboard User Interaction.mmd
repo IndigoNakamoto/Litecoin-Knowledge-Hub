@@ -1,0 +1,40 @@
+flowchart TD
+    %% Define actors and systems
+    subgraph "Data Sources (Input)"
+        CHAT_USER("fa:fa-user RAG Chat End User")
+        RAG_SYSTEM("fa:fa-brain RAG System")
+    end
+
+    subgraph "Data & Application Layer"
+        BACKEND("fa:fa-cloud FastAPI Backend")
+        ANALYTICS_DB("fa:fa-database Analytics DB")
+    end
+
+    subgraph "Analyst Experience"
+        ANALYST("fa:fa-user-tie Analyst / Strategist")
+        DASH("fa:fa-chart-bar Feedback & Analytics Dashboard")
+        SUGGESTION_ENGINE("fa:fa-lightbulb AI Suggestion Engine")
+    end
+    
+    %% Data Collection Flow (Implicit, for context)
+    CHAT_USER -- "Provides feedback (ratings, comments)" --> BACKEND
+    RAG_SYSTEM -- "Logs failed/low-confidence queries" --> BACKEND
+    BACKEND -- "Stores interaction data in" --> ANALYTICS_DB
+
+    %% Analyst Interaction Flow (Explicit)
+    ANALYST -- "1 Accesses" --> DASH
+    DASH -- "2 Requests data from" --> BACKEND
+    BACKEND -- "3 Queries feedback & logs from" --> ANALYTICS_DB
+    ANALYTICS_DB -- "4 Returns raw data" --> BACKEND
+    BACKEND -- "5 Feeds data to" --> SUGGESTION_ENGINE
+    SUGGESTION_ENGINE -- "6 Identifies gaps & suggests topics" --> BACKEND
+    BACKEND -- "7 Sends processed insights & suggestions" --> DASH
+    DASH -- "8 Displays dashboards and article suggestions to" --> ANALYST
+
+    %% Styling
+    classDef source fill:#D5E8D4,stroke:#333, color:#333;
+    classDef app fill:#DAE8FC,stroke:#333, color:#333;
+    classDef analyst fill:#FFE6CC,stroke:#333, color:#333;
+    class CHAT_USER,RAG_SYSTEM source;
+    class BACKEND,ANALYTICS_DB app;
+    class ANALYST,DASH,SUGGESTION_ENGINE analyst;
