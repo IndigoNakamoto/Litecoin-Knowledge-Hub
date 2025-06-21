@@ -56,14 +56,15 @@ class VectorStoreManager:
         )
         print(f"VectorStoreManager initialized for db: '{self.db_name}', collection: '{self.collection_name}'")
 
-    def add_documents(self, documents: List[Document], embeddings_model=None):
+    def add_documents(self, documents: List[Document], embeddings_model=None, batch_size: int = 100):
         """
-        Adds documents to the vector store.
+        Adds documents to the vector store in batches.
 
         Args:
             documents: A list of Langchain Document objects.
             embeddings_model: The embedding model to use for creating document embeddings.
                               If None, defaults to a model with 'retrieval_document' task type.
+            batch_size: The number of documents to process in each batch.
         """
         if not documents:
             print("No documents provided to add.")
@@ -73,10 +74,19 @@ class VectorStoreManager:
         if active_embeddings_model is None:
             active_embeddings_model = get_default_embedding_model(task_type="retrieval_document")
         
-        # The add_documents method of MongoDBAtlasVectorSearch will use the provided embeddings_model
-        # to embed the documents before storing them.
-        self.vector_store.add_documents(documents, embedding=active_embeddings_model)
-        print(f"Successfully added {len(documents)} documents to collection '{self.collection_name}'.")
+        total_docs = len(documents)
+        for i in range(0, total_docs, batch_size):
+            batch = documents[i:i + batch_size]
+            print(f"Processing batch {i//batch_size + 1}/{(total_docs + batch_size - 1)//batch_size}...")
+            try:
+                self.vector_store.add_documents(batch, embedding=active_embeddings_model)
+                print(f"Successfully added batch of {len(batch)} documents.")
+            except Exception as e:
+                print(f"Error adding batch {i//batch_size + 1}: {e}")
+                # Optionally, re-raise the exception if you want to halt the process
+                # raise e
+        
+        print(f"Finished adding {total_docs} documents to collection '{self.collection_name}'.")
 
     def get_retriever(self, search_type="similarity", search_kwargs=None):
         """

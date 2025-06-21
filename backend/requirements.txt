@@ -21,3 +21,5 @@ pytest
 pytest-asyncio
 pytest-mock
 python-dotenv
+langchain_mongodb
+langchain_google_genai
