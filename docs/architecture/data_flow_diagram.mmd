@@ -1,0 +1,45 @@
+sequenceDiagram
+    participant User
+    participant Browser
+    participant NextJS_Frontend as "Next.js Frontend"
+    participant FastAPI_Backend as "FastAPI Backend"
+    participant Payload_CMS as "Payload CMS"
+    participant MongoDB_Atlas as "MongoDB Atlas (Vector Store)"
+    participant Google_AI as "Google AI (Gemini)"
+
+    Note over User, Google_AI: User Interaction and Query Flow
+
+    User->>Browser: Enters a question
+    Browser->>NextJS_Frontend: Sends question to the application
+    NextJS_Frontend->>FastAPI_Backend: /api/v1/chat (POST with question)
+    activate FastAPI_Backend
+    FastAPI_Backend->>Google_AI: 1. Generate embedding for the question
+    Google_AI-->>FastAPI_Backend: 2. Return question embedding
+    FastAPI_Backend->>MongoDB_Atlas: 3. Query for similar documents
+    MongoDB_Atlas-->>FastAPI_Backend: 4. Return relevant documents
+    FastAPI_Backend->>Google_AI: 5. Send prompt with context to LLM
+    Google_AI-->>FastAPI_Backend: 6. Return generated answer
+    FastAPI_Backend-->>NextJS_Frontend: 7. Stream response
+    deactivate FastAPI_Backend
+    NextJS_Frontend->>Browser: Display answer
+    Browser->>User: Show answer and sources
+
+    Note over Payload_CMS, MongoDB_Atlas: Content Synchronization Flow
+
+    participant Content_Editor as "Content Editor"
+    participant Payload_Admin as "Payload Admin UI"
+    participant Payload_Server as "Payload Server"
+    participant afterChange_Hook as "afterChange Hook"
+    participant Content_Sync_Service as "Content Sync Service (in FastAPI)"
+
+    Content_Editor->>Payload_Admin: 1. Create/Update/Publish Content
+    Payload_Admin->>Payload_Server: 2. Save Content to DB
+    Payload_Server-->>afterChange_Hook: 3. Trigger Hook
+    afterChange_Hook->>Content_Sync_Service: 4. Send Webhook Notification
+    activate Content_Sync_Service
+    Content_Sync_Service->>Payload_Server: 5. Fetch Full Content via API
+    Payload_Server-->>Content_Sync_Service: 6. Return Full Content
+    Content_Sync_Service->>Google_AI: 7. Generate Embeddings
+    Google_AI-->>Content_Sync_Service: 8. Return Embeddings
+    Content_Sync_Service->>MongoDB_Atlas: 9. Upsert Vectors into Store
+    deactivate Content_Sync_Service

@@ -1,0 +1,33 @@
+graph TD
+    subgraph "User Interface"
+        Frontend[Next.js Frontend]
+    end
+
+    subgraph "Application Backend"
+        Backend[FastAPI Backend]
+        RAG[RAG Pipeline]
+        Sync[Content Sync Service]
+    end
+
+    subgraph "Content Management"
+        CMS[Payload CMS]
+        Hook[afterChange Hook]
+    end
+
+    subgraph "Data Stores & AI"
+        VectorStore[MongoDB Atlas Vector Store]
+        LLM[Google AI - Gemini]
+    end
+
+    Frontend -- "API Request" --> Backend
+    Backend --> RAG
+    Backend --> Sync
+
+    RAG -- "Embeds Query & Builds Prompt" --> VectorStore
+    RAG -- "Generates Response" --> LLM
+    LLM --> RAG
+
+    CMS -- "Triggers on Publish" --> Hook
+    Hook -- "Notifies" --> Sync
+    Sync -- "Fetches Content via API" --> CMS
+    Sync -- "Processes & Stores Embeddings" --> VectorStore
