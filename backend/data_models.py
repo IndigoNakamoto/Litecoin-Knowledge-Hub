@@ -4,30 +4,31 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import List, Literal, Optional, Dict, Any
 
-
-class StrapiDocumentMetadata(BaseModel):
+class PayloadArticleMetadata(BaseModel):
     """
-    Pydantic model for the metadata of a single document chunk derived from Strapi.
+    Pydantic model for the metadata of a single document chunk derived from Payload CMS.
     """
     # Core Identifiers
-    strapi_id: int = Field(..., description="The Strapi ID of the source article.")
+    payload_id: str = Field(..., description="The Payload ID of the source article.")
     document_id: Optional[str] = Field(None, description="A unique ID for the document chunk.")
-    source: str = Field("strapi", description="The source of the content.")
+    source: str = Field("payload", description="The source of the content.")
     content_type: str = Field("article", description="The type of content.")
 
     # Content Classification
     chunk_type: Literal["title_summary", "section", "text"] = Field(..., description="The type of the content chunk.")
     chunk_index: int = Field(..., description="The index of the chunk within the article.")
     is_title_chunk: bool = Field(False, description="Indicates if this chunk represents the main title and summary.")
+    doc_title: str = Field(..., description="The main title of the article (from Payload's 'title').")
     section_title: Optional[str] = Field(None, description="The title of the section this chunk belongs to.")
+    subsection_title: Optional[str] = Field(None, description="The title of the subsection.")
+    subsubsection_title: Optional[str] = Field(None, description="The title of the sub-subsection.")
 
     # Searchable Fields
-    title: str = Field(..., description="The main title of the article.")
-    author: Optional[str] = Field(None, description="The author of the article.")
-    tags_array: List[str] = Field([], description="A list of tags for filtering.")
-    tags: Optional[str] = Field(None, description="A comma-separated string of tags.")
-
+    author: Optional[str] = Field(None, description="The author's name or ID.")
+    categories: List[str] = Field([], description="A list of category names or IDs.")
+    
     # Filtering & Sorting
+    status: Literal["draft", "published"] = Field(..., description="The publication status.")
     published_date: Optional[datetime] = Field(None, description="The date the article was published.")
     locale: str = Field("en", description="The locale of the content.")
     content_length: int = Field(..., description="The character length of the content in this chunk.")
@@ -35,14 +36,13 @@ class StrapiDocumentMetadata(BaseModel):
     # Technical
     slug: Optional[str] = Field(None, description="The URL slug for the article.")
 
-
 class DataSource(BaseModel):
     """
     Pydantic model for a data source.
     """
     id: Optional[str] = None # MongoDB _id will be converted to string and assigned here
     name: str = Field(..., description="A human-readable name for the data source.")
-    type: str = Field(..., description="The type of the data source (e.g., 'markdown', 'web', 'github', 'youtube', 'twitter', 'strapi').")
+    type: str = Field(..., description="The type of the data source (e.g., 'markdown', 'web', 'github', 'youtube', 'twitter', 'payload').")
     uri: str = Field(..., description="The URI or path to the data source (e.g., file path, URL, GitHub repo URL).")
     status: str = Field("active", description="The current status of the data source (e.g., 'active', 'inactive', 'ingesting', 'error').")
     last_ingested_at: Optional[datetime] = Field(None, description="Timestamp of the last successful ingestion.")
@@ -54,8 +54,8 @@ class DataSource(BaseModel):
         json_schema_extra = {
             "example": {
                 "name": "Litecoin Basics Articles",
-                "type": "markdown",
-                "uri": "knowledge_base/articles/",
+                "type": "payload",
+                "uri": "articles", # Represents the 'articles' collection slug in Payload
                 "status": "active"
             }
         }
@@ -104,34 +104,22 @@ class ChatRequest(BaseModel):
             }
         }
 
-
-class ArticleEntry(BaseModel):
+class PayloadWebhookDoc(BaseModel):
     """
-    Represents the 'entry' part of a Strapi webhook payload for the 'article' content type.
-    This model should reflect the raw structure of the data sent by Strapi.
+    Represents the 'doc' object received from a Payload CMS 'afterChange' hook.
+    This model validates the incoming webhook payload for an article.
     """
-    id: int
-    createdAt: datetime
-    updatedAt: datetime
-    publishedAt: Optional[datetime] = None
-    Title: str
-    Summary: Optional[str] = None
-    Content: Optional[List[Dict[str, Any]]] = None
-    Author: Optional[str] = None
-    Slug: Optional[str] = None
-    Tags: Optional[str] = None
-
-    class Config:
-        extra = "allow"  # Allow extra fields from Strapi
-
-class StrapiWebhookPayload(BaseModel):
-    """
-    The root model for a Strapi webhook payload.
-    """
-    event: str
-    createdAt: datetime
-    model: str
-    entry: ArticleEntry
+    id: str
+    createdAt: datetime # Add createdAt
+    updatedAt: datetime # Add updatedAt
+    title: str
+    author: Optional[str] = None # This will be the user ID
+    publishedDate: Optional[str] = None # Payload sends date as a string, make it optional
+    category: Optional[List[str]] = Field(None, description="List of category IDs") # Make optional and explicitly set default to None
+    content: Dict[str, Any] # This is the Lexical JSON structure
+    markdown: str # This is the auto-generated markdown from the hook in Payload
+    status: Literal["draft", "published"]
+    slug: Optional[str] = None # Make optional
 
     class Config:
-        extra = "allow"
+        extra = "allow" # Allow any other fields from Payload

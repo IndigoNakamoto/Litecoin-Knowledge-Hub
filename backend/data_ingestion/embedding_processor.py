@@ -11,6 +11,7 @@ from google.api_core.exceptions import ResourceExhausted, GoogleAPIError, Invali
 from langchain_core.documents import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from data_models import PayloadWebhookDoc, PayloadArticleMetadata
 
 # --- Setup Logger ---
 logger = logging.getLogger(__name__)
@@ -26,17 +27,20 @@ class MarkdownTextSplitter:
     """
     A text splitter that processes Markdown content hierarchically.
     It uses the parse_markdown_hierarchically function to create Document chunks
-    with prepended titles and section context.
+    with prepended titles and section context, and then further splits these
+    into smaller chunks using RecursiveCharacterTextSplitter.
     """
     def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 100, **kwargs):
         """
         Initializes the MarkdownTextSplitter.
-        Note: chunk_size and chunk_overlap are kept for interface compatibility
-        but the primary splitting logic is based on Markdown structure.
         """
-        self.chunk_size = chunk_size # Not directly used by parse_markdown_hierarchically in the same way
-        self.chunk_overlap = chunk_overlap # Not directly used
-        # kwargs can be used to pass other parameters if needed in the future
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+        self.recursive_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=self.chunk_size,
+            chunk_overlap=self.chunk_overlap,
+            **kwargs
+        )
 
     def split_text(self, text: str, metadata: dict = None) -> List[Document]:
         """
@@ -52,12 +56,14 @@ class MarkdownTextSplitter:
             with prepended hierarchical context.
         """
         initial_metadata = metadata or {}
-        # Ensure 'source' is in metadata if not provided, as parse_markdown_hierarchically might use it for logging
         if 'source' not in initial_metadata:
             initial_metadata['source'] = 'unknown_markdown_source'
             
-        # parse_markdown_hierarchically expects initial_metadata to be a dictionary
-        return parse_markdown_hierarchically(text, initial_metadata)
+        # First, parse hierarchically to get logical sections
+        hierarchical_sections = parse_markdown_hierarchically(text, initial_metadata, self.recursive_splitter)
+        
+        # The parse_markdown_hierarchically function now returns already split documents
+        return hierarchical_sections
 
     def split_documents(self, documents: List[Document]) -> List[Document]:
         """
@@ -65,8 +71,6 @@ class MarkdownTextSplitter:
         """
         all_chunks = []
         for doc in documents:
-            # Pass a copy of the document's metadata to avoid modification issues
-            # and to ensure each call to split_text gets the original doc's metadata.
             doc_metadata_copy = doc.metadata.copy() if doc.metadata else {}
             chunks_from_doc = self.split_text(doc.page_content, metadata=doc_metadata_copy)
             all_chunks.extend(chunks_from_doc)
@@ -101,141 +105,154 @@ class EmbeddingService:
         This is used for integration with Langchain's vector store functions.
         It's configured for document retrieval.
         """
-        # Reason: Setting task_type to 'retrieval_document' for embedding knowledge base documents,
-        # as recommended for text-embedding-004.
         return GoogleGenerativeAIEmbeddings(
             model=f"models/{self.model_name}",
-            task_type="retrieval_document"
+            task_type="retrieval_document",
+            request_options={"timeout": 60}
         )
 
 
-def parse_markdown_hierarchically(content: str, initial_metadata: dict) -> List[Document]:
+def parse_markdown_hierarchically(content: str, initial_metadata: dict, recursive_splitter: RecursiveCharacterTextSplitter) -> List[Document]:
     """
     Parses Markdown content hierarchically, creating chunks with prepended titles.
-    Handles YAML frontmatter and basic Markdown headings (#, ##, ###, ####).
+    Handles YAML frontmatter for legacy files and extracts metadata from Payload documents.
+    Uses a recursive_splitter to further break down large paragraphs into smaller chunks.
     """
     chunks = []
     current_metadata = initial_metadata.copy()
-    # Initialize titles from metadata if present, otherwise empty
-    current_h1 = current_metadata.get("title", "") # Often set from filename or frontmatter
+    is_payload_doc = current_metadata.get('source') == 'payload'
+
+    current_h1 = current_metadata.get("doc_title", "")
     current_h2 = ""
     current_h3 = ""
-    current_h4 = "" # Added support for H4
+    current_h4 = ""
 
-    # Try to parse YAML frontmatter
-    try:
-        if content.startswith("---"):
-            parts = content.split("---", 2)
-            if len(parts) >= 3:
-                frontmatter_str = parts[1]
-                content_after_frontmatter = parts[2].lstrip()
-                parsed_frontmatter = yaml.safe_load(frontmatter_str)
-                if isinstance(parsed_frontmatter, dict):
-                    # Reason: Convert last_updated to datetime for proper BSON type in MongoDB, enabling date-based queries.
-                    if 'last_updated' in parsed_frontmatter:
-                        last_updated_date = parsed_frontmatter['last_updated']
-                        if isinstance(last_updated_date, str):
-                            try:
-                                # Attempt to parse ISO format string into a datetime object
-                                parsed_frontmatter['last_updated'] = datetime.datetime.fromisoformat(last_updated_date.replace('Z', '+00:00'))
-                            except (ValueError, TypeError) as e:
-                                logger.warning(f"Could not parse 'last_updated' date string '{last_updated_date}' for source: {initial_metadata.get('source', 'Unknown')}. Error: {e}. Keeping as string.")
-                        elif isinstance(last_updated_date, datetime.date) and not isinstance(last_updated_date, datetime.datetime):
-                            # Reason: Convert datetime.date to datetime.datetime to prevent BSON encoding errors.
-                            parsed_frontmatter['last_updated'] = datetime.datetime.combine(last_updated_date, datetime.time.min)
+    if not is_payload_doc:
+        try:
+            if content.startswith("---"):
+                parts = content.split("---", 2)
+                if len(parts) >= 3:
+                    frontmatter_str = parts[1]
+                    content_after_frontmatter = parts[2].lstrip()
+                    parsed_frontmatter = yaml.safe_load(frontmatter_str)
+                    if isinstance(parsed_frontmatter, dict):
+                        if 'last_updated' in parsed_frontmatter:
+                            last_updated_date = parsed_frontmatter['last_updated']
+                            if isinstance(last_updated_date, str):
+                                try:
+                                    parsed_frontmatter['last_updated'] = datetime.datetime.fromisoformat(last_updated_date.replace('Z', '+00:00'))
+                                except (ValueError, TypeError) as e:
+                                    logger.warning(f"Could not parse 'last_updated' date string '{last_updated_date}' for source: {initial_metadata.get('source', 'Unknown')}. Error: {e}. Keeping as string.")
+                            elif isinstance(last_updated_date, datetime.date) and not isinstance(last_updated_date, datetime.datetime):
+                                parsed_frontmatter['last_updated'] = datetime.datetime.combine(last_updated_date, datetime.time.min)
 
-                    current_metadata.update(parsed_frontmatter)
-                    if "title" in parsed_frontmatter: # Frontmatter title overrides
-                        current_h1 = parsed_frontmatter["title"]
-                    content = content_after_frontmatter
+                        current_metadata.update(parsed_frontmatter)
+                        if "title" in parsed_frontmatter:
+                            current_h1 = parsed_frontmatter["title"]
+                        content = content_after_frontmatter
+                    else:
+                        logger.warning(f"Parsed frontmatter is not a dictionary for source: {initial_metadata.get('source', 'Unknown')}. Skipping.")
                 else:
-                    logger.warning(f"Parsed frontmatter is not a dictionary for source: {initial_metadata.get('source', 'Unknown')}. Skipping.")
-            else:
-                logger.debug(f"No valid YAML frontmatter block found for source: {initial_metadata.get('source', 'Unknown')}")
-    except yaml.YAMLError as e:
-        logger.warning(f"Could not parse YAML frontmatter for {initial_metadata.get('source', 'Unknown')}: {e}")
-    except Exception as e:
-        logger.warning(f"Error processing frontmatter for {initial_metadata.get('source', 'Unknown')}: {e}")
+                    logger.debug(f"No valid YAML frontmatter block found for source: {initial_metadata.get('source', 'Unknown')}")
+        except yaml.YAMLError as e:
+            logger.warning(f"Could not parse YAML frontmatter for {initial_metadata.get('source', 'Unknown')}: {e}")
+        except Exception as e:
+            logger.warning(f"Error processing frontmatter for {initial_metadata.get('source', 'Unknown')}: {e}")
 
     lines = content.splitlines()
     current_paragraph_lines = []
 
-    def create_chunk(paragraph_lines_list, h1, h2, h3, h4, meta):
+    def create_and_split_chunk(paragraph_lines_list, h1, h2, h3, h4, meta, splitter):
         if not paragraph_lines_list:
-            return None
+            return []
         
         text = "\n".join(paragraph_lines_list).strip()
         if not text:
-            return None
+            return []
 
         prepended_text_parts = []
         if h1: prepended_text_parts.append(f"Title: {h1}")
         if h2: prepended_text_parts.append(f"Section: {h2}")
         if h3: prepended_text_parts.append(f"Subsection: {h3}")
-        if h4: prepended_text_parts.append(f"Sub-subsection: {h4}") # Added H4 to prefix
+        if h4: prepended_text_parts.append(f"Sub-subsection: {h4}")
         
         prepended_header = "\n".join(prepended_text_parts)
-        page_content = f"{prepended_header}\n\n{text}" if prepended_header else text
         
-        chunk_metadata = meta.copy()
-        if h1: chunk_metadata['doc_title'] = h1
-        if h2: chunk_metadata['section_title'] = h2
-        if h3: chunk_metadata['subsection_title'] = h3
-        if h4: chunk_metadata['subsubsection_title'] = h4 # Added H4 to metadata
-        
-        # Final check to convert any date objects to datetime objects before creating the Document
-        for key, value in chunk_metadata.items():
-            if isinstance(value, datetime.date) and not isinstance(value, datetime.datetime):
-                logger.debug(f"Converting datetime.date to datetime.datetime for key '{key}' in source: {chunk_metadata.get('source', 'Unknown')}")
-                chunk_metadata[key] = datetime.datetime.combine(value, datetime.time.min)
+        # Create a temporary document for the current section/paragraph
+        temp_doc_content = text
+        temp_doc_metadata = meta.copy()
+        if h1: temp_doc_metadata['doc_title_hierarchical'] = h1
+        if h2: temp_doc_metadata['section_title'] = h2
+        if h3: temp_doc_metadata['subsection_title'] = h3
+        if h4: temp_doc_metadata['subsubsection_title'] = h4
+        temp_doc_metadata['chunk_type'] = 'section' if h2 or h3 or h4 else 'text'
 
-        return Document(page_content=page_content, metadata=chunk_metadata)
+        # Use the recursive splitter to break down the section/paragraph into smaller chunks
+        split_docs = splitter.create_documents([temp_doc_content], metadatas=[temp_doc_metadata])
+        
+        final_chunks = []
+        for i, split_doc in enumerate(split_docs):
+            # Prepend hierarchical header to each split chunk
+            final_page_content = f"{prepended_header}\n\n{split_doc.page_content}" if prepended_header else split_doc.page_content
+            
+            chunk_metadata = split_doc.metadata.copy()
+            chunk_metadata['content_length'] = len(split_doc.page_content)
+            chunk_metadata['sub_chunk_index'] = i # Index for sub-chunks within a hierarchical section
+
+            for key, value in chunk_metadata.items():
+                if isinstance(value, datetime.date) and not isinstance(value, datetime.datetime):
+                    logger.debug(f"Converting datetime.date to datetime.datetime for key '{key}' in source: {chunk_metadata.get('source', 'Unknown')}")
+                    chunk_metadata[key] = datetime.datetime.combine(value, datetime.time.min)
+            
+            final_chunks.append(Document(page_content=final_page_content, metadata=chunk_metadata))
+        
+        return final_chunks
 
     for line_number, line in enumerate(lines):
         h1_match = re.match(r"^#\s+(.*)", line)
         h2_match = re.match(r"^##\s+(.*)", line)
         h3_match = re.match(r"^###\s+(.*)", line)
-        h4_match = re.match(r"^####\s+(.*)", line) # Added H4 parsing
+        h4_match = re.match(r"^####\s+(.*)", line)
 
-        if h1_match:
+        if h1_match and not is_payload_doc:
             if current_paragraph_lines:
-                chunk = create_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata)
-                if chunk: chunks.append(chunk)
+                chunks.extend(create_and_split_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata, recursive_splitter))
                 current_paragraph_lines = []
             current_h1 = h1_match.group(1).strip()
             current_h2, current_h3, current_h4 = "", "", ""
+        elif h1_match and is_payload_doc:
+            if current_paragraph_lines:
+                chunks.extend(create_and_split_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata, recursive_splitter))
+                current_paragraph_lines = []
+            current_h2 = h1_match.group(1).strip()
+            current_h3, current_h4 = "", ""
         elif h2_match:
             if current_paragraph_lines:
-                chunk = create_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata)
-                if chunk: chunks.append(chunk)
+                chunks.extend(create_and_split_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata, recursive_splitter))
                 current_paragraph_lines = []
             current_h2 = h2_match.group(1).strip()
             current_h3, current_h4 = "", ""
         elif h3_match:
             if current_paragraph_lines:
-                chunk = create_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata)
-                if chunk: chunks.append(chunk)
+                chunks.extend(create_and_split_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata, recursive_splitter))
                 current_paragraph_lines = []
             current_h3 = h3_match.group(1).strip()
             current_h4 = ""
-        elif h4_match: # Added H4 handling
+        elif h4_match:
             if current_paragraph_lines:
-                chunk = create_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata)
-                if chunk: chunks.append(chunk)
+                chunks.extend(create_and_split_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata, recursive_splitter))
                 current_paragraph_lines = []
             current_h4 = h4_match.group(1).strip()
         elif line.strip() or (not line.strip() and current_paragraph_lines and line_number < len(lines) -1 and lines[line_number+1].strip()):
             current_paragraph_lines.append(line)
         elif current_paragraph_lines:
-            chunk = create_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata)
-            if chunk: chunks.append(chunk)
+            chunks.extend(create_and_split_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata, recursive_splitter))
             current_paragraph_lines = []
 
-    if current_paragraph_lines: # Process any remaining lines
-        chunk = create_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata)
-        if chunk: chunks.append(chunk)
+    if current_paragraph_lines:
+        chunks.extend(create_and_split_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata, recursive_splitter))
     
-    if not chunks and content.strip(): # If no headings were found but content exists
+    if not chunks and content.strip():
         page_content = content.strip()
         prepended_text_parts = []
         if current_h1: prepended_text_parts.append(f"Title: {current_h1}")
@@ -243,12 +260,63 @@ def parse_markdown_hierarchically(content: str, initial_metadata: dict) -> List[
         final_page_content = f"{prepended_header}\n\n{page_content}" if prepended_header else page_content
         
         final_metadata = current_metadata.copy()
-        if current_h1: final_metadata['doc_title'] = current_h1
-        chunks.append(Document(page_content=final_page_content, metadata=final_metadata))
+        if current_h1: final_metadata['doc_title_hierarchical'] = current_h1
+        final_metadata['content_length'] = len(page_content)
+        final_metadata['chunk_type'] = 'title_summary'
+        
+        # Use recursive splitter for the single chunk if no headings were found
+        single_chunk_docs = recursive_splitter.create_documents([final_page_content], metadatas=[final_metadata])
+        chunks.extend(single_chunk_docs)
+
     elif not chunks and not content.strip():
         logger.info(f"No content to chunk for source: {initial_metadata.get('source', 'Unknown')}")
 
+    for i, chunk in enumerate(chunks):
+        chunk.metadata['chunk_index'] = i
+        chunk.metadata['is_title_chunk'] = (i == 0 and chunk.metadata.get('chunk_type') == 'title_summary')
+
     return chunks
+
+def process_payload_documents(payload_docs: List[PayloadWebhookDoc]) -> List[Document]:
+    """
+    Processes a list of documents from Payload, converting them into Langchain Documents
+    and then splitting them hierarchically.
+    """
+    all_chunks = []
+    markdown_splitter = MarkdownTextSplitter()
+
+    for payload_doc in payload_docs:
+        published_date_dt = None
+        if payload_doc.publishedDate:
+            try:
+                published_date_dt = datetime.datetime.fromisoformat(payload_doc.publishedDate.replace('Z', '+00:00'))
+            except (ValueError, TypeError):
+                logger.warning(f"Could not parse 'publishedDate' string '{payload_doc.publishedDate}' for Payload doc ID {payload_doc.id}. Skipping date.")
+
+        initial_metadata = {
+            "payload_id": payload_doc.id,
+            "source": "payload",
+            "content_type": "article",
+            "doc_title": payload_doc.title,
+            "author": payload_doc.author,
+            "categories": payload_doc.category or [],
+            "status": payload_doc.status,
+            "published_date": published_date_dt,
+            "slug": payload_doc.slug,
+            "locale": "en"
+        }
+        
+        langchain_doc = Document(
+            page_content=payload_doc.markdown,
+            metadata=initial_metadata
+        )
+        
+        hierarchical_chunks = markdown_splitter.split_documents([langchain_doc])
+        all_chunks.extend(hierarchical_chunks)
+        
+    logger.info(f"Processed {len(payload_docs)} Payload document(s) into {len(all_chunks)} chunks.")
+    return all_chunks
+
 
 def process_documents(docs: List[Document]) -> List[Document]:
     """
@@ -263,7 +331,7 @@ def process_documents(docs: List[Document]) -> List[Document]:
         A list of split documents (chunks).
     """
     all_chunks = []
-    markdown_splitter = MarkdownTextSplitter() # Use the class here
+    markdown_splitter = MarkdownTextSplitter()
 
     for doc_idx, doc in enumerate(docs):
         source_identifier = doc.metadata.get('source', f'doc_index_{doc_idx}')
@@ -282,8 +350,6 @@ def process_documents(docs: List[Document]) -> List[Document]:
 
         if is_markdown_like:
             logger.info(f"Processing document '{source_identifier}' with MarkdownTextSplitter.")
-            # The MarkdownTextSplitter's split_documents method expects a list of Documents
-            # and handles metadata copying internally per document.
             hierarchical_chunks = markdown_splitter.split_documents([doc]) 
             all_chunks.extend(hierarchical_chunks)
         else:
@@ -306,14 +372,9 @@ def get_embedding_client():
 
 if __name__ == '__main__':
     from dotenv import load_dotenv
-    # Assuming litecoin_docs_loader is in the same directory or accessible via PYTHONPATH
-    # from litecoin_docs_loader import load_litecoin_docs # This might cause issues if not structured for direct run
-
     load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env.example'))
 
 
-    # Example usage:
-    # Create a dummy markdown document for testing
     sample_md_content = """---
 title: Test Document
 author: Cline
@@ -344,7 +405,6 @@ Text for section two.
         print(f"Content:\n{p_doc.page_content}")
         print(f"Metadata: {p_doc.metadata}")
     
-    # Example of getting the client
     try:
         embeddings_client = get_embedding_client()
         print(f"\nSuccessfully initialized embeddings client for model: {embeddings_client.model}")

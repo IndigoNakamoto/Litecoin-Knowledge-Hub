@@ -12,7 +12,7 @@
         *   `contexts/`: React contexts for state management.
         *   `lib/`: Utility libraries and configurations.
 *   `backend/`: Contains the FastAPI application.
-    *   `payload-cms/`: (New) Contains the self-hosted Payload CMS application. This is the content authoring and management system.
+    *   `payload_cms/`: (New) Contains the self-hosted Payload CMS application. This is the content authoring and management system.
     *   `payload_integration/`: (New) Directory for Payload CMS integration modules.
         *   `client.py`: Payload REST/GraphQL API client implementation.
         *   `webhook_handler.py`: Payload `afterChange` hook processing logic (conceptual, actual implementation might be within Payload itself or a dedicated service).
@@ -47,17 +47,17 @@
 *   `backend/rag_pipeline.py`: Contains the core logic for the RAG (Retrieval-Augmented Generation) pipeline. This includes orchestrating Langchain chains, using an updated prompt template, and ensuring user queries are embedded with `task_type='retrieval_query'`.
 *   `backend/main.py`: The main entry point for the FastAPI backend, responsible for defining API endpoints and handling incoming requests.
 *   `backend/data_ingestion/embedding_processor.py`: Handles hierarchical chunking of Markdown documents (prepending titles/sections to content) and standard text splitting for other formats. Generates vector embeddings using Google Text Embedding 004 with `task_type='retrieval_document'` for knowledge base content.
-*   `backend/data_ingestion/vector_store_manager.py`: Manages connections to MongoDB Atlas. Facilitates the insertion and retrieval of vector embeddings. Handles deletion of documents based on flattened metadata fields.
+*   `backend/data_ingestion/vector_store_manager.py`: Manages connections to MongoDB Atlas. Facilitates the insertion and retrieval of vector embeddings. Handles deletion of documents based on flattened metadata fields. **(Enhanced with robust error handling and improved logging for embedding operations)**
 
 ### Payload CMS Application
-*   `backend/payload-cms/`: The self-hosted Payload application. It provides the admin UI for content creation, role-based access control, and the API endpoints for the frontend and RAG pipeline to consume.
+*   `payload_cms/`: The self-hosted Payload application. It provides the admin UI for content creation, role-based access control, and the API endpoints for the frontend and RAG pipeline to consume.
 
 ### Payload CMS Integration Components
 *   `backend/payload_integration/client.py`: **(New)** Payload REST/GraphQL API client for fetching content collections, handling authentication, and managing API requests.
 *   `backend/payload_integration/webhook_handler.py`: **(Conceptual)** Processes Payload `afterChange` events and triggers the appropriate RAG pipeline updates. This logic might be integrated directly into Payload's custom server or a separate microservice.
 *   `backend/data_ingestion/embedding_processor.py`: **(Adapted)** This module will be adapted to process Payload's rich text JSON content. It will implement a sophisticated, stateful algorithm to perform hierarchical chunking, create structured documents based on heading levels, prepend hierarchical context to the content, and generate rich metadata for each chunk.
 *   `backend/data_ingestion/vector_store_manager.py`: **(Enhanced)** Will be updated to include methods for robust deletion and updating of Payload entries based on their stable IDs.
-*   `backend/api/v1/sync/payload.py`: **(New)** FastAPI router containing the Payload `afterChange` hook endpoint for real-time content synchronization.
+*   `backend/api/v1/sync/payload.py`: **(New)** FastAPI router containing the Payload `afterChange` hook endpoint for real-time content synchronization. **(Now uses FastAPI BackgroundTasks for asynchronous processing to prevent webhook timeouts)**
 
 ### Legacy Components (To be Modified/Removed)
 *   `backend/cms/`: (To be removed) The old Strapi CMS directory.

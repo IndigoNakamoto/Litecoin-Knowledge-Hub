@@ -1,14 +1,12 @@
 import os
+import logging # Import logging
 from typing import List, Dict, Any
 from pymongo import MongoClient
 from langchain_core.documents import Document
 from langchain_mongodb import MongoDBAtlasVectorSearch
-from langchain_google_genai import GoogleGenerativeAIEmbeddings # Added for explicit embedding model usage
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
-# Assuming get_embedding_client is defined in embedding_processor.py
-# If it's just GoogleGenerativeAIEmbeddings, we can initialize directly.
-# For now, let's keep it flexible.
-# from .embedding_processor import get_embedding_client # This would cause circular dependency if embedding_processor imports this.
+logger = logging.getLogger(__name__) # Initialize logger
 
 def get_default_embedding_model(task_type: str = "retrieval_document"):
     """
@@ -17,7 +15,12 @@ def get_default_embedding_model(task_type: str = "retrieval_document"):
     google_api_key = os.getenv("GOOGLE_API_KEY")
     if not google_api_key:
         raise ValueError("GOOGLE_API_KEY environment variable not set.")
-    return GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", task_type=task_type, google_api_key=google_api_key)
+    return GoogleGenerativeAIEmbeddings(
+        model="models/text-embedding-004",
+        task_type=task_type,
+        google_api_key=google_api_key,
+        request_options={"timeout": 120} # Set timeout to 120 seconds
+    )
 
 class VectorStoreManager:
     """
@@ -40,23 +43,18 @@ class VectorStoreManager:
         self.collection_name = collection_name
         self.collection = self.client[self.db_name][self.collection_name]
         
-        # Default embedding model for the store's operations if not overridden
-        # This embedding model is used by Langchain's MongoDBAtlasVectorSearch for its internal query embedding
-        # if an embedding function isn't explicitly passed to methods like similarity_search.
-        # For adding documents, we typically pass an embedding model with 'retrieval_document' task_type.
-        # For querying, the RAG pipeline should use an embedding model with 'retrieval_query' task_type.
         self.default_query_embeddings = get_default_embedding_model(task_type="retrieval_query")
 
         self.vector_store = MongoDBAtlasVectorSearch(
             collection=self.collection,
-            embedding=self.default_query_embeddings, # Used for similarity search if query isn't pre-embedded
-            index_name=os.getenv("MONGO_VECTOR_INDEX_NAME", "vector_index"), # Ensure your index name is correct
-            text_key="text",  # Explicitly define the field name for document content
-            metadata_key="metadata"  # Explicitly define the field name for metadata
+            embedding=self.default_query_embeddings,
+            index_name=os.getenv("MONGO_VECTOR_INDEX_NAME", "vector_index"),
+            text_key="text",
+            metadata_key="metadata"
         )
-        print(f"VectorStoreManager initialized for db: '{self.db_name}', collection: '{self.collection_name}'")
+        logger.info(f"VectorStoreManager initialized for db: '{self.db_name}', collection: '{self.collection_name}'")
 
-    def add_documents(self, documents: List[Document], embeddings_model=None, batch_size: int = 100):
+    def add_documents(self, documents: List[Document], embeddings_model=None, batch_size: int = 10):
         """
         Adds documents to the vector store in batches.
 
@@ -65,9 +63,11 @@ class VectorStoreManager:
             embeddings_model: The embedding model to use for creating document embeddings.
                               If None, defaults to a model with 'retrieval_document' task type.
             batch_size: The number of documents to process in each batch.
+        Raises:
+            Exception: If an error occurs during the embedding or addition of documents.
         """
         if not documents:
-            print("No documents provided to add.")
+            logger.info("No documents provided to add.")
             return
 
         active_embeddings_model = embeddings_model
@@ -75,18 +75,20 @@ class VectorStoreManager:
             active_embeddings_model = get_default_embedding_model(task_type="retrieval_document")
         
         total_docs = len(documents)
+        success_count = 0
         for i in range(0, total_docs, batch_size):
             batch = documents[i:i + batch_size]
-            print(f"Processing batch {i//batch_size + 1}/{(total_docs + batch_size - 1)//batch_size}...")
+            logger.info(f"Processing batch {i//batch_size + 1}/{(total_docs + batch_size - 1)//batch_size}...")
             try:
                 self.vector_store.add_documents(batch, embedding=active_embeddings_model)
-                print(f"Successfully added batch of {len(batch)} documents.")
+                success_count += len(batch)
+                logger.info(f"Successfully added batch of {len(batch)} documents.")
             except Exception as e:
-                print(f"Error adding batch {i//batch_size + 1}: {e}")
-                # Optionally, re-raise the exception if you want to halt the process
-                # raise e
+                logger.error(f"Error adding batch {i//batch_size + 1}: {e}", exc_info=True)
+                # Re-raise the exception to propagate the error to the calling function
+                raise e
         
-        print(f"Finished adding {total_docs} documents to collection '{self.collection_name}'.")
+        logger.info(f"Finished adding {success_count} of {total_docs} documents to collection '{self.collection_name}'.")
 
     def get_retriever(self, search_type="similarity", search_kwargs=None):
         """
@@ -97,136 +99,94 @@ class VectorStoreManager:
             search_kwargs: Dictionary of arguments for the retriever (e.g., {"k": 5}).
         """
         if search_kwargs is None:
-            search_kwargs = {"k": 3} # Default to retrieving top 3 documents
+            search_kwargs = {"k": 3}
         return self.vector_store.as_retriever(
             search_type=search_type,
             search_kwargs=search_kwargs
         )
 
-    def delete_documents_by_metadata(self, metadata_filter: Dict[str, Any]):
+    def delete_documents_by_metadata_field(self, field_name: str, field_value: Any):
         """
-        Deletes documents from the vector store that match the metadata filter.
+        Deletes documents from the vector store that match a specific metadata field and value.
+        This is the generic method for deleting documents based on a metadata key-value pair.
 
         Args:
-            metadata_filter: A dictionary defining the filter for metadata.
-                             Example: {"source": "some_file.md"}
+            field_name: The name of the metadata field to filter on (e.g., "payload_id", "source").
+            field_value: The value of the metadata field to match.
         """
-        if not metadata_filter:
-            print("No metadata filter provided for deletion.")
+        if not field_name or field_value is None:
+            logger.warning("Field name and value must be provided for deletion.")
             return 0
         
-        # Reason: Based on debugging, it's confirmed that langchain-mongodb flattens the metadata
-        # fields into the root of the MongoDB document, rather than storing them in a 'metadata' sub-document.
-        # Therefore, the filter should target the keys directly at the root level.
-        mongo_filter = metadata_filter
+        mongo_filter = {field_name: field_value}
         
-        print(f"Attempting to delete documents with filter: {mongo_filter}")
-        result = self.collection.delete_many(mongo_filter)
-        print(f"Deleted {result.deleted_count} documents matching filter: {metadata_filter}")
-        return result.deleted_count
-
-    def delete_documents_by_strapi_id(self, strapi_id: int):
-        """
-        Deletes all document chunks associated with a specific Strapi entry ID.
-
-        Args:
-            strapi_id: The integer ID of the Strapi entry.
-        """
-        if not isinstance(strapi_id, int):
-            print("Invalid Strapi ID provided for deletion.")
+        logger.info(f"Attempting to delete documents with filter: {mongo_filter}")
+        try:
+            result = self.collection.delete_many(mongo_filter)
+            logger.info(f"Deleted {result.deleted_count} documents matching filter: {mongo_filter}")
+            return result.deleted_count
+        except Exception as e:
+            logger.error(f"An error occurred during deletion with filter {mongo_filter}: {e}", exc_info=True)
             return 0
-        
-        # The filter targets the 'strapi_id' field which is stored at the root of the document.
-        mongo_filter = {"strapi_id": strapi_id}
-        
-        print(f"Attempting to delete documents with Strapi ID: {strapi_id}")
-        result = self.collection.delete_many(mongo_filter)
-        print(f"Deleted {result.deleted_count} documents for Strapi ID: {strapi_id}")
-        return result.deleted_count
-
-    def delete_documents_by_document_id(self, document_id: str):
-        """
-        Deletes all document chunks associated with a specific Strapi document ID.
-        This is the correct way to delete an article and all its localizations.
-
-        Args:
-            document_id: The string ID of the Strapi document.
-        """
-        if not isinstance(document_id, str):
-            print("Invalid Strapi document_id provided for deletion.")
-            return 0
-        
-        # The filter targets the 'document_id' field which is stored at the root of the document.
-        mongo_filter = {"document_id": document_id}
-        
-        print(f"Attempting to delete documents with document_id: {document_id}")
-        result = self.collection.delete_many(mongo_filter)
-        print(f"Deleted {result.deleted_count} documents for document_id: {document_id}")
-        return result.deleted_count
 
     def clear_all_documents(self):
         """
         Deletes all documents from the collection. Use with caution.
         """
-        print(f"Attempting to delete ALL documents from collection: '{self.collection_name}' in db: '{self.db_name}'")
-        result = self.collection.delete_many({})
-        print(f"Deleted {result.deleted_count} documents. Collection should now be empty.")
-        return result.deleted_count
+        logger.warning(f"Attempting to delete ALL documents from collection: '{self.collection_name}' in db: '{self.db_name}'")
+        try:
+            result = self.collection.delete_many({})
+            logger.info(f"Deleted {result.deleted_count} documents. Collection should now be empty.")
+            return result.deleted_count
+        except Exception as e:
+            logger.error(f"An error occurred during clearing all documents: {e}", exc_info=True)
+            return 0
 
 # For direct execution and testing of this module (optional)
 if __name__ == '__main__':
     from dotenv import load_dotenv
-    load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env.example')) # Load from backend/.env.example
+    load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env.example'))
 
-    print("Testing VectorStoreManager...")
+    logger.info("Testing VectorStoreManager...")
     try:
-        # Initialize manager (ensure MONGO_URI and GOOGLE_API_KEY are in .env.example)
         manager = VectorStoreManager(collection_name="test_collection")
         
-        # Clear any previous test data
         manager.clear_all_documents()
 
-        # Create dummy documents
         doc1 = Document(page_content="This is test document one about apples.", metadata={"source": "test_file_1.txt", "id": 1})
         doc2 = Document(page_content="This is test document two about oranges.", metadata={"source": "test_file_2.txt", "id": 2})
         doc3 = Document(page_content="Another test document, also about apples and fruits.", metadata={"source": "test_file_1.txt", "id": 3})
         
         docs_to_add = [doc1, doc2, doc3]
 
-        # Add documents
-        print(f"\nAdding {len(docs_to_add)} documents...")
+        logger.info(f"\nAdding {len(docs_to_add)} documents...")
         doc_embedding_model = get_default_embedding_model(task_type="retrieval_document")
         manager.add_documents(docs_to_add, embeddings_model=doc_embedding_model)
 
-        # Test retrieval
-        print("\nTesting retrieval for 'apples'...")
+        logger.info("\nTesting retrieval for 'apples'...")
         retriever = manager.get_retriever(search_kwargs={"k": 2})
-        # The retriever uses the default_query_embeddings (task_type='retrieval_query')
         retrieved_docs = retriever.get_relevant_documents("apples")
-        print(f"Retrieved {len(retrieved_docs)} documents for 'apples':")
+        logger.info(f"Retrieved {len(retrieved_docs)} documents for 'apples':")
         for i, doc in enumerate(retrieved_docs):
-            print(f"  Doc {i+1}: {doc.page_content[:50]}... (Metadata: {doc.metadata})")
+            logger.info(f"  Doc {i+1}: {doc.page_content[:50]}... (Metadata: {doc.metadata})")
         
-        # Test deletion by metadata
-        print("\nTesting deletion for metadata {'source': 'test_file_1.txt'}...")
-        deleted_count = manager.delete_documents_by_metadata({"source": "test_file_1.txt"})
-        print(f"Deleted {deleted_count} documents.")
+        logger.info("\nTesting deletion for metadata field 'source' with value 'test_file_1.txt'...")
+        deleted_count = manager.delete_documents_by_metadata_field("source", "test_file_1.txt")
+        logger.info(f"Deleted {deleted_count} documents.")
 
-        # Verify deletion by trying to retrieve again (should be fewer or different docs)
-        print("\nTesting retrieval for 'apples' after deletion...")
+        logger.info("\nTesting retrieval for 'apples' after deletion...")
         retrieved_docs_after_delete = retriever.get_relevant_documents("apples")
-        print(f"Retrieved {len(retrieved_docs_after_delete)} documents for 'apples' after deletion:")
+        logger.info(f"Retrieved {len(retrieved_docs_after_delete)} documents for 'apples' after deletion:")
         for i, doc in enumerate(retrieved_docs_after_delete):
-            print(f"  Doc {i+1}: {doc.page_content[:50]}... (Metadata: {doc.metadata})")
+            logger.info(f"  Doc {i+1}: {doc.page_content[:50]}... (Metadata: {doc.metadata})")
             assert doc.metadata["source"] != "test_file_1.txt"
 
-        # Clean up: delete the test collection or remaining documents
-        print("\nCleaning up: Deleting all documents from test_collection...")
+        logger.info("\nCleaning up: Deleting all documents from test_collection...")
         manager.clear_all_documents()
-        print("\nVectorStoreManager test finished.")
+        logger.info("\nVectorStoreManager test finished.")
 
     except ValueError as ve:
-        print(f"Configuration Error: {ve}")
-        print("Please ensure MONGO_URI and GOOGLE_API_KEY are set in your .env.example file in the backend directory.")
+        logger.error(f"Configuration Error: {ve}")
+        logger.error("Please ensure MONGO_URI and GOOGLE_API_KEY are set in your .env.example file in the backend directory.")
     except Exception as e:
-        print(f"An error occurred during VectorStoreManager test: {e}")
+        logger.error(f"An error occurred during VectorStoreManager test: {e}")

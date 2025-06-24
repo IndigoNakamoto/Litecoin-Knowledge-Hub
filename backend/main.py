@@ -22,7 +22,17 @@ from backend.api.v1.sources import router as sources_router
 from backend.api.v1.sync.payload import router as payload_sync_router
 from bson import ObjectId
 from fastapi.encoders import jsonable_encoder # Import jsonable_encoder
+import logging
+
 from fastapi.middleware.cors import CORSMiddleware
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Set uvicorn loggers to INFO to see detailed request/response info
+logging.getLogger("uvicorn.access").setLevel(logging.INFO)
+logging.getLogger("uvicorn.error").setLevel(logging.INFO)
 
 app = FastAPI()
 

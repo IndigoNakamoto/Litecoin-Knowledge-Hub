@@ -12,7 +12,7 @@
 
   * #### **Name: Setup and Integrate Payload CMS**
 
-  * #### **Detailed Description & Business Context: As per the project roadmap, this task involves establishing Payload CMS as the content foundation for the Litecoin Knowledge Hub. The work includes setting up a self-hosted Payload instance, defining the content schemas (collections) for our knowledge base, and building the integration layer that connects the CMS to our RAG pipeline's content ingestion service. This is a critical step to enable a robust, Foundation-controlled editorial workflow. We have successfully replaced Strapi with Payload CMS, scaffolded the project, and migrated core collections (Articles, Categories, Users) and authorization. The `afterChange` hook is now triggering the Content Sync Service, and the initial webhook payload issue has been resolved. However, the content chunking within the Embedding Processor still requires refinement.**
+  * #### **Detailed Description & Business Context: As per the project roadmap, this task involves establishing Payload CMS as the content foundation for the Litecoin Knowledge Hub. The work includes setting up a self-hosted Payload instance, defining the content schemas (collections) for our knowledge base, and building the integration layer that connects the CMS to our RAG pipeline's content ingestion service. This is a critical step to enable a robust, Foundation-controlled editorial workflow. We have successfully replaced Strapi with Payload CMS, scaffolded the project, and migrated core collections (Articles, Categories, Users) and authorization. The `afterChange` hook is now triggering the Content Sync Service, and the initial webhook payload issue has been resolved. The embedding processor has been refactored to correctly handle Payload's rich text format, ensuring hierarchical chunking and metadata preservation.**
 
   * #### **Acceptance Criteria:**
 
@@ -21,8 +21,8 @@
     3. Role-based access controls (RBAC) are configured for Foundation editors and community contributors.  
     4. Payload's afterChange hooks are implemented to trigger the Content Sync Service upon publishing content.  
     5. The Content Sync Service successfully fetches and processes content from the Payload CMS API.  
-    6. The Embedding Processor correctly parses, chunks, and prepares content from Payload for the vector store. **(Currently in progress, chunking quality needs improvement)**  
-    7. End-to-end tests confirm that content published in Payload is successfully ingested into the RAG pipeline. **(Initial ingestion confirmed, but chunking quality needs verification)**  
+    6. The Embedding Processor correctly parses, chunks, and prepares content from Payload for the vector store. **(✅ Completed)**  
+    7. End-to-end tests confirm that content published in Payload is successfully ingested into the RAG pipeline. **(Verification in Progress)**  
     8. Relevant project documents (techStack.md, codebaseSummary.md, README.md) are updated to reflect the final Payload CMS integration architecture.
 
   * #### **Link to projectRoadmap.md goal(s):**

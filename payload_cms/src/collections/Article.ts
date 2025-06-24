@@ -1,3 +1,4 @@
+// payload_cms/src/collections/Article.ts
 import {
   BlockquoteFeature,
   BoldFeature,
