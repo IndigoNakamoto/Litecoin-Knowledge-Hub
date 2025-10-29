@@ -44,6 +44,7 @@ The project has successfully completed the implementation of the core RAG pipeli
 
 *The goal of this phase is to increase user trust, engagement, and the precision of the RAG pipeline.*
 
+* **Conversational Memory & Context:** Implement a stateful backend (using LangGraph) to retain conversation history, enabling users to ask natural follow-up questions.
 * **Trust & Transparency (Source Citations):** Implement in-line citations in AI responses, linking directly to source documents.  
 * **Contextual Discovery (AI-Generated Follow-up Questions):** Generate relevant, clickable follow-up questions after each response.  
 * **Upgraded Retrieval Engine (Hybrid Search & Re-ranking):** Enhance retrieval accuracy by combining vector similarity with keyword search.  
@@ -197,7 +198,7 @@ For more details, see cline\_docs/techStack.md.
    cd frontend  
    npm install  
    npm run dev  
-   \# Frontend available at http://localhost:3000
+   \# Frontend available at <http://localhost:3000>
 
 2. **Backend (FastAPI):**  
    cd backend  
@@ -205,7 +206,7 @@ For more details, see cline\_docs/techStack.md.
    pip install \-r requirements.txt  
    cp .env.example .env && \# Edit .env with your credentials  
    uvicorn main:app \--reload  
-   \# Backend available at http://localhost:8000
+   \# Backend available at <http://localhost:8000>
 
 ## **Contributing**
 
