@@ -80,6 +80,19 @@ async def chat_options():
     """
     return {"status": "ok"}
 
+@app.post("/api/v1/refresh-rag")
+async def refresh_rag_pipeline():
+    """
+    Endpoint to manually refresh the RAG pipeline vector store.
+    This is useful after adding new documents to ensure queries use the latest content.
+    """
+    try:
+        rag_pipeline_instance.refresh_vector_store()
+        return {"status": "success", "message": "RAG pipeline refreshed successfully"}
+    except Exception as e:
+        logger.error(f"Error refreshing RAG pipeline: {e}")
+        return {"status": "error", "message": str(e)}
+
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     """

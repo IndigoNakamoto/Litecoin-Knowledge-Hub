@@ -3,7 +3,7 @@ import logging # Import logging
 from typing import List, Dict, Any
 from pymongo import MongoClient
 from langchain_core.documents import Document
-from langchain_mongodb import MongoDBAtlasVectorSearch
+from langchain_community.vectorstores import FAISS
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 logger = logging.getLogger(__name__) # Initialize logger
@@ -24,7 +24,7 @@ def get_default_embedding_model(task_type: str = "retrieval_document"):
 
 class VectorStoreManager:
     """
-    Manages interactions with the MongoDB Atlas Vector Search instance.
+    Manages interactions with FAISS vector store and MongoDB document storage.
     """
     def __init__(self, db_name: str = "litecoin_rag_db", collection_name: str = "litecoin_docs"):
         """
@@ -35,28 +35,76 @@ class VectorStoreManager:
             collection_name: The name of the collection to use.
         """
         self.mongo_uri = os.getenv("MONGO_URI")
-        if not self.mongo_uri:
-            raise ValueError("MONGO_URI environment variable not set.")
-        
-        self.client = MongoClient(self.mongo_uri)
-        self.db_name = db_name
-        self.collection_name = collection_name
-        self.collection = self.client[self.db_name][self.collection_name]
-        
+        self.mongodb_available = False
+
+        if self.mongo_uri:
+            try:
+                self.client = MongoClient(self.mongo_uri, serverSelectionTimeoutMS=5000)
+                # Test connection
+                self.client.admin.command('ping')
+                self.mongodb_available = True
+                self.db_name = db_name
+                self.collection_name = collection_name
+                self.collection = self.client[self.db_name][self.collection_name]
+                logger.info("MongoDB connection successful")
+            except Exception as e:
+                logger.warning(f"MongoDB connection failed: {e}. Using FAISS only mode.")
+                self.mongodb_available = False
+        else:
+            logger.warning("MONGO_URI not set. Using FAISS only mode.")
+            self.mongodb_available = False
+
+        self.faiss_index_path = os.getenv("FAISS_INDEX_PATH", "./backend/faiss_index")
         self.default_query_embeddings = get_default_embedding_model(task_type="retrieval_query")
 
-        self.vector_store = MongoDBAtlasVectorSearch(
-            collection=self.collection,
-            embedding=self.default_query_embeddings,
-            index_name=os.getenv("MONGO_VECTOR_INDEX_NAME", "vector_index"),
-            text_key="text",
-            metadata_key="metadata"
-        )
-        logger.info(f"VectorStoreManager initialized for db: '{self.db_name}', collection: '{self.collection_name}'")
+        # Try to load existing FAISS index, otherwise create empty or from MongoDB
+        index_file = os.path.join(self.faiss_index_path, "index.faiss")
+        if os.path.exists(index_file):
+            logger.info(f"Loading existing FAISS index from {self.faiss_index_path}")
+            self.vector_store = FAISS.load_local(self.faiss_index_path, self.default_query_embeddings, allow_dangerous_deserialization=True)
+        elif self.mongodb_available:
+            logger.info("No existing FAISS index found, creating from MongoDB documents")
+            self.vector_store = self._create_faiss_from_mongodb()
+        else:
+            logger.info("No existing FAISS index and MongoDB unavailable, creating empty FAISS index")
+            embeddings_model = get_default_embedding_model(task_type="retrieval_document")
+            self.vector_store = FAISS.from_texts([""], embeddings_model)  # Empty index
+
+        logger.info(f"VectorStoreManager initialized (MongoDB: {'available' if self.mongodb_available else 'unavailable'})")
+
+    def _create_faiss_from_mongodb(self):
+        """Creates FAISS vector store from existing MongoDB documents."""
+        # Load all documents from MongoDB
+        mongo_docs = list(self.collection.find({}))
+        documents = []
+        for doc in mongo_docs:
+            # Assuming documents are stored with 'text' and 'metadata' fields
+            text = doc.get('text', '')
+            metadata = doc.get('metadata', {})
+            documents.append(Document(page_content=text, metadata=metadata))
+
+        if documents:
+            logger.info(f"Creating FAISS index from {len(documents)} documents in MongoDB")
+            embeddings_model = get_default_embedding_model(task_type="retrieval_document")
+            vector_store = FAISS.from_documents(documents, embeddings_model)
+            # Save the index
+            vector_store.save_local(self.faiss_index_path)
+            return vector_store
+        else:
+            logger.info("No documents in MongoDB, creating empty FAISS index")
+            embeddings_model = get_default_embedding_model(task_type="retrieval_document")
+            vector_store = FAISS.from_texts([""], embeddings_model)  # Empty index
+            vector_store.save_local(self.faiss_index_path)
+            return vector_store
+
+    def _save_faiss_index(self):
+        """Saves the current FAISS index to disk."""
+        self.vector_store.save_local(self.faiss_index_path)
+        logger.info(f"FAISS index saved to {self.faiss_index_path}")
 
     def add_documents(self, documents: List[Document], embeddings_model=None, batch_size: int = 10):
         """
-        Adds documents to the vector store in batches.
+        Adds documents to FAISS vector store and MongoDB storage in batches.
 
         Args:
             documents: A list of Langchain Document objects.
@@ -73,22 +121,35 @@ class VectorStoreManager:
         active_embeddings_model = embeddings_model
         if active_embeddings_model is None:
             active_embeddings_model = get_default_embedding_model(task_type="retrieval_document")
-        
+
         total_docs = len(documents)
         success_count = 0
         for i in range(0, total_docs, batch_size):
             batch = documents[i:i + batch_size]
             logger.info(f"Processing batch {i//batch_size + 1}/{(total_docs + batch_size - 1)//batch_size}...")
             try:
+                # Add to FAISS
                 self.vector_store.add_documents(batch, embedding=active_embeddings_model)
+
+                # Store in MongoDB if available
+                if self.mongodb_available:
+                    for doc in batch:
+                        mongo_doc = {
+                            "text": doc.page_content,
+                            "metadata": doc.metadata
+                        }
+                        self.collection.insert_one(mongo_doc)
+
                 success_count += len(batch)
                 logger.info(f"Successfully added batch of {len(batch)} documents.")
             except Exception as e:
                 logger.error(f"Error adding batch {i//batch_size + 1}: {e}", exc_info=True)
                 # Re-raise the exception to propagate the error to the calling function
                 raise e
-        
-        logger.info(f"Finished adding {success_count} of {total_docs} documents to collection '{self.collection_name}'.")
+
+        # Save FAISS index after all additions
+        self._save_faiss_index()
+        logger.info(f"Finished adding {success_count} of {total_docs} documents to FAISS and MongoDB collection '{self.collection_name}'.")
 
     def get_retriever(self, search_type="similarity", search_kwargs=None):
         """
@@ -107,7 +168,7 @@ class VectorStoreManager:
 
     def delete_documents_by_metadata_field(self, field_name: str, field_value: Any):
         """
-        Deletes documents from the vector store that match a specific metadata field and value.
+        Deletes documents from MongoDB and rebuilds FAISS index.
         This is the generic method for deleting documents based on a metadata key-value pair.
 
         Args:
@@ -117,13 +178,21 @@ class VectorStoreManager:
         if not field_name or field_value is None:
             logger.warning("Field name and value must be provided for deletion.")
             return 0
-        
+
+        if not self.mongodb_available:
+            logger.warning("MongoDB not available. Cannot perform selective deletion. Use clear_all_documents to reset FAISS index.")
+            return 0
+
         mongo_filter = {field_name: field_value}
-        
+
         logger.info(f"Attempting to delete documents with filter: {mongo_filter}")
         try:
             result = self.collection.delete_many(mongo_filter)
             logger.info(f"Deleted {result.deleted_count} documents matching filter: {mongo_filter}")
+
+            # Rebuild FAISS index from remaining MongoDB documents
+            self.vector_store = self._create_faiss_from_mongodb()
+
             return result.deleted_count
         except Exception as e:
             logger.error(f"An error occurred during deletion with filter {mongo_filter}: {e}", exc_info=True)
@@ -131,21 +200,31 @@ class VectorStoreManager:
 
     def clear_all_documents(self):
         """
-        Deletes all documents from the collection. Use with caution.
+        Deletes all documents from MongoDB and creates empty FAISS index. Use with caution.
         """
-        logger.warning(f"Attempting to delete ALL documents from collection: '{self.collection_name}' in db: '{self.db_name}'")
-        try:
-            result = self.collection.delete_many({})
-            logger.info(f"Deleted {result.deleted_count} documents. Collection should now be empty.")
-            return result.deleted_count
-        except Exception as e:
-            logger.error(f"An error occurred during clearing all documents: {e}", exc_info=True)
-            return 0
+        if self.mongodb_available:
+            logger.warning(f"Attempting to delete ALL documents from collection: '{self.collection_name}' in db: '{self.db_name}'")
+            try:
+                result = self.collection.delete_many({})
+                logger.info(f"Deleted {result.deleted_count} documents. Collection should now be empty.")
+            except Exception as e:
+                logger.error(f"An error occurred during clearing all documents: {e}", exc_info=True)
+                return 0
+        else:
+            logger.warning("MongoDB not available. Clearing FAISS index only.")
+
+        # Create empty FAISS index
+        embeddings_model = get_default_embedding_model(task_type="retrieval_document")
+        self.vector_store = FAISS.from_texts([""], embeddings_model)  # Empty index
+        self._save_faiss_index()
+        logger.info("FAISS index cleared and saved.")
+
+        return 0 if not self.mongodb_available else result.deleted_count
 
 # For direct execution and testing of this module (optional)
 if __name__ == '__main__':
     from dotenv import load_dotenv
-    load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env.example'))
+    load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
     logger.info("Testing VectorStoreManager...")
     try:

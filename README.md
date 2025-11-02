@@ -99,7 +99,7 @@ flowchart TD
 
     subgraph "Data Stores"
         style Storage fill:#F8CECC,stroke:#B85450,color:#333,stroke-width:2px
-        VDB("fa:fa-layer-group Vector Store (MongoDB Atlas)"):::storageStyle
+        VDB("fa:fa-layer-group Vector Store (FAISS/MongoDB Atlas Hybrid)"):::storageStyle
     end
 
     %% -------------------
@@ -181,32 +181,69 @@ For more details, see cline\_docs/techStack.md.
 * **Backend:** Python, FastAPI, Langchain  
 * **AI/LLM:** Google Text Embedding 004, Gemini Pro  
 * **Content Management:** Payload CMS (self-hosted)  
-* **Database:** MongoDB, MongoDB Atlas Vector Search  
+* **Database:** MongoDB, MongoDB Atlas Vector Search / FAISS (hybrid for local development)
 * **Deployment:** Vercel (Frontend), TBD (Backend, Payload)
 
 ## **Getting Started**
 
 ### **Prerequisites**
 
-* Node.js v18.18.0+  
-* Python 3.x  
-* Access to a self-hosted Payload CMS instance and MongoDB database.
+* Node.js v18.18.0+
+* Python 3.x
+* Local MongoDB instance (optional, for document persistence)
+* FAISS (automatically installed via pip)
+
+### **Local Development Setup**
+
+#### Vector Store Configuration
+
+For local development, the backend uses FAISS vector store instead of MongoDB Atlas Vector Search. This provides faster setup and doesn't require an Atlas cluster.
+
+1. **Install and Start MongoDB:**
+   ```bash
+   # Using Homebrew
+   brew install mongodb/brew/mongodb-community
+   brew services start mongodb-community
+
+   # Or using Docker
+   docker run -d --name mongodb -p 27017:27017 mongo:latest
+   ```
+
+2. **Configure Environment Variables:**
+   Update `backend/.env` with local settings:
+   ```env
+   # Local MongoDB Connection String
+   MONGO_URI="mongodb://localhost:27017"
+   FAISS_INDEX_PATH="./backend/faiss_index"
+
+   # Keep other variables (GOOGLE_API_KEY, etc.)
+   ```
+
+3. **Data Persistence:**
+   - **Documents**: Stored in local MongoDB collections
+   - **Embeddings**: Stored in FAISS index files on disk
+   - **Index Location**: Configured via `FAISS_INDEX_PATH`
 
 ### **Running Development Servers**
 
-1. **Frontend (Next.js):**  
-   cd frontend  
-   npm install  
-   npm run dev  
+1. **Frontend (Next.js):**
+   cd frontend
+   npm install
+   npm run dev
    \# Frontend available at <http://localhost:3000>
 
-2. **Backend (FastAPI):**  
-   cd backend  
-   python3 \-m venv venv && source venv/bin/activate  
-   pip install \-r requirements.txt  
-   cp .env.example .env && \# Edit .env with your credentials  
-   uvicorn main:app \--reload  
+2. **Backend (FastAPI):**
+   cd backend
+   python3 -m venv venv && source venv/bin/activate
+   pip install -r requirements.txt
+   cp .env.example .env && \# Edit .env with your local credentials
+   uvicorn main:app --reload
    \# Backend available at <http://localhost:8000>
+
+   The backend will automatically:
+   - Load existing FAISS index if available
+   - Create new index from MongoDB documents if needed
+   - Save index changes to disk after updates
 
 ## **Contributing**
 

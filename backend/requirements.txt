@@ -21,5 +21,6 @@ pytest
 pytest-asyncio
 pytest-mock
 python-dotenv
-langchain_mongodb
+langchain-community
 langchain_google_genai
+faiss-cpu==1.8.0

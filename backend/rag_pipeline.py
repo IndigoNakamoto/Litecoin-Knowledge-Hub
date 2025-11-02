@@ -11,6 +11,7 @@ from langchain_core.documents import Document
 from langchain.chains import create_history_aware_retriever, create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain # Corrected import path
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from data_ingestion.vector_store_manager import VectorStoreManager
 
 # --- Environment Variable Checks ---
 # Ensure GOOGLE_API_KEY is loaded. This check is critical.
@@ -27,7 +28,7 @@ DB_NAME = os.getenv("MONGO_DB_NAME", "litecoin_rag_db")
 COLLECTION_NAME = os.getenv("MONGO_COLLECTION_NAME", "litecoin_docs")
 INDEX_NAME = os.getenv("MONGO_VECTOR_INDEX_NAME", "vector_index") # Default to 'vector_index'
 EMBEDDING_MODEL_NAME = "models/text-embedding-004"
-LLM_MODEL_NAME = "gemini-1.5-flash-latest" # Updated to a common model, was gemini-2.5-flash-preview-05-20
+LLM_MODEL_NAME = "gemini-2.5-flash" # Updated to correct model name
 
 # --- RAG Prompt Templates ---
 # 1. History-aware question rephrasing prompt
@@ -88,16 +89,14 @@ class RAGPipeline:
             self.vector_store = vector_store_manager.vector_store # Use its underlying Langchain vector store
             print(f"RAGPipeline using provided VectorStoreManager for collection: {vector_store_manager.collection_name}")
         else:
-            # Default initialization for production or general use
-            mongo_client = MongoClient(MONGO_URI)
-            db = mongo_client[self.db_name]
-            collection = db[self.collection_name]
-            self.vector_store = MongoDBAtlasVectorSearch(
-                collection=collection,
-                embedding=self.query_embeddings, # Used by retriever for query embedding if not overridden
-                index_name=INDEX_NAME
+            # Default initialization using VectorStoreManager for better compatibility
+            # This will use FAISS + MongoDB if available, or FAISS-only if MongoDB Atlas features aren't available
+            self.vector_store_manager = VectorStoreManager(
+                db_name=self.db_name,
+                collection_name=self.collection_name
             )
-            print(f"RAGPipeline initialized default VectorStore for collection: {self.collection_name}")
+            self.vector_store = self.vector_store_manager.vector_store
+            print(f"RAGPipeline initialized with VectorStoreManager for collection: {self.collection_name} (MongoDB: {'available' if self.vector_store_manager.mongodb_available else 'unavailable'})")
 
         # Initialize LLM
         self.llm = ChatGoogleGenerativeAI(model=LLM_MODEL_NAME, temperature=0.7, google_api_key=google_api_key)
@@ -109,24 +108,54 @@ class RAGPipeline:
         """Sets up the main RAG chain with conversational history."""
         retriever = self.vector_store.as_retriever(
             search_type="similarity",
-            search_kwargs={"k": 10} # Retrieve top 5 documents for context
+            search_kwargs={"k": 10} # Retrieve top 10 documents for context
         )
 
-        # 1. Create a history-aware retriever
-        # This chain takes the chat history and the new question, and rephrases the question
-        # to be standalone if necessary.
-        history_aware_retriever = create_history_aware_retriever(
-            self.llm, retriever, QA_WITH_HISTORY_PROMPT
-        )
+        # For now, use direct retriever instead of history-aware to fix Bitcoin content retrieval
+        # TODO: Fix history-aware retriever to work properly with multiple articles
 
-        # 2. Create the document combining chain
+        # 1. Create the document combining chain
         # This chain takes the retrieved documents and the user's question,
         # formats them, and passes them to the LLM for final answer generation.
         document_chain = create_stuff_documents_chain(self.llm, rag_prompt)
 
-        # 3. Create the full retrieval chain
-        # This chain combines the history-aware retriever with the document combining chain.
-        self.rag_chain = create_retrieval_chain(history_aware_retriever, document_chain)
+        # 2. Create the full retrieval chain
+        # This chain combines the direct retriever with the document combining chain.
+        self.rag_chain = create_retrieval_chain(retriever, document_chain)
+
+    def refresh_vector_store(self):
+        """
+        Refreshes the vector store by reloading from disk and recreating the RAG chain.
+        This should be called after new documents are added to ensure queries use the latest content.
+        """
+        try:
+            print("🔄 Refreshing RAG pipeline vector store...")
+
+            # Reload the vector store from disk (this will include newly added documents)
+            if hasattr(self, 'vector_store_manager') and self.vector_store_manager:
+                # For VectorStoreManager instances, reload the FAISS index
+                self.vector_store_manager.vector_store = self.vector_store_manager._create_faiss_from_mongodb()
+                self.vector_store = self.vector_store_manager.vector_store
+                print("✅ Vector store reloaded from disk")
+            else:
+                # Fallback: try to reload FAISS directly
+                from langchain_community.vectorstores import FAISS
+                faiss_index_path = getattr(self.vector_store, 'index_to_docstore_id', None)
+                if faiss_index_path and hasattr(self.vector_store, 'save_local'):
+                    # Try to reload from the same path
+                    import os
+                    index_path = os.path.join(os.path.dirname(faiss_index_path) if faiss_index_path else ".", "faiss_index")
+                    if os.path.exists(os.path.join(index_path, "index.faiss")):
+                        self.vector_store = FAISS.load_local(index_path, self.query_embeddings, allow_dangerous_deserialization=True)
+                        print("✅ FAISS index reloaded from disk")
+
+            # Recreate the RAG chain with the updated vector store
+            self._setup_rag_chain()
+            print("🎯 RAG pipeline refreshed successfully")
+
+        except Exception as e:
+            print(f"❌ Error refreshing vector store: {e}")
+            # Don't raise the exception - continue with the old vector store rather than crashing
 
     def query(self, query_text: str, chat_history: List[Tuple[str, str]]) -> Tuple[str, List[Document]]:
         """
@@ -150,10 +179,13 @@ class RAGPipeline:
             result = self.rag_chain.invoke(
                 {"input": query_text, "chat_history": converted_chat_history}
             )
-            
+
             answer = result.get("answer", "Error: Could not generate answer.")
             # The 'context' key from the retriever is now directly available in the result
-            sources = result.get("context", []) 
+            sources = result.get("context", [])
+
+            # Sources are now properly retrieved from the RAG chain
+
             return answer, sources
         except Exception as e:
             print(f"Error during RAG query execution: {e}")
