@@ -3,6 +3,7 @@
 import { useState } from "react";
 import ChatWindow from "@/components/ChatWindow";
 import Message from "@/components/Message";
+import MessageLoader from "@/components/MessageLoader";
 import InputBox from "@/components/InputBox";
 
 interface Message {
@@ -64,10 +65,16 @@ export default function Home() {
   return (
     <div className="flex flex-col h-screen max-h-screen bg-background">
       <div className="flex-1 overflow-hidden">
-        <ChatWindow>
+        <ChatWindow shouldScrollToBottom={true}>
           {messages.map((msg, index) => (
-            <Message key={index} role={msg.role === "human" ? "user" : "assistant"} content={msg.content} sources={msg.sources} />
+            <Message
+              key={index}
+              role={msg.role === "human" ? "user" : "assistant"}
+              content={msg.content}
+              sources={msg.sources}
+            />
           ))}
+          {isLoading && <MessageLoader />}
         </ChatWindow>
       </div>
       <InputBox onSendMessage={handleSendMessage} isLoading={isLoading} />

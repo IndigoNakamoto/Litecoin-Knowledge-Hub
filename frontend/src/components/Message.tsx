@@ -8,22 +8,15 @@ import {
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import MessageLoader from "./MessageLoader";
 
 interface MessageProps {
   role: "user" | "assistant";
   content: string;
   sources?: { metadata?: { title?: string; source?: string } }[];
-  isLoading?: boolean;
 }
 
-const Message: React.FC<MessageProps> = ({ role, content, sources, isLoading = false }) => {
+const Message: React.FC<MessageProps> = ({ role, content, sources }) => {
   const isUser = role === "user";
-
-  // Show loader for assistant messages that are loading
-  if (isLoading && !isUser) {
-    return <MessageLoader />;
-  }
 
   return (
     <div className={`flex items-start gap-4 ${isUser ? "justify-end" : ""}`} >
