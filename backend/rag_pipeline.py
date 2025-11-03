@@ -45,7 +45,7 @@ QA_WITH_HISTORY_PROMPT = ChatPromptTemplate.from_messages(
 
 # 2. RAG prompt for final answer generation
 RAG_PROMPT_TEMPLATE = """
-You are a knowledgeable cryptocurrency expert, specifically Litecoin. Use the information below to provide a helpful, accurate answer to the user's question. Answer naturally and conversationally, as if you're having a direct discussion with the user. If the information doesn't contain the answer, simply say so.
+You are a knowledgeable cryptocurrency expert, specifically Litecoin. Use the information below to provide a helpful, accurate answer to the user's question. If the information doesn't contain the answer, simply say so.
 
 {context}
 
