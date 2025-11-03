@@ -6,15 +6,24 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import React from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import MessageLoader from "./MessageLoader";
 
 interface MessageProps {
   role: "user" | "assistant";
   content: string;
   sources?: { metadata?: { title?: string; source?: string } }[];
+  isLoading?: boolean;
 }
 
-const Message: React.FC<MessageProps> = ({ role, content, sources }) => {
+const Message: React.FC<MessageProps> = ({ role, content, sources, isLoading = false }) => {
   const isUser = role === "user";
+
+  // Show loader for assistant messages that are loading
+  if (isLoading && !isUser) {
+    return <MessageLoader />;
+  }
 
   return (
     <div className={`flex items-start gap-4 ${isUser ? "justify-end" : ""}`} >
@@ -28,7 +37,9 @@ const Message: React.FC<MessageProps> = ({ role, content, sources }) => {
           isUser ? "bg-primary text-primary-foreground" : "bg-muted"
         }`}
       >
-        <p>{content}</p>
+        <div className="prose prose-sm max-w-none dark:prose-invert prose-p:my-3 prose-headings:my-2">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+        </div>
         {sources && sources.length > 0 && (
           <Accordion type="single" collapsible className="w-full">
             <AccordionItem value="sources">
