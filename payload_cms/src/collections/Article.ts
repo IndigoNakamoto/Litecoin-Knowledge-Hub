@@ -18,11 +18,13 @@ import type { SerializedEditorState } from '@payloadcms/richtext-lexical/lexical
 import { CollectionConfig } from 'payload/types'
 import { isVerifiedTranslatorField } from '../access/isVerifiedTranslatorField'
 import type { User } from '../payload-types' // It's good practice to import your generated types
+import StatusBadge from '../components/StatusBadge'
 
 export const Article: CollectionConfig = {
   slug: 'articles',
   admin: {
     useAsTitle: 'title',
+    defaultColumns: ['title', 'status', 'updatedAt', 'category', 'author' ],
   },
   access: {
     create: ({ req: { user } }: any) => {
@@ -209,6 +211,9 @@ export const Article: CollectionConfig = {
       defaultValue: 'draft',
       admin: {
         position: 'sidebar',
+        components: {
+          Cell: StatusBadge,
+        },
       },
       access: {
         create: ({ req: { user } }: any) => {
@@ -216,16 +221,7 @@ export const Article: CollectionConfig = {
           const roles = user.roles || []
           return roles.includes('admin') || roles.includes('publisher')
         },
-        read: ({ req: { user } }: any) => {
-          if (!user) return true
-          const roles = user.roles || []
-          return (
-            roles.includes('admin') ||
-            roles.includes('publisher') ||
-            roles.includes('contributor') ||
-            roles.includes('verified-translator')
-          )
-        },
+        read: () => true,
         update: ({ req: { user } }: any) => {
           if (!user) return false
           const roles = user.roles || []
