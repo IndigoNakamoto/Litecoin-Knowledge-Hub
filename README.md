@@ -10,7 +10,7 @@ This project's value is not in competing with general-purpose AI models like Cha
 
 ## **Project Status: 📝 In Progress**
 
-The project has successfully completed the implementation of the core RAG pipeline and backend services. The current focus is on executing the migration from a proof-of-concept CMS to the production-ready **Payload CMS**, defining the final content schemas, and fully integrating it with the RAG pipeline's ingestion and synchronization services.
+The project has successfully completed the implementation of the core RAG pipeline and backend services, including **conversational memory and history-aware retrieval** that enables natural follow-up conversations. The **Payload CMS integration is now fully operational** with complete content lifecycle management (draft → publish → unpublish → delete) and real-time synchronization. The current focus is on populating the CMS with comprehensive Litecoin knowledge base content and preparing for MVP testing and deployment.
 
 ## **Key Features & User Stories**
 
@@ -21,12 +21,13 @@ The project has successfully completed the implementation of the core RAG pipeli
 
 | Feature Area | Description |
 | :---- | :---- |
+| **Conversational Memory** | Enables natural follow-up conversations with context-aware responses, allowing users to ask questions like "Who created it?" or "What about the second one?" that reference previous conversation context. |
 | **Litecoin Basics & FAQ** | Provides clear, concise answers to fundamental questions about Litecoin, its history, how it works, and common terminology. Caters especially to new users. |
 | **Transaction & Block Explorer** | Allows users to look up details of Litecoin transactions and explore block information. |
 | **Market Data & Insights** | Delivers real-time Litecoin price information, market capitalization, and trading volume from reliable market APIs. |
 | **Developer Documentation** | Provides quick access to snippets from Litecoin developer documentation and technical resources. |
 | **Curated Knowledge Base** | A continuously updated library of well-researched articles and data serving as the primary source for the chatbot's answers. |
-| **Payload CMS Integration** | A robust content management solution ensuring the quality and accuracy of the Knowledge Base with foundation-controlled editorial workflows. |
+| **Payload CMS Integration** | Complete content lifecycle management system with draft→publish→unpublish→delete workflows, real-time webhook synchronization, automated content filtering, and Foundation-controlled editorial oversight ensuring knowledge base quality and accuracy. |
 
 ## **Project Roadmap**
 
@@ -44,10 +45,10 @@ The project has successfully completed the implementation of the core RAG pipeli
 
 *The goal of this phase is to increase user trust, engagement, and the precision of the RAG pipeline.*
 
-* **Conversational Memory & Context:** Implement a stateful backend (using LangGraph) to retain conversation history, enabling users to ask natural follow-up questions.
-* **Trust & Transparency (Source Citations):** Implement in-line citations in AI responses, linking directly to source documents.  
-* **Contextual Discovery (AI-Generated Follow-up Questions):** Generate relevant, clickable follow-up questions after each response.  
-* **Upgraded Retrieval Engine (Hybrid Search & Re-ranking):** Enhance retrieval accuracy by combining vector similarity with keyword search.  
+* **Conversational Memory & Context:** ✅ **COMPLETED** - Implemented history-aware retrieval using LangChain conversational chains to retain conversation history, enabling users to ask natural follow-up questions with context-aware responses.
+* **Trust & Transparency (Source Citations):** Implement in-line citations in AI responses, linking directly to source documents.
+* **Contextual Discovery (AI-Generated Follow-up Questions):** Generate relevant, clickable follow-up questions after each response.
+* **Upgraded Retrieval Engine (Hybrid Search & Re-ranking):** Enhance retrieval accuracy by combining vector similarity with keyword search.
 * **User Feedback Loop:** Introduce a mechanism for users to provide direct feedback on AI answer quality.
 
 ### **Phase 3: Live Data & Developer Integrations (Post-MVP)**
@@ -150,7 +151,7 @@ flowchart TD
 | ✅ | [**M2: Basic Project Scaffold**](./cline_docs/milestones/milestone_2_basic_project_scaffold.md) | Initial Next.js frontend and FastAPI backend. |
 | ✅ | [**M3: Core RAG Pipeline**](./cline_docs/milestones/milestone_3_core_rag_pipeline.md) | Implemented data ingestion, vector search, and generation. |
 | ✅ | [**M4: Litecoin Basics & FAQ**](./cline_docs/milestones/milestone_4_litecoin_basics_faq.md) | CRUD API for data sources and full ingestion of initial FAQ knowledge base. |
-| 🟨 | [**M5: Payload CMS Setup & Integration**](./cline_docs/milestones/milestone_5_payload_cms_setup_integration.md) | Configure self-hosted Payload CMS and integrate its API and webhooks with the backend. |
+| ✅ | [**M5: Payload CMS Setup & Integration**](./cline_docs/milestones/milestone_5_payload_cms_setup_integration.md) | Configure self-hosted Payload CMS and integrate its API and webhooks with the backend. |
 | 📝 | [**M6: MVP Content Population**](./cline_docs/milestones/milestone_6_mvp_content_population_validation.md) | Populate Payload with the complete "Litecoin Basics & FAQ" knowledge base. |
 | 📝 | [**M7: MVP Testing & Deployment**](./cline_docs/milestones/milestone_7_mvp_testing_refinement_deployment.md) | Conduct comprehensive testing, refine UI, and execute initial production deployment. |
 | 📝 | [**M8: Implement Trust & Feedback Features**](./cline_docs/milestones/milestone_8_implement_trust_feedback_features.md) | Implement features from Phase 2 (UX/Accuracy). |
@@ -162,25 +163,39 @@ flowchart TD
 
 ## **Log of Completed Milestones**
 
-* **Strategic Decision: CMS Pivot to Payload (6/19/2025)**  
-  * Conducted a comparative analysis of headless CMS options and selected Payload to better align with the project's long-term RAG and data governance goals. This decision enables the work for Milestone 5\.  
-* **Milestone 4: Backend & Knowledge Base Completion (6/7/2025)**  
-  * Implemented a full suite of CRUD API endpoints (/api/v1/sources) for managing data sources and successfully ingested the entire initial knowledge base.  
-* **Milestone 3: Core RAG Pipeline Implementation (6/6/2025)**  
-  * Implemented and tested the end-to-end pipeline, including multi-source data loaders, Google Text Embedding 004, MongoDB Atlas Vector Search, and a gemini-pro generation layer. Enhanced pipeline with hierarchical chunking and metadata filtering.  
-* **Milestone 2: Basic Project Scaffold (6/5/2025)**  
-  * Frontend (Next.js) and Backend (FastAPI) directory structures established with basic functionality confirmed.  
-* **Milestone 1: Project Initialization & Documentation Setup (6/5/2025)**  
+* **Payload CMS Content Lifecycle Management (11/3/2025)**
+  * Implemented complete CMS content lifecycle with draft→publish→unpublish→delete workflows
+  * Added comprehensive webhook support for all content operations (create, update, delete)
+  * Enhanced vector store management for content removal and cleanup operations
+  * Implemented multi-layer draft content filtering (API, search, vector store)
+  * Added manual cleanup endpoints for draft document management
+  * Created custom StatusBadge component for visual content status indicators in admin interface
+  * Synchronized architectural documentation with Payload CMS integration reality
+* **Conversational Memory Implementation (11/3/2025)**
+  * Implemented history-aware retriever with standalone question generation using LangChain conversational chains
+  * Refactored RAG pipeline to use LCEL conversational chains for improved memory management
+  * Enhanced chat history pairing and error handling in backend API
+  * Added comprehensive conversational memory tests covering follow-up questions and context resolution
+  * Updated frontend message handling for complete exchanges with proper chat history passing
+* **Strategic Decision: CMS Pivot to Payload (6/19/2025)**
+  * Conducted a comparative analysis of headless CMS options and selected Payload to better align with the project's long-term RAG and data governance goals. This decision enables the work for Milestone 5\.
+* **Milestone 4: Backend & Knowledge Base Completion (6/7/2025)**
+  * Implemented a full suite of CRUD API endpoints (/api/v1/sources) for managing data sources and successfully ingested the entire initial knowledge base.
+* **Milestone 3: Core RAG Pipeline Implementation (6/6/2025)**
+  * Implemented and tested the end-to-end pipeline, including multi-source data loaders, Google Text Embedding 004, MongoDB Atlas Vector Search, and a gemini-pro generation layer. Enhanced pipeline with hierarchical chunking and metadata filtering.
+* **Milestone 2: Basic Project Scaffold (6/5/2025)**
+  * Frontend (Next.js) and Backend (FastAPI) directory structures established with basic functionality confirmed.
+* **Milestone 1: Project Initialization & Documentation Setup (6/5/2025)**
   * Initial project documentation (cline\_docs) created and populated.
 
 ## **Technology Stack**
 
 For more details, see cline\_docs/techStack.md.
 
-* **Frontend:** Next.js, TypeScript, Tailwind CSS  
-* **Backend:** Python, FastAPI, Langchain  
-* **AI/LLM:** Google Text Embedding 004, Gemini Pro  
-* **Content Management:** Payload CMS (self-hosted)  
+* **Frontend:** Next.js, TypeScript, Tailwind CSS
+* **Backend:** Python, FastAPI, LangChain (LCEL, Conversational Chains, History-Aware Retrieval)
+* **AI/LLM:** Google Text Embedding 004, Gemini Pro
+* **Content Management:** Payload CMS (self-hosted)
 * **Database:** MongoDB, MongoDB Atlas Vector Search / FAISS (hybrid for local development)
 * **Deployment:** Vercel (Frontend), TBD (Backend, Payload)
 
@@ -244,6 +259,38 @@ For local development, the backend uses FAISS vector store instead of MongoDB At
    - Load existing FAISS index if available
    - Create new index from MongoDB documents if needed
    - Save index changes to disk after updates
+
+3. **Payload CMS (Content Management):**
+   cd payload_cms
+   cp .env.example .env && \# Edit .env with your MongoDB connection string
+   pnpm install
+   pnpm dev
+   \# Payload CMS admin panel available at <http://localhost:3001>
+
+   **Environment Setup:**
+   ```env
+   # MongoDB connection (use same as backend for local development)
+   MONGODB_URI="mongodb://localhost:27017/payload_cms"
+
+   # Payload configuration
+   PAYLOAD_SECRET="your-secret-key-here"
+   PAYLOAD_PUBLIC_SERVER_URL="http://localhost:3001"
+   ```
+
+   **Alternative: Docker Setup**
+   ```bash
+   cd payload_cms
+   cp .env.example .env
+   # Update MONGODB_URI in .env to: mongodb://127.0.0.1/payload_cms
+   docker-compose up
+   \# Payload CMS available at <http://localhost:3001>
+   ```
+
+   **First-Time Setup:**
+   - Open http://localhost:3001 in your browser
+   - Create your first admin user account
+   - Access the admin panel to manage content collections
+   - Content published here will automatically sync with the RAG pipeline
 
 ## **Contributing**
 
