@@ -8,11 +8,13 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGener
 from pymongo import MongoClient
 from typing import List, Tuple, Dict, Any
 from langchain_core.documents import Document
+from langchain_core.retrievers import BaseRetriever
 from langchain.chains import create_history_aware_retriever, create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain # Corrected import path
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain.memory import ConversationBufferWindowMemory
 from data_ingestion.vector_store_manager import VectorStoreManager
+from advanced_retrieval import AdvancedRetrievalPipeline
 
 # --- Environment Variable Checks ---
 # Ensure GOOGLE_API_KEY is loaded. This check is critical.
@@ -43,16 +45,11 @@ QA_WITH_HISTORY_PROMPT = ChatPromptTemplate.from_messages(
 
 # 2. RAG prompt for final answer generation
 RAG_PROMPT_TEMPLATE = """
-You are a helpful expert on cryptocurrency. Answer the user's question based *only* on the provided context. If the context does not contain the answer, say so.
+You are a knowledgeable cryptocurrency expert, specifically Litecoin. Use the information below to provide a helpful, accurate answer to the user's question. Answer naturally and conversationally, as if you're having a direct discussion with the user. If the information doesn't contain the answer, simply say so.
 
-**Context:**
----
 {context}
----
 
-**User Question:** {input}
-
-**Answer:**
+User: {input}
 """
 rag_prompt = ChatPromptTemplate.from_template(RAG_PROMPT_TEMPLATE)
 
@@ -102,16 +99,34 @@ class RAGPipeline:
         # Initialize LLM
         self.llm = ChatGoogleGenerativeAI(model=LLM_MODEL_NAME, temperature=0.7, google_api_key=google_api_key)
 
+        # Initialize advanced retrieval pipeline
+        self.advanced_retrieval = AdvancedRetrievalPipeline(self.vector_store_manager)
+
         # Construct the RAG chain
         self._setup_rag_chain()
 
     def _setup_rag_chain(self):
-        """Sets up the conversational RAG chain with memory and history-aware retrieval."""
-        # Create base retriever
-        base_retriever = self.vector_store.as_retriever(
-            search_type="similarity",
-            search_kwargs={"k": 10} # Retrieve top 10 documents for context
-        )
+        """Sets up the conversational RAG chain with memory and advanced retrieval."""
+        # Create advanced retriever wrapper for Langchain compatibility
+        from pydantic import Field
+
+        class AdvancedRetrieverWrapper(BaseRetriever):
+            advanced_retrieval: AdvancedRetrievalPipeline = Field(...)
+
+            def __init__(self, advanced_retrieval_pipeline):
+                super().__init__(advanced_retrieval=advanced_retrieval_pipeline)
+
+            def _get_relevant_documents(self, query: str, *, run_manager=None) -> List[Document]:
+                """Get relevant documents using advanced retrieval."""
+                return self.advanced_retrieval.retrieve(
+                    query=query,
+                    expand_query=True,
+                    rerank=True,
+                    top_k=10
+                )
+
+        # Create base retriever using advanced retrieval
+        base_retriever = AdvancedRetrieverWrapper(self.advanced_retrieval)
 
         # Create history-aware retriever for standalone question generation
         self.history_aware_retriever = create_history_aware_retriever(
@@ -155,6 +170,9 @@ class RAGPipeline:
                     if os.path.exists(os.path.join(index_path, "index.faiss")):
                         self.vector_store = FAISS.load_local(index_path, self.query_embeddings, allow_dangerous_deserialization=True)
                         print("✅ FAISS index reloaded from disk")
+
+            # Update advanced retrieval index
+            self.advanced_retrieval.update_index()
 
             # Recreate the RAG chain with the updated vector store
             self._setup_rag_chain()
