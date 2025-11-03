@@ -93,6 +93,28 @@ async def refresh_rag_pipeline():
         logger.error(f"Error refreshing RAG pipeline: {e}")
         return {"status": "error", "message": str(e)}
 
+@app.post("/api/v1/clean-drafts")
+async def clean_draft_documents():
+    """
+    Endpoint to manually clean draft/unpublished documents from the vector store.
+    This removes any remaining draft content that might still be indexed.
+    """
+    try:
+        if hasattr(rag_pipeline_instance, 'vector_store_manager'):
+            deleted_count = rag_pipeline_instance.vector_store_manager.clean_draft_documents()
+            # Refresh the RAG pipeline after cleanup
+            rag_pipeline_instance.refresh_vector_store()
+            return {
+                "status": "success",
+                "message": f"Cleaned up {deleted_count} draft documents and refreshed RAG pipeline",
+                "documents_removed": deleted_count
+            }
+        else:
+            return {"status": "error", "message": "Vector store manager not available"}
+    except Exception as e:
+        logger.error(f"Error cleaning draft documents: {e}")
+        return {"status": "error", "message": str(e)}
+
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     """
@@ -143,9 +165,11 @@ async def chat_endpoint(request: ChatRequest):
     answer, sources = rag_pipeline_instance.query(request.query, paired_chat_history)
     
     # Transform Langchain Document objects to our Pydantic SourceDocument model
+    # Additional filtering to ensure only published documents are returned (backup to RAG pipeline filtering)
     source_documents = [
         SourceDocument(page_content=doc.page_content, metadata=doc.metadata)
         for doc in sources
+        if doc.metadata.get('status') == 'published'
     ]
     
     return ChatResponse(

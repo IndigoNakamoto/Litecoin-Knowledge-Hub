@@ -102,6 +102,69 @@ def test_webhook_payload(backend_url="http://localhost:8000"):
         print(f"❌ Webhook test failed: {e}")
         return False
 
+def test_draft_filtering(backend_url="http://localhost:8000"):
+    """Test that draft content is filtered out during queries."""
+    print("🧪 Testing draft content filtering...")
+
+    try:
+        # Test a basic query
+        payload = {"query": "test", "chat_history": []}
+        response = requests.post(
+            f"{backend_url}/api/v1/chat",
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=30
+        )
+
+        if response.status_code == 200:
+            response_data = response.json()
+            sources = response_data.get("sources", [])
+
+            # Check if all sources are published
+            draft_sources_found = []
+            for source in sources:
+                status = source.get("metadata", {}).get("status")
+                if status and status != "published":
+                    draft_sources_found.append(source)
+
+            if draft_sources_found:
+                print(f"❌ Found {len(draft_sources_found)} draft sources in response")
+                for source in draft_sources_found[:3]:  # Show first 3
+                    print(f"  - Status: {source.get('metadata', {}).get('status')}")
+                return False
+            else:
+                print("✅ All sources in response have 'published' status")
+                return True
+        else:
+            print(f"❌ Query failed with status {response.status_code}: {response.text}")
+            return False
+
+    except Exception as e:
+        print(f"❌ Draft filtering test failed: {e}")
+        return False
+
+def test_clean_drafts_endpoint(backend_url="http://localhost:8000"):
+    """Test the clean drafts endpoint."""
+    print("🧪 Testing clean drafts endpoint...")
+
+    try:
+        response = requests.post(
+            f"{backend_url}/api/v1/clean-drafts",
+            timeout=60
+        )
+
+        if response.status_code == 200:
+            response_data = response.json()
+            print(f"✅ Clean drafts response: {response_data}")
+            return True
+        else:
+            print(f"❌ Clean drafts failed with status {response.status_code}: {response.text}")
+            return False
+
+    except Exception as e:
+        print(f"❌ Clean drafts test failed: {e}")
+        return False
+
 def main():
     """Main function to run webhook tests."""
     backend_url = "http://localhost:8000"
@@ -109,7 +172,7 @@ def main():
     if len(sys.argv) > 1:
         backend_url = sys.argv[1]
 
-    print(f"🚀 Starting webhook tests against: {backend_url}")
+    print(f"🚀 Starting webhook and RAG tests against: {backend_url}")
     print("=" * 50)
 
     # Test connectivity
@@ -125,17 +188,32 @@ def main():
     # Test webhook functionality
     webhook_ok = test_webhook_payload(backend_url)
 
-    if webhook_ok:
-        print("\n✅ Webhook tests passed! The integration should work.")
-        print("📝 Next steps:")
-        print("   1. Publish an article in Payload CMS")
-        print("   2. Check backend logs for processing messages")
-        print("   3. Wait 30-60 seconds for background processing")
-        print("   4. Test queries about the article content")
-    else:
-        print("\n❌ Webhook tests failed. Check the error messages above.")
+    # Test draft filtering
+    draft_filter_ok = test_draft_filtering(backend_url)
 
-    return webhook_ok
+    # Test clean drafts endpoint
+    clean_drafts_ok = test_clean_drafts_endpoint(backend_url)
+
+    if webhook_ok and draft_filter_ok and clean_drafts_ok:
+        print("\n✅ All tests passed! The integration should work correctly.")
+        print("📝 Summary:")
+        print("   - Webhook processing: ✅")
+        print("   - Draft content filtering: ✅")
+        print("   - Clean drafts utility: ✅")
+        print("\nNext steps:")
+        print("   1. Publish/unpublish articles in Payload CMS")
+        print("   2. Test queries about the article content")
+        print("   3. Verify draft articles are not returned in search results")
+    else:
+        print("\n⚠️ Some tests failed. Check the error messages above.")
+        if not webhook_ok:
+            print("   - Webhook processing failed")
+        if not draft_filter_ok:
+            print("   - Draft content filtering failed")
+        if not clean_drafts_ok:
+            print("   - Clean drafts utility failed")
+
+    return webhook_ok and draft_filter_ok and clean_drafts_ok
 
 if __name__ == "__main__":
     success = main()

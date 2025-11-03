@@ -183,7 +183,7 @@ class VectorStoreManager:
             logger.warning("MongoDB not available. Cannot perform selective deletion. Use clear_all_documents to reset FAISS index.")
             return 0
 
-        mongo_filter = {field_name: field_value}
+        mongo_filter = {f"metadata.{field_name}": field_value}
 
         logger.info(f"Attempting to delete documents with filter: {mongo_filter}")
         try:
@@ -196,6 +196,53 @@ class VectorStoreManager:
             return result.deleted_count
         except Exception as e:
             logger.error(f"An error occurred during deletion with filter {mongo_filter}: {e}", exc_info=True)
+            return 0
+
+    def clean_draft_documents(self):
+        """
+        Removes all documents with status != 'published' from both MongoDB and FAISS index.
+        This is useful for cleaning up draft content that might still be indexed.
+        """
+        if not self.mongodb_available:
+            logger.warning("MongoDB not available. Cannot clean draft documents.")
+            return 0
+
+        try:
+            logger.info("🧹 Starting cleanup of draft/unpublished documents...")
+
+            # Find documents that are not published (draft, etc.)
+            draft_filter = {"metadata.status": {"$ne": "published"}}
+            draft_docs_cursor = self.collection.find(draft_filter)
+            draft_payload_ids = []
+
+            # Collect payload IDs to delete from FAISS (FAISS doesn't support metadata queries)
+            for doc in draft_docs_cursor:
+                payload_id = doc.get("metadata", {}).get("payload_id")
+                if payload_id:
+                    draft_payload_ids.append(payload_id)
+
+            # Delete draft documents from MongoDB
+            result = self.collection.delete_many(draft_filter)
+            logger.info(f"🗑️ Deleted {result.deleted_count} draft documents from MongoDB")
+
+            # If we have payload IDs, also clean any chunks that might use different status values
+            additional_deleted = 0
+            if draft_payload_ids:
+                additional_filter = {"metadata.payload_id": {"$in": draft_payload_ids}}
+                additional_result = self.collection.delete_many(additional_filter)
+                additional_deleted = additional_result.deleted_count
+                if additional_deleted > 0:
+                    logger.info(f"🗑️ Deleted {additional_deleted} additional chunks by payload_id")
+
+            # Rebuild FAISS index from remaining published documents
+            self.vector_store = self._create_faiss_from_mongodb()
+            logger.info("✅ FAISS index rebuilt after draft cleanup")
+
+            total_deleted = result.deleted_count + additional_deleted
+            return total_deleted
+
+        except Exception as e:
+            logger.error(f"An error occurred during draft document cleanup: {e}", exc_info=True)
             return 0
 
     def clear_all_documents(self):
@@ -254,7 +301,8 @@ if __name__ == '__main__':
         logger.info(f"Deleted {deleted_count} documents.")
 
         logger.info("\nTesting retrieval for 'apples' after deletion...")
-        retrieved_docs_after_delete = retriever.get_relevant_documents("apples")
+        retriever_after_delete = manager.get_retriever(search_kwargs={"k": 2})
+        retrieved_docs_after_delete = retriever_after_delete.get_relevant_documents("apples")
         logger.info(f"Retrieved {len(retrieved_docs_after_delete)} documents for 'apples' after deletion:")
         for i, doc in enumerate(retrieved_docs_after_delete):
             logger.info(f"  Doc {i+1}: {doc.page_content[:50]}... (Metadata: {doc.metadata})")

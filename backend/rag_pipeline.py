@@ -184,9 +184,15 @@ class RAGPipeline:
             # The 'context' key from the retriever is now directly available in the result
             sources = result.get("context", [])
 
-            # Sources are now properly retrieved from the RAG chain
+            # Filter out draft/unpublished documents from sources
+            published_sources = [
+                doc for doc in sources
+                if doc.metadata.get("status") == "published"
+            ]
 
-            return answer, sources
+            # Sources are now properly retrieved and filtered from the RAG chain
+
+            return answer, published_sources
         except Exception as e:
             print(f"Error during RAG query execution: {e}")
             return f"Error processing query: {e}", []

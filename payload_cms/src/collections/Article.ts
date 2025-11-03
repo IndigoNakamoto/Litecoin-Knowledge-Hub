@@ -15,7 +15,7 @@ import {
   lexicalEditor,
 } from '@payloadcms/richtext-lexical'
 import type { SerializedEditorState } from '@payloadcms/richtext-lexical/lexical'
-import { CollectionConfig } from 'payload/types'
+import { CollectionConfig } from 'payload'
 import { isVerifiedTranslatorField } from '../access/isVerifiedTranslatorField'
 import type { User } from '../payload-types' // It's good practice to import your generated types
 import StatusBadge from '../components/StatusBadge'
@@ -233,19 +233,34 @@ export const Article: CollectionConfig = {
   hooks: {
     afterChange: [
       async ({ doc, req, operation }: any) => {
-        if ((operation === 'create' || operation === 'update') && doc.status === 'published') {
-          console.log(`Article "${doc.title}" (ID: ${doc.id}) has been published.`);
-          // Here you would trigger the Content Sync Service
-          fetch(`${process.env.BACKEND_URL}/api/v1/sync/payload`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              doc: doc,
-            }),
-          });
-        }
+        console.log(`Article "${doc.title}" (ID: ${doc.id}) changed with operation: ${operation}, status: ${doc.status}`);
+        // Always trigger sync to handle publishing, unpublishing, and updates
+        fetch(`${process.env.BACKEND_URL}/api/v1/sync/payload`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            operation: operation,
+            doc: doc,
+          }),
+        });
+      },
+    ],
+    afterDelete: [
+      async ({ doc, req }: any) => {
+        console.log(`Article "${doc.title}" (ID: ${doc.id}) has been deleted.`);
+        // Trigger removal from vector store
+        fetch(`${process.env.BACKEND_URL}/api/v1/sync/payload`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            operation: 'delete',
+            doc: doc,
+          }),
+        });
       },
     ],
   },

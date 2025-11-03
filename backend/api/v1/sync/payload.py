@@ -11,6 +11,35 @@ from backend.data_ingestion.vector_store_manager import VectorStoreManager
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+def delete_and_refresh_vector_store(payload_id):
+    """
+    Background task to delete documents by payload_id and refresh the RAG pipeline.
+    """
+    try:
+        logger.info(f"🗑️ [Delete Task: {payload_id}] Starting deletion and refresh...")
+
+        # Initialize vector store manager
+        vector_store_manager = VectorStoreManager()
+
+        # Delete documents
+        deleted_count = vector_store_manager.delete_documents_by_metadata_field('payload_id', payload_id)
+        logger.info(f"🗑️ [Delete Task: {payload_id}] Deleted {deleted_count} document(s).")
+
+        # Refresh the RAG pipeline
+        try:
+            refresh_response = requests.post("http://localhost:8000/api/v1/refresh-rag", timeout=30)
+            if refresh_response.status_code == 200:
+                logger.info(f"✅ [Delete Task: {payload_id}] RAG pipeline refreshed successfully")
+            else:
+                logger.warning(f"⚠️ [Delete Task: {payload_id}] RAG pipeline refresh returned status {refresh_response.status_code}: {refresh_response.text}")
+        except Exception as refresh_error:
+            logger.warning(f"⚠️ [Delete Task: {payload_id}] Failed to refresh RAG pipeline: {refresh_error}")
+
+        logger.info(f"🎉 [Delete Task: {payload_id}] Deletion and refresh completed")
+
+    except Exception as e:
+        logger.error(f"💥 [Delete Task: {payload_id}] Deletion and refresh failed: {e}", exc_info=True)
+
 def process_and_embed_document(payload_doc):
     """
     Background task to process and embed a single document from Payload.
@@ -88,30 +117,26 @@ async def receive_payload_webhook(request: Request, background_tasks: Background
 
         payload_doc = PayloadWebhookDoc(**doc_data)
 
-        # The 'operation' field is also sent at the root level of the original Payload webhook,
-        # but our custom fetch in Article.ts only sends 'doc'.
-        # For now, we'll assume 'update' or 'create' if 'doc' is present and status is 'published'.
-        # If a 'delete' operation needs to be handled, the Payload hook in Article.ts
-        # would need to send 'operation' explicitly.
-        operation = "update" # Default to update, as we only trigger on publish/update in Article.ts hook
+        # Extract operation from payload, default to 'update'
+        operation = raw_payload.get('operation', 'update')
 
         logger.info(f"📝 Processing doc ID '{payload_doc.id}' with status '{payload_doc.status}' and operation '{operation}'")
         logger.info(f"📖 Document title: '{payload_doc.title}'" if hasattr(payload_doc, 'title') and payload_doc.title else "📖 No title found")
 
-        # We only care about documents that are in a 'published' state for ingestion.
-        if payload_doc.status == 'published':
+        # Handle delete operations or non-published documents
+        if operation == 'delete' or payload_doc.status != 'published':
+            # Delete any existing chunks for this document and refresh RAG pipeline
+            background_tasks.add_task(delete_and_refresh_vector_store, payload_doc.id)
+            msg = f"🚫 Document ID '{payload_doc.id}' is not published (status: {payload_doc.status}) or deleted (operation: {operation}). Deleting any existing chunks and refreshing RAG pipeline."
+            logger.info(msg)
+            return {"status": "not_published_or_deleted", "message": msg, "document_id": payload_doc.id}
+        else:
+            # Document is published and not deleted, process it
             # Run the processing in the background to avoid blocking the webhook response.
             background_tasks.add_task(process_and_embed_document, payload_doc)
             msg = f"✅ Processing triggered for published document ID: {payload_doc.id}"
             logger.info(msg)
             return {"status": "processing_triggered", "message": msg, "document_id": payload_doc.id}
-        else:
-            # If the document is not published (e.g., 'draft'), we can optionally clear its old chunks.
-            # This handles cases where a document is unpublished or saved as a draft.
-            background_tasks.add_task(VectorStoreManager().delete_documents_by_metadata_field, 'payload_id', payload_doc.id)
-            msg = f"🚫 Document ID '{payload_doc.id}' is not published (status: {payload_doc.status}). Deleting any existing chunks."
-            logger.info(msg)
-            return {"status": "not_published", "message": msg, "document_id": payload_doc.id}
     except ValidationError as e:
         logger.error(f"❌ Payload webhook validation error: {e.errors()}", exc_info=True)
         raise HTTPException(status_code=422, detail={"error": "Validation failed", "details": e.errors()})
