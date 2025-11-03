@@ -116,3 +116,4 @@ Temporary Items
 # Backend
 backend/.env
 backend/faiss_index/
+faiss_index/

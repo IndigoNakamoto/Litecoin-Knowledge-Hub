@@ -10,7 +10,7 @@ if project_root not in sys.path:
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from pydantic import BaseModel, Field # Re-add BaseModel and Field
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 
 # Load environment variables from .env file
 load_dotenv()
@@ -123,43 +123,21 @@ async def chat_endpoint(request: ChatRequest):
     and the source documents used, taking into account previous messages.
     """
     # Convert ChatMessage list to the (human_message, ai_message) tuple format expected by RAGPipeline
-    # We need to reconstruct the history as (human_query, ai_response) pairs
-    # Assuming chat_history is [human_msg1, ai_msg1, human_msg2, ai_msg2, ...]
-    # We need to pair them up.
-    
-    # Langchain's create_history_aware_retriever expects chat_history as List[BaseMessage]
-    # The RAGPipeline.query method expects List[Tuple[str, str]]
-    # So, we need to convert the Pydantic ChatMessage list from the request into the expected format.
-    
-    # Example: request.chat_history = [ChatMessage(role='human', content='hi'), ChatMessage(role='ai', content='hello')]
-    # Desired: [('hi', 'hello')]
-    
-    # This logic assumes chat_history always comes in pairs of human then ai.
-    # If the last message is human, it means the AI hasn't responded yet, so we skip it for history.
-    
-    # Convert Pydantic ChatMessage list to Langchain BaseMessage list for the RAG pipeline
-    # The RAGPipeline.query method now handles the conversion to BaseMessage internally.
-    # We just need to pass the list of ChatMessage objects as (content, content) tuples.
-    
-    # Convert request.chat_history (List[ChatMessage]) to List[Tuple[str, str]]
-    # This requires pairing up human and AI messages.
-    # If the history is odd (e.g., last message is human and no AI response yet),
-    # we should only include complete human-AI pairs.
-    
+    # The frontend now sends only complete exchanges, so we can simply pair consecutive human-AI messages
+
     paired_chat_history: List[Tuple[str, str]] = []
     i = 0
-    while i < len(request.chat_history) - 1: # Iterate up to the second to last message
+    while i < len(request.chat_history) - 1:  # Ensure we have pairs to process
         human_msg = request.chat_history[i]
-        ai_msg = request.chat_history[i+1]
-        
+        ai_msg = request.chat_history[i + 1]
+
         if human_msg.role == "human" and ai_msg.role == "ai":
             paired_chat_history.append((human_msg.content, ai_msg.content))
             i += 2
         else:
-            # This case should ideally not happen if history is well-formed (human, ai, human, ai...)
-            # If it does, skip the malformed pair or handle as an error.
-            print(f"Warning: Malformed chat history detected. Skipping message at index {i}.")
-            i += 1 # Move to the next message to try and find a valid pair
+            # Skip malformed pairs and continue
+            logger.warning(f"Skipping malformed chat history pair at index {i}")
+            i += 1
             
     # Use the globally initialized RAG pipeline instance
     answer, sources = rag_pipeline_instance.query(request.query, paired_chat_history)

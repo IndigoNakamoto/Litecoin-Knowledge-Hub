@@ -24,3 +24,4 @@ python-dotenv
 langchain-community
 langchain_google_genai
 faiss-cpu==1.8.0
+langchain-experimental

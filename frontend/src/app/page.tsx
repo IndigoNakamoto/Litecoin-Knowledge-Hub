@@ -18,17 +18,17 @@ export default function Home() {
 
   const handleSendMessage = async (message: string) => {
     const newUserMessage: Message = { role: "human", content: message }; // Changed to "human"
-    setMessages((prevMessages) => [...prevMessages, newUserMessage]);
-    setIsLoading(true);
 
-    // Prepare chat history for the backend
+    // Prepare chat history for the backend - only include complete exchanges
     // The backend expects a list of {role: "human" | "ai", content: "..."}
-    // We need to exclude the *current* user message from the history sent to the backend,
-    // as it's part of the 'query' itself.
+    // We exclude the current user message since it's sent as the 'query' parameter
     const chatHistoryForBackend = messages.map(msg => ({
       role: msg.role, // Already "human" or "ai"
       content: msg.content
     }));
+
+    setMessages((prevMessages) => [...prevMessages, newUserMessage]);
+    setIsLoading(true);
 
     try {
       const response = await fetch("http://localhost:8000/api/v1/chat", {

@@ -11,6 +11,7 @@ from langchain_core.documents import Document
 from langchain.chains import create_history_aware_retriever, create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain # Corrected import path
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langchain.memory import ConversationBufferWindowMemory
 from data_ingestion.vector_store_manager import VectorStoreManager
 
 # --- Environment Variable Checks ---
@@ -36,7 +37,7 @@ QA_WITH_HISTORY_PROMPT = ChatPromptTemplate.from_messages(
     [
         MessagesPlaceholder(variable_name="chat_history"),
         ("human", "{input}"),
-        ("human", "Given the above conversation, generate a standalone question to address the user's input. If the input is already a standalone question, return it as is."),
+        ("human", "Given the above conversation, generate a standalone question that resolves any pronouns or ambiguous references in the user's input. Focus on the main subject of the conversation. If the input is already a complete standalone question, return it as is. Do not add extra information or make assumptions beyond resolving the context."),
     ]
 )
 
@@ -105,23 +106,29 @@ class RAGPipeline:
         self._setup_rag_chain()
 
     def _setup_rag_chain(self):
-        """Sets up the main RAG chain with conversational history."""
-        retriever = self.vector_store.as_retriever(
+        """Sets up the conversational RAG chain with memory and history-aware retrieval."""
+        # Create base retriever
+        base_retriever = self.vector_store.as_retriever(
             search_type="similarity",
             search_kwargs={"k": 10} # Retrieve top 10 documents for context
         )
 
-        # For now, use direct retriever instead of history-aware to fix Bitcoin content retrieval
-        # TODO: Fix history-aware retriever to work properly with multiple articles
+        # Create history-aware retriever for standalone question generation
+        self.history_aware_retriever = create_history_aware_retriever(
+            self.llm,
+            base_retriever,
+            QA_WITH_HISTORY_PROMPT
+        )
 
-        # 1. Create the document combining chain
-        # This chain takes the retrieved documents and the user's question,
-        # formats them, and passes them to the LLM for final answer generation.
-        document_chain = create_stuff_documents_chain(self.llm, rag_prompt)
+        # Create document combining chain for final answer generation
+        self.document_chain = create_stuff_documents_chain(self.llm, rag_prompt)
 
-        # 2. Create the full retrieval chain
-        # This chain combines the direct retriever with the document combining chain.
-        self.rag_chain = create_retrieval_chain(retriever, document_chain)
+        # Create conversational retrieval chain using LCEL
+        self.rag_chain = RunnablePassthrough.assign(
+            context=self.history_aware_retriever
+        ).assign(
+            answer=self.document_chain
+        )
 
     def refresh_vector_store(self):
         """
@@ -159,7 +166,7 @@ class RAGPipeline:
 
     def query(self, query_text: str, chat_history: List[Tuple[str, str]]) -> Tuple[str, List[Document]]:
         """
-        Processes a query through the RAG pipeline with conversational history.
+        Processes a query through the conversational RAG pipeline with memory.
 
         Args:
             query_text: The user's current query.
@@ -168,20 +175,22 @@ class RAGPipeline:
         Returns:
             A tuple containing the generated answer (str) and a list of source documents (List[Document]).
         """
-        # Convert chat_history to Langchain's BaseMessage format
-        converted_chat_history: List[BaseMessage] = []
-        for human_msg, ai_msg in chat_history:
-            converted_chat_history.append(HumanMessage(content=human_msg))
-            converted_chat_history.append(AIMessage(content=ai_msg))
-
         try:
-            # Invoke the new rag_chain with input and chat history
-            result = self.rag_chain.invoke(
-                {"input": query_text, "chat_history": converted_chat_history}
-            )
+            # Convert chat_history to Langchain's BaseMessage format for the history-aware retriever
+            converted_chat_history: List[BaseMessage] = []
+            for human_msg, ai_msg in chat_history:
+                converted_chat_history.append(HumanMessage(content=human_msg))
+                converted_chat_history.append(AIMessage(content=ai_msg))
+
+            # Invoke the conversational retrieval chain with chat history
+            # The history-aware retriever will generate a standalone question from the chat history
+            result = self.rag_chain.invoke({
+                "input": query_text,
+                "chat_history": converted_chat_history
+            })
 
             answer = result.get("answer", "Error: Could not generate answer.")
-            # The 'context' key from the retriever is now directly available in the result
+            # Get source documents from the chain result
             sources = result.get("context", [])
 
             # Filter out draft/unpublished documents from sources
@@ -190,11 +199,11 @@ class RAGPipeline:
                 if doc.metadata.get("status") == "published"
             ]
 
-            # Sources are now properly retrieved and filtered from the RAG chain
-
             return answer, published_sources
         except Exception as e:
-            print(f"Error during RAG query execution: {e}")
+            print(f"Error during conversational RAG query execution: {e}")
+            import traceback
+            traceback.print_exc()
             return f"Error processing query: {e}", []
 
 # --- Standalone functions (can be removed or kept for other uses if RAGPipeline class is primary) ---
