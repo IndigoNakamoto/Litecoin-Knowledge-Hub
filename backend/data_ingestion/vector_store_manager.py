@@ -5,6 +5,7 @@ from pymongo import MongoClient
 from langchain_core.documents import Document
 from langchain_community.vectorstores import FAISS
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from cache_utils import embedding_cache
 
 logger = logging.getLogger(__name__) # Initialize logger
 
@@ -160,6 +161,45 @@ class VectorStoreManager:
         # Save FAISS index after all additions
         self._save_faiss_index()
         logger.info(f"Finished adding {success_count} of {total_docs} documents to FAISS and MongoDB collection '{self.collection_name}'.")
+
+    def get_cached_embeddings(self, texts: List[str]) -> List[List[float]]:
+        """
+        Get embeddings for texts with caching to reduce API calls.
+
+        Args:
+            texts: List of text strings to embed
+
+        Returns:
+            List of embedding vectors
+        """
+        cached_embeddings = []
+        uncached_texts = []
+        uncached_indices = []
+
+        # Check cache for each text
+        for i, text in enumerate(texts):
+            cached = embedding_cache.get_similar(text)
+            if cached is not None:
+                cached_embeddings.append(cached.tolist())
+            else:
+                uncached_texts.append(text)
+                uncached_indices.append(i)
+
+        # Generate embeddings for uncached texts
+        if uncached_texts:
+            logger.info(f"Generating embeddings for {len(uncached_texts)} uncached texts")
+            embeddings_model = get_default_embedding_model(task_type="retrieval_query")
+            new_embeddings = embeddings_model.embed_documents(uncached_texts)
+
+            # Cache the new embeddings
+            for text, embedding in zip(uncached_texts, new_embeddings):
+                embedding_cache.set(text, np.array(embedding))
+
+            # Insert new embeddings into results
+            for i, (idx, embedding) in enumerate(zip(uncached_indices, new_embeddings)):
+                cached_embeddings.insert(idx, embedding)
+
+        return cached_embeddings
 
     def get_retriever(self, search_type="similarity", search_kwargs=None):
         """

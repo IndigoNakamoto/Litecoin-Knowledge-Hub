@@ -15,6 +15,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain.memory import ConversationBufferWindowMemory
 from data_ingestion.vector_store_manager import VectorStoreManager
 from advanced_retrieval import AdvancedRetrievalPipeline
+from cache_utils import query_cache, embedding_cache, async_executor
 
 # --- Environment Variable Checks ---
 # Ensure GOOGLE_API_KEY is loaded. This check is critical.
@@ -233,7 +234,7 @@ class RAGPipeline:
 
     def query(self, query_text: str, chat_history: List[Tuple[str, str]]) -> Tuple[str, List[Document]]:
         """
-        Processes a query through the conversational RAG pipeline with memory.
+        Processes a query through the conversational RAG pipeline with memory and caching.
 
         Args:
             query_text: The user's current query.
@@ -242,6 +243,12 @@ class RAGPipeline:
         Returns:
             A tuple containing the generated answer (str) and a list of source documents (List[Document]).
         """
+        # Check cache first
+        cached_result = query_cache.get(query_text, chat_history)
+        if cached_result:
+            print(f"🔍 Cache hit for query: '{query_text}'")
+            return cached_result
+
         try:
             # Convert chat_history to Langchain's BaseMessage format for the history-aware retriever
             converted_chat_history: List[BaseMessage] = []
@@ -266,6 +273,9 @@ class RAGPipeline:
                 if doc.metadata.get("status") == "published"
             ]
 
+            # Cache the result
+            query_cache.set(query_text, chat_history, answer, published_sources)
+
             return answer, published_sources
         except Exception as e:
             print(f"Error during conversational RAG query execution: {e}")
@@ -275,7 +285,7 @@ class RAGPipeline:
 
     async def aquery(self, query_text: str, chat_history: List[Tuple[str, str]]) -> Tuple[str, List[Document]]:
         """
-        Async version of query method for concurrent processing.
+        Async version of query method for concurrent processing with caching.
 
         Args:
             query_text: The user's current query.
@@ -284,6 +294,12 @@ class RAGPipeline:
         Returns:
             A tuple containing the generated answer (str) and a list of source documents (List[Document]).
         """
+        # Check cache first
+        cached_result = query_cache.get(query_text, chat_history)
+        if cached_result:
+            print(f"🔍 Cache hit for query: '{query_text}'")
+            return cached_result
+
         try:
             # Convert chat_history to Langchain's BaseMessage format for the history-aware retriever
             converted_chat_history: List[BaseMessage] = []
@@ -291,21 +307,44 @@ class RAGPipeline:
                 converted_chat_history.append(HumanMessage(content=human_msg))
                 converted_chat_history.append(AIMessage(content=ai_msg))
 
-            # Use async invoke for concurrent processing
-            result = await self.async_rag_chain.ainvoke({
+            # Use async retrieval with advanced retrieval pipeline
+            # First get context using async advanced retrieval
+            context_docs = await self.advanced_retrieval.retrieve_async(
+                query_text, expand_query=True, rerank=True, top_k=10
+            )
+
+            # Format context for LLM
+            context_text = format_docs(context_docs)
+
+            # Create the RAG prompt with retrieved context
+            from langchain_core.prompts import ChatPromptTemplate
+            RAG_PROMPT_TEMPLATE = """
+You are a knowledgeable cryptocurrency expert, specifically Litecoin. Use the information below to provide a helpful, accurate answer to the user's question. If the information doesn't contain the answer, simply say so.
+
+{context}
+
+User: {input}
+"""
+            rag_prompt = ChatPromptTemplate.from_template(RAG_PROMPT_TEMPLATE)
+
+            # Generate answer using LLM with retrieved context
+            chain = rag_prompt | self.llm | StrOutputParser()
+            answer = await chain.ainvoke({
                 "input": query_text,
-                "chat_history": converted_chat_history
+                "context": context_text
             })
 
-            answer = result.get("answer", "Error: Could not generate answer.")
-            # Get source documents from the chain result
-            sources = result.get("context", [])
+            # Use retrieved docs as sources
+            sources = context_docs
 
             # Filter out draft/unpublished documents from sources
             published_sources = [
                 doc for doc in sources
                 if doc.metadata.get("status") == "published"
             ]
+
+            # Cache the result
+            query_cache.set(query_text, chat_history, answer, published_sources)
 
             return answer, published_sources
         except Exception as e:

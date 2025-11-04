@@ -9,6 +9,7 @@ This module implements advanced retrieval techniques including:
 """
 
 import os
+import asyncio
 import logging
 import numpy as np
 from typing import List, Dict, Any, Tuple, Optional
@@ -19,6 +20,7 @@ from langchain_core.retrievers import BaseRetriever
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from data_ingestion.vector_store_manager import VectorStoreManager
+from cache_utils import embedding_cache
 import re
 
 logger = logging.getLogger(__name__)
@@ -172,6 +174,62 @@ class QueryExpansionService:
 
             except Exception as e:
                 logger.warning(f"LLM query expansion failed: {e}")
+
+        # Limit to top 5 variations to avoid explosion
+        return expanded_queries[:5]
+
+    async def expand_query_async(self, query: str, use_llm: bool = True) -> List[str]:
+        """
+        Async version of expand_query that runs LLM calls concurrently.
+
+        Args:
+            query: Original query
+            use_llm: Whether to use LLM for dynamic expansion
+
+        Returns:
+            List of expanded query variations
+        """
+        expanded_queries = [query]  # Always include original
+
+        # Static expansion based on rules (fast, no async needed)
+        query_lower = query.lower()
+        for term, expansions in self.expansion_rules.items():
+            if term in query_lower:
+                for expansion in expansions:
+                    # Replace term with expansion
+                    new_query = re.sub(r'\b' + re.escape(term) + r'\b', expansion, query_lower, flags=re.IGNORECASE)
+                    if new_query not in [q.lower() for q in expanded_queries]:
+                        expanded_queries.append(new_query)
+
+        # Dynamic LLM-based expansion (async)
+        if use_llm and self.llm and len(expanded_queries) < 5:
+            try:
+                prompt = f"""
+                Given the query: "{query}"
+
+                Generate 2-3 alternative phrasings or related queries that would help find relevant information.
+                Focus on cryptocurrency/Litecoin context. Keep them concise and natural.
+
+                Return only the queries, one per line, no numbering or bullets.
+                """
+
+                # Run LLM call in thread pool to avoid blocking
+                from cache_utils import async_executor
+                response = await asyncio.get_event_loop().run_in_executor(
+                    async_executor, self.llm.invoke, prompt
+                )
+                llm_suggestions = response.content.strip().split('\n')
+
+                for suggestion in llm_suggestions:
+                    suggestion = suggestion.strip()
+                    if suggestion and suggestion not in expanded_queries:
+                        # Clean up any numbering or bullets
+                        suggestion = re.sub(r'^[\d\-\*\.\s]+', '', suggestion).strip()
+                        if suggestion:
+                            expanded_queries.append(suggestion)
+
+            except Exception as e:
+                logger.warning(f"Async LLM query expansion failed: {e}")
 
         # Limit to top 5 variations to avoid explosion
         return expanded_queries[:5]
@@ -399,7 +457,7 @@ class AdvancedRetrievalPipeline:
         Returns:
             List of retrieved and ranked documents
         """
-        # Query expansion
+        # Query expansion (using sync version for compatibility with existing sync interface)
         if expand_query:
             expanded_queries = self.query_expander.expand_query(query)
             logger.info(f"Expanded query '{query}' to {len(expanded_queries)} variations")
@@ -443,6 +501,66 @@ class AdvancedRetrievalPipeline:
         ]
 
         logger.info(f"Retrieved {len(published_docs)} relevant documents for query: {query}")
+        return published_docs
+
+    async def retrieve_async(self, query: str, expand_query: bool = True, rerank: bool = True,
+                           top_k: int = 10) -> List[Document]:
+        """
+        Async version of retrieve with concurrent query expansion and retrieval.
+
+        Args:
+            query: User query
+            expand_query: Whether to expand query
+            rerank: Whether to re-rank results
+            top_k: Number of documents to return
+
+        Returns:
+            List of retrieved and ranked documents
+        """
+        # Async query expansion
+        if expand_query:
+            expanded_queries = await self.query_expander.expand_query_async(query)
+            logger.info(f"Async expanded query '{query}' to {len(expanded_queries)} variations")
+        else:
+            expanded_queries = [query]
+
+        all_candidates = []
+
+        # Retrieve candidates for each query variation (can be parallelized in future)
+        for q in expanded_queries:
+            if self.hybrid_retriever:
+                candidates = self.hybrid_retriever.get_relevant_documents(q)
+            else:
+                # Fallback to dense retrieval only
+                retriever = self.vector_store_manager.get_retriever(
+                    search_type="similarity",
+                    search_kwargs={"k": 15}
+                )
+                candidates = retriever.get_relevant_documents(q)
+
+            all_candidates.extend(candidates)
+
+        # Remove duplicates based on content
+        seen_content = set()
+        unique_candidates = []
+        for doc in all_candidates:
+            if doc.page_content not in seen_content:
+                unique_candidates.append(doc)
+                seen_content.add(doc.page_content)
+
+        # Re-ranking (could also be made async in future)
+        if rerank and len(unique_candidates) > top_k:
+            final_docs = self.reranker.rerank(query, unique_candidates, top_k=top_k)
+        else:
+            final_docs = unique_candidates[:top_k]
+
+        # Filter to published documents only
+        published_docs = [
+            doc for doc in final_docs
+            if doc.metadata.get("status") == "published"
+        ]
+
+        logger.info(f"Async retrieved {len(published_docs)} relevant documents for query: {query}")
         return published_docs
 
     def update_index(self):
