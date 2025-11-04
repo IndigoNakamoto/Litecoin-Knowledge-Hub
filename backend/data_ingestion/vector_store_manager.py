@@ -39,14 +39,24 @@ class VectorStoreManager:
 
         if self.mongo_uri:
             try:
-                self.client = MongoClient(self.mongo_uri, serverSelectionTimeoutMS=5000)
+                # Configure MongoDB client with connection pooling for concurrent load
+                self.client = MongoClient(
+                    self.mongo_uri,
+                    serverSelectionTimeoutMS=5000,
+                    maxPoolSize=50,        # Allow up to 50 concurrent connections
+                    minPoolSize=10,        # Keep 10 connections warm
+                    maxIdleTimeMS=30000,   # Close connections after 30s idle
+                    waitQueueTimeoutMS=5000,  # Wait up to 5s for connection from pool
+                    retryWrites=True,      # Enable retryable writes
+                    retryReads=True        # Enable retryable reads
+                )
                 # Test connection
                 self.client.admin.command('ping')
                 self.mongodb_available = True
                 self.db_name = db_name
                 self.collection_name = collection_name
                 self.collection = self.client[self.db_name][self.collection_name]
-                logger.info("MongoDB connection successful")
+                logger.info("MongoDB connection successful with connection pooling")
             except Exception as e:
                 logger.warning(f"MongoDB connection failed: {e}. Using FAISS only mode.")
                 self.mongodb_available = False

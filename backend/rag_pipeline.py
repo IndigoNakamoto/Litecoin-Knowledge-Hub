@@ -102,8 +102,9 @@ class RAGPipeline:
         # Initialize advanced retrieval pipeline
         self.advanced_retrieval = AdvancedRetrievalPipeline(self.vector_store_manager)
 
-        # Construct the RAG chain
+        # Construct the RAG chains (both sync and async)
         self._setup_rag_chain()
+        self._setup_async_rag_chain()
 
     def _setup_rag_chain(self):
         """Sets up the conversational RAG chain with memory and advanced retrieval."""
@@ -143,6 +144,54 @@ class RAGPipeline:
             context=self.history_aware_retriever
         ).assign(
             answer=self.document_chain
+        )
+
+    def _setup_async_rag_chain(self):
+        """Sets up async conversational RAG chain for concurrent processing."""
+        from pydantic import Field
+
+        class AsyncAdvancedRetrieverWrapper(BaseRetriever):
+            advanced_retrieval: AdvancedRetrievalPipeline = Field(...)
+
+            def __init__(self, advanced_retrieval_pipeline):
+                super().__init__(advanced_retrieval=advanced_retrieval_pipeline)
+
+            def _get_relevant_documents(self, query: str, *, run_manager=None) -> List[Document]:
+                """Sync version for compatibility."""
+                return self.advanced_retrieval.retrieve(
+                    query=query,
+                    expand_query=True,
+                    rerank=True,
+                    top_k=10
+                )
+
+            async def _aget_relevant_documents(self, query: str, *, run_manager=None) -> List[Document]:
+                """Async version for concurrent retrieval."""
+                return self.advanced_retrieval.retrieve(
+                    query=query,
+                    expand_query=True,
+                    rerank=True,
+                    top_k=10
+                )
+
+        # Create async base retriever using advanced retrieval
+        async_base_retriever = AsyncAdvancedRetrieverWrapper(self.advanced_retrieval)
+
+        # Create history-aware retriever for standalone question generation
+        self.async_history_aware_retriever = create_history_aware_retriever(
+            self.llm,
+            async_base_retriever,
+            QA_WITH_HISTORY_PROMPT
+        )
+
+        # Create document combining chain for final answer generation
+        self.async_document_chain = create_stuff_documents_chain(self.llm, rag_prompt)
+
+        # Create conversational retrieval chain using LCEL
+        self.async_rag_chain = RunnablePassthrough.assign(
+            context=self.async_history_aware_retriever
+        ).assign(
+            answer=self.async_document_chain
         )
 
     def refresh_vector_store(self):
@@ -220,6 +269,47 @@ class RAGPipeline:
             return answer, published_sources
         except Exception as e:
             print(f"Error during conversational RAG query execution: {e}")
+            import traceback
+            traceback.print_exc()
+            return f"Error processing query: {e}", []
+
+    async def aquery(self, query_text: str, chat_history: List[Tuple[str, str]]) -> Tuple[str, List[Document]]:
+        """
+        Async version of query method for concurrent processing.
+
+        Args:
+            query_text: The user's current query.
+            chat_history: A list of (human_message, ai_message) tuples representing the conversation history.
+
+        Returns:
+            A tuple containing the generated answer (str) and a list of source documents (List[Document]).
+        """
+        try:
+            # Convert chat_history to Langchain's BaseMessage format for the history-aware retriever
+            converted_chat_history: List[BaseMessage] = []
+            for human_msg, ai_msg in chat_history:
+                converted_chat_history.append(HumanMessage(content=human_msg))
+                converted_chat_history.append(AIMessage(content=ai_msg))
+
+            # Use async invoke for concurrent processing
+            result = await self.async_rag_chain.ainvoke({
+                "input": query_text,
+                "chat_history": converted_chat_history
+            })
+
+            answer = result.get("answer", "Error: Could not generate answer.")
+            # Get source documents from the chain result
+            sources = result.get("context", [])
+
+            # Filter out draft/unpublished documents from sources
+            published_sources = [
+                doc for doc in sources
+                if doc.metadata.get("status") == "published"
+            ]
+
+            return answer, published_sources
+        except Exception as e:
+            print(f"Error during async conversational RAG query execution: {e}")
             import traceback
             traceback.print_exc()
             return f"Error processing query: {e}", []

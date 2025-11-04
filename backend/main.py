@@ -139,8 +139,8 @@ async def chat_endpoint(request: ChatRequest):
             logger.warning(f"Skipping malformed chat history pair at index {i}")
             i += 1
             
-    # Use the globally initialized RAG pipeline instance
-    answer, sources = rag_pipeline_instance.query(request.query, paired_chat_history)
+    # Use the globally initialized RAG pipeline instance with async processing
+    answer, sources = await rag_pipeline_instance.aquery(request.query, paired_chat_history)
     
     # Transform Langchain Document objects to our Pydantic SourceDocument model
     # Additional filtering to ensure only published documents are returned (backup to RAG pipeline filtering)
