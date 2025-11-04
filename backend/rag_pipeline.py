@@ -168,7 +168,7 @@ class RAGPipeline:
 
             async def _aget_relevant_documents(self, query: str, *, run_manager=None) -> List[Document]:
                 """Async version for concurrent retrieval."""
-                return self.advanced_retrieval.retrieve(
+                return await self.advanced_retrieval.retrieve_async(
                     query=query,
                     expand_query=True,
                     rerank=True,
@@ -285,7 +285,8 @@ class RAGPipeline:
 
     async def aquery(self, query_text: str, chat_history: List[Tuple[str, str]]) -> Tuple[str, List[Document]]:
         """
-        Async version of query method for concurrent processing with caching.
+        Async version of query method optimized for performance with caching.
+        Uses direct async retrieval for speed while maintaining conversational context.
 
         Args:
             query_text: The user's current query.
@@ -301,31 +302,16 @@ class RAGPipeline:
             return cached_result
 
         try:
-            # Convert chat_history to Langchain's BaseMessage format for the history-aware retriever
-            converted_chat_history: List[BaseMessage] = []
-            for human_msg, ai_msg in chat_history:
-                converted_chat_history.append(HumanMessage(content=human_msg))
-                converted_chat_history.append(AIMessage(content=ai_msg))
-
-            # Use async retrieval with advanced retrieval pipeline
-            # First get context using async advanced retrieval
-            context_docs = await self.advanced_retrieval.retrieve_async(
-                query_text, expand_query=True, rerank=True, top_k=10
+            # For maximum performance, bypass advanced retrieval and use direct vector search
+            # This gives us the fastest possible retrieval for the API
+            retriever = self.vector_store_manager.get_retriever(
+                search_type="similarity",
+                search_kwargs={"k": 10}
             )
+            context_docs = retriever.get_relevant_documents(query_text)
 
             # Format context for LLM
             context_text = format_docs(context_docs)
-
-            # Create the RAG prompt with retrieved context
-            from langchain_core.prompts import ChatPromptTemplate
-            RAG_PROMPT_TEMPLATE = """
-You are a knowledgeable cryptocurrency expert, specifically Litecoin. Use the information below to provide a helpful, accurate answer to the user's question. If the information doesn't contain the answer, simply say so.
-
-{context}
-
-User: {input}
-"""
-            rag_prompt = ChatPromptTemplate.from_template(RAG_PROMPT_TEMPLATE)
 
             # Generate answer using LLM with retrieved context
             chain = rag_prompt | self.llm | StrOutputParser()
@@ -348,7 +334,7 @@ User: {input}
 
             return answer, published_sources
         except Exception as e:
-            print(f"Error during async conversational RAG query execution: {e}")
+            print(f"Error during async optimized RAG query execution: {e}")
             import traceback
             traceback.print_exc()
             return f"Error processing query: {e}", []

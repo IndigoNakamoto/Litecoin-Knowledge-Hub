@@ -202,7 +202,7 @@ class QueryExpansionService:
                         expanded_queries.append(new_query)
 
         # Dynamic LLM-based expansion (async)
-        if use_llm and self.llm and len(expanded_queries) < 5:
+        if use_llm and self.llm and len(expanded_queries) < 3:
             try:
                 prompt = f"""
                 Given the query: "{query}"
@@ -231,8 +231,8 @@ class QueryExpansionService:
             except Exception as e:
                 logger.warning(f"Async LLM query expansion failed: {e}")
 
-        # Limit to top 5 variations to avoid explosion
-        return expanded_queries[:5]
+        # Limit to top 3 variations to avoid explosion
+        return expanded_queries[:3]
 
 
 class HybridRetriever(BaseRetriever):
@@ -488,11 +488,12 @@ class AdvancedRetrievalPipeline:
                 unique_candidates.append(doc)
                 seen_content.add(doc.page_content)
 
-        # Re-ranking
-        if rerank and len(unique_candidates) > top_k:
-            final_docs = self.reranker.rerank(query, unique_candidates, top_k=top_k)
-        else:
-            final_docs = unique_candidates[:top_k]
+        # Re-ranking DISABLED for performance - always use top candidates directly
+        # if rerank and len(unique_candidates) > top_k:
+        #     final_docs = self.reranker.rerank(query, unique_candidates, top_k=top_k)
+        # else:
+        #     final_docs = unique_candidates[:top_k]
+        final_docs = unique_candidates[:top_k]
 
         # Filter to published documents only
         published_docs = [
@@ -548,11 +549,12 @@ class AdvancedRetrievalPipeline:
                 unique_candidates.append(doc)
                 seen_content.add(doc.page_content)
 
-        # Re-ranking (could also be made async in future)
-        if rerank and len(unique_candidates) > top_k:
-            final_docs = self.reranker.rerank(query, unique_candidates, top_k=top_k)
-        else:
-            final_docs = unique_candidates[:top_k]
+        # Re-ranking DISABLED for performance - always use top candidates directly
+        # if rerank and len(unique_candidates) > top_k:
+        #     final_docs = self.reranker.rerank(query, unique_candidates, top_k=top_k)
+        # else:
+        #     final_docs = unique_candidates[:top_k]
+        final_docs = unique_candidates[:top_k]
 
         # Filter to published documents only
         published_docs = [
