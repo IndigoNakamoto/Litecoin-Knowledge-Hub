@@ -3,6 +3,7 @@ import logging
 import requests
 from pydantic import ValidationError
 from datetime import datetime
+from typing import Dict, Any, List, Union
 
 from backend.data_models import PayloadWebhookDoc
 from backend.data_ingestion.embedding_processor import process_payload_documents
@@ -10,6 +11,46 @@ from backend.data_ingestion.vector_store_manager import VectorStoreManager
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+def normalize_relationship_fields(doc_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Normalize relationship fields that may come as objects or strings from Payload CMS.
+    This handles differences between create/update hooks and delete hooks.
+    """
+    normalized = doc_data.copy()
+
+    # Handle author field - can be string ID or full user object
+    if 'author' in normalized:
+        author = normalized['author']
+        if isinstance(author, dict) and 'id' in author:
+            normalized['author'] = author['id']
+        elif isinstance(author, str):
+            # Already a string, keep as is
+            pass
+        else:
+            # If it's neither, set to None to avoid validation errors
+            logger.warning(f"Unexpected author format: {type(author)}, setting to None")
+            normalized['author'] = None
+
+    # Handle category field - can be list of string IDs or list of objects
+    if 'category' in normalized:
+        category = normalized['category']
+        if isinstance(category, list):
+            normalized_category = []
+            for cat in category:
+                if isinstance(cat, str):
+                    normalized_category.append(cat)
+                elif isinstance(cat, dict) and 'id' in cat:
+                    normalized_category.append(cat['id'])
+                else:
+                    logger.warning(f"Unexpected category item format: {type(cat)}, skipping")
+            normalized['category'] = normalized_category
+        else:
+            # If not a list, set to empty list
+            logger.warning(f"Category field is not a list: {type(category)}, setting to empty list")
+            normalized['category'] = []
+
+    return normalized
 
 def delete_and_refresh_vector_store(payload_id):
     """
@@ -115,7 +156,11 @@ async def receive_payload_webhook(request: Request, background_tasks: Background
         doc_data = raw_payload.get('doc', {})
         logger.info(f"📄 Document data keys: {list(doc_data.keys()) if isinstance(doc_data, dict) else 'Not a dict'}")
 
-        payload_doc = PayloadWebhookDoc(**doc_data)
+        # Normalize relationship fields to handle differences between create/update and delete hooks
+        normalized_doc_data = normalize_relationship_fields(doc_data)
+        logger.info(f"🔧 Normalized relationship fields for document processing")
+
+        payload_doc = PayloadWebhookDoc(**normalized_doc_data)
 
         # Extract operation from payload, default to 'update'
         operation = raw_payload.get('operation', 'update')
@@ -127,9 +172,13 @@ async def receive_payload_webhook(request: Request, background_tasks: Background
         if operation == 'delete' or payload_doc.status != 'published':
             # Delete any existing chunks for this document and refresh RAG pipeline
             background_tasks.add_task(delete_and_refresh_vector_store, payload_doc.id)
-            msg = f"🚫 Document ID '{payload_doc.id}' is not published (status: {payload_doc.status}) or deleted (operation: {operation}). Deleting any existing chunks and refreshing RAG pipeline."
-            logger.info(msg)
-            return {"status": "not_published_or_deleted", "message": msg, "document_id": payload_doc.id}
+            if operation == 'delete':
+                msg = f"🗑️ DELETE operation: Document ID '{payload_doc.id}' deleted from CMS. Removing embeddings from FAISS and refreshing RAG pipeline."
+                logger.info(msg)
+            else:
+                msg = f"🚫 Document ID '{payload_doc.id}' status changed to '{payload_doc.status}' (not published). Removing embeddings from FAISS and refreshing RAG pipeline."
+                logger.info(msg)
+            return {"status": "not_published_or_deleted", "message": msg, "document_id": payload_doc.id, "operation": operation}
         else:
             # Document is published and not deleted, process it
             # Run the processing in the background to avoid blocking the webhook response.
@@ -202,8 +251,11 @@ async def test_webhook_endpoint(request: Request):
         if not doc_data:
             return {"status": "error", "message": "Missing 'doc' field in payload"}
 
+        # Normalize relationship fields to handle test payloads that might have object formats
+        normalized_doc_data = normalize_relationship_fields(doc_data)
+
         # Try to validate against our model
-        payload_doc = PayloadWebhookDoc(**doc_data)
+        payload_doc = PayloadWebhookDoc(**normalized_doc_data)
 
         return {
             "status": "success",

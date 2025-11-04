@@ -258,7 +258,7 @@ class HybridRetriever(BaseRetriever):
             search_type="similarity",
             search_kwargs={"k": 20}  # Get more candidates for fusion
         )
-        dense_docs = dense_retriever.get_relevant_documents(query)
+        dense_docs = dense_retriever.invoke(query)
 
         # Get sparse retrieval results (BM25)
         sparse_results = self._bm25_indexer.search(query, top_k=20)
@@ -424,7 +424,7 @@ class AdvancedRetrievalPipeline:
                     all_docs = set()
 
                     for query in broad_queries:
-                        docs = retriever.get_relevant_documents(query)
+                        docs = retriever.invoke(query)
                         all_docs.update(docs)
 
                     documents = list(all_docs)
@@ -469,14 +469,14 @@ class AdvancedRetrievalPipeline:
         # Retrieve candidates for each query variation
         for q in expanded_queries:
             if self.hybrid_retriever:
-                candidates = self.hybrid_retriever.get_relevant_documents(q)
+                candidates = self.hybrid_retriever.invoke(q)
             else:
                 # Fallback to dense retrieval only
                 retriever = self.vector_store_manager.get_retriever(
                     search_type="similarity",
                     search_kwargs={"k": 15}
                 )
-                candidates = retriever.get_relevant_documents(q)
+                candidates = retriever.invoke(q)
 
             all_candidates.extend(candidates)
 
@@ -530,14 +530,14 @@ class AdvancedRetrievalPipeline:
         # Retrieve candidates for each query variation (can be parallelized in future)
         for q in expanded_queries:
             if self.hybrid_retriever:
-                candidates = self.hybrid_retriever.get_relevant_documents(q)
+                candidates = self.hybrid_retriever.invoke(q)
             else:
                 # Fallback to dense retrieval only
                 retriever = self.vector_store_manager.get_retriever(
                     search_type="similarity",
                     search_kwargs={"k": 15}
                 )
-                candidates = retriever.get_relevant_documents(q)
+                candidates = retriever.invoke(q)
 
             all_candidates.extend(candidates)
 

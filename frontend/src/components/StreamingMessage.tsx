@@ -38,9 +38,9 @@ const StreamingMessage: React.FC<StreamingMessageProps> = ({
   const getStatusText = () => {
     switch (status) {
       case "thinking":
-        return "Thinking...";
+        return "";
       case "streaming":
-        return "Responding...";
+        return "";
       case "complete":
         return "";
       case "error":
@@ -67,7 +67,7 @@ const StreamingMessage: React.FC<StreamingMessageProps> = ({
     <div className="w-full">
       {/* Status indicator */}
       {status !== "complete" && (
-        <div className={`text-xs ${getStatusColor()} flex items-center gap-2 mb-2`}>
+        <div className={`text-xs ${getStatusColor()} flex items-center gap-2 mb-2 mx-auto`}>
           <div className="flex gap-1">
             <div className="w-1.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:-0.3s]"></div>
             <div className="w-1.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:-0.15s]"></div>

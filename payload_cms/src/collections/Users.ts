@@ -47,7 +47,11 @@ export const Users: CollectionConfig = {
       hasMany: true,
       options: ['en', 'es', 'fr'], // Assuming these are your languages
       admin: {
-        condition: (data, siblingData) => siblingData.roles?.includes('verified-translator'),
+        condition: (data, siblingData) => {
+          // Only show for verified-translator role
+          const roles = siblingData?.roles || data?.roles || [];
+          return Array.isArray(roles) && roles.includes('verified-translator');
+        },
       },
     },
     {
@@ -56,7 +60,11 @@ export const Users: CollectionConfig = {
       relationTo: 'categories',
       hasMany: true,
       admin: {
-        condition: (data, siblingData) => siblingData.roles?.includes('contributor'),
+        condition: (data, siblingData) => {
+          // Only show for contributor role
+          const roles = siblingData?.roles || data?.roles || [];
+          return Array.isArray(roles) && roles.includes('contributor');
+        },
       },
     },
   ],
