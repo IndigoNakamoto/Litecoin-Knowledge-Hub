@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import ChatWindow from "@/components/ChatWindow";
 import Message from "@/components/Message";
+import StreamingMessage from "@/components/StreamingMessage";
 import MessageLoader from "@/components/MessageLoader";
 import InputBox from "@/components/InputBox";
 
@@ -10,28 +11,44 @@ interface Message {
   role: "human" | "ai"; // Changed to match backend Pydantic model
   content: string;
   sources?: { metadata?: { title?: string; source?: string } }[];
+  status?: "thinking" | "streaming" | "complete" | "error";
+  isStreamActive?: boolean;
 }
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [streamingMessage, setStreamingMessage] = useState<Message | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   const handleSendMessage = async (message: string) => {
-    const newUserMessage: Message = { role: "human", content: message }; // Changed to "human"
+    const newUserMessage: Message = { role: "human", content: message };
 
     // Prepare chat history for the backend - only include complete exchanges
-    // The backend expects a list of {role: "human" | "ai", content: "..."}
-    // We exclude the current user message since it's sent as the 'query' parameter
     const chatHistoryForBackend = messages.map(msg => ({
-      role: msg.role, // Already "human" or "ai"
+      role: msg.role,
       content: msg.content
     }));
 
     setMessages((prevMessages) => [...prevMessages, newUserMessage]);
     setIsLoading(true);
 
+    // Initialize streaming message
+    const initialStreamingMessage: Message = {
+      role: "ai",
+      content: "",
+      status: "thinking",
+      isStreamActive: true
+    };
+    setStreamingMessage(initialStreamingMessage);
+
     try {
-      const response = await fetch("http://localhost:8000/api/v1/chat", {
+      // Close any existing connection
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+
+      const response = await fetch("http://localhost:8000/api/v1/chat/stream", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -43,24 +60,140 @@ export default function Home() {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const data = await response.json();
-      const newAssistantMessage: Message = {
-        role: "ai", // Changed to "ai"
-        content: data.answer,
-        sources: data.sources,
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error("Response body is not readable");
+      }
+
+      let accumulatedContent = "";
+      let sources: { metadata?: { title?: string; source?: string } }[] = [];
+
+      const processStream = async () => {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n');
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(line.slice(6));
+
+                  if (data.status === 'thinking') {
+                    setStreamingMessage(prev => prev ? { ...prev, status: 'thinking' } : null);
+                  } else if (data.status === 'sources') {
+                    sources = data.sources || [];
+                    setStreamingMessage(prev => prev ? {
+                      ...prev,
+                      sources: sources
+                    } : null);
+                  } else if (data.status === 'streaming') {
+                    // Accumulate characters and display word by word
+                    let wordBuffer = "";
+                    for (const char of data.chunk) {
+                      wordBuffer += char;
+                      accumulatedContent += char;
+
+                      // Check if we've completed a word (space, punctuation, or end of chunk)
+                      const isWordBoundary = char === ' ' || char === '\n' || char === '.' || char === '!' || char === '?' || char === ',' || char === ';' || char === ':';
+
+                      if (isWordBoundary || wordBuffer.length > 20) { // Also break long words
+                        setStreamingMessage(prev => prev ? {
+                          ...prev,
+                          content: accumulatedContent,
+                          status: 'streaming',
+                          sources: sources,
+                          isStreamActive: true
+                        } : null);
+                        // Delay between words for natural typing rhythm
+                        await new Promise(resolve => setTimeout(resolve, 25));
+                        wordBuffer = "";
+                      }
+                    }
+
+                    // Display any remaining characters in the buffer
+                    if (wordBuffer.length > 0) {
+                      setStreamingMessage(prev => prev ? {
+                        ...prev,
+                        content: accumulatedContent,
+                        status: 'streaming',
+                        sources: sources,
+                        isStreamActive: true
+                      } : null);
+                    }
+                  } else if (data.status === 'complete') {
+                    setStreamingMessage(prev => prev ? {
+                      ...prev,
+                      content: accumulatedContent,
+                      status: 'complete',
+                      sources: sources,
+                      isStreamActive: false
+                    } : null);
+                    break;
+                  } else if (data.status === 'error') {
+                    setStreamingMessage(prev => prev ? {
+                      ...prev,
+                      content: data.error || "An error occurred",
+                      status: 'error',
+                      isStreamActive: false
+                    } : null);
+                    break;
+                  }
+                } catch (parseError) {
+                  console.error('Error parsing SSE data:', parseError);
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Stream processing error:', error);
+          setStreamingMessage(prev => prev ? {
+            ...prev,
+            content: "Sorry, something went wrong. Please try again.",
+            status: 'error',
+            isStreamActive: false
+          } : null);
+        }
       };
-      setMessages((prevMessages) => [...prevMessages, newAssistantMessage]);
+
+      await processStream();
+
     } catch (error) {
       console.error("Error sending message:", error);
-      const errorMessage: Message = {
-        role: "ai", // Changed to "ai"
+      setStreamingMessage({
+        role: "ai",
         content: "Sorry, something went wrong. Please try again.",
-      };
-      setMessages((prevMessages) => [...prevMessages, errorMessage]);
+        status: 'error',
+        isStreamActive: false
+      });
     } finally {
       setIsLoading(false);
     }
   };
+
+  // Effect to move completed streaming message to messages array
+  useEffect(() => {
+    if (streamingMessage && streamingMessage.status === 'complete') {
+      setMessages(prev => [...prev, {
+        role: streamingMessage.role,
+        content: streamingMessage.content,
+        sources: streamingMessage.sources
+      }]);
+      setStreamingMessage(null);
+    } else if (streamingMessage && streamingMessage.status === 'error') {
+      setMessages(prev => [...prev, {
+        role: streamingMessage.role,
+        content: streamingMessage.content,
+        sources: streamingMessage.sources
+      }]);
+      setStreamingMessage(null);
+    }
+  }, [streamingMessage]);
 
   return (
     <div className="flex flex-col h-screen max-h-screen bg-background">
@@ -74,7 +207,15 @@ export default function Home() {
               sources={msg.sources}
             />
           ))}
-          {isLoading && <MessageLoader />}
+          {streamingMessage && (
+            <StreamingMessage
+              content={streamingMessage.content}
+              status={streamingMessage.status || "thinking"}
+              sources={streamingMessage.sources}
+              isStreamActive={streamingMessage.isStreamActive || false}
+            />
+          )}
+          {!streamingMessage && isLoading && <MessageLoader />}
         </ChatWindow>
       </div>
       <InputBox onSendMessage={handleSendMessage} isLoading={isLoading} />

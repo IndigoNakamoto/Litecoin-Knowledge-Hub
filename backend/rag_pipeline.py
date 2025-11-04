@@ -48,6 +48,8 @@ QA_WITH_HISTORY_PROMPT = ChatPromptTemplate.from_messages(
 RAG_PROMPT_TEMPLATE = """
 You are a knowledgeable cryptocurrency expert, specifically Litecoin. Use the information below to provide a helpful, accurate answer to the user's question. If the information doesn't contain the answer, simply say so.
 
+Format your response using markdown with appropriate headers, bullet points, and formatting to make it easy to read and understand. Include space between sections for clarity.
+
 {context}
 
 User: {input}
@@ -338,6 +340,88 @@ class RAGPipeline:
             import traceback
             traceback.print_exc()
             return f"Error processing query: {e}", []
+
+    async def astream_query(self, query_text: str, chat_history: List[Tuple[str, str]]):
+        """
+        Streaming version of aquery that yields response chunks progressively.
+        Uses the same RAG processing capabilities as aquery (conversational context, advanced retrieval, etc.)
+        but streams the response character-by-character for smooth typing animation.
+
+        Args:
+            query_text: The user's current query.
+            chat_history: A list of (human_message, ai_message) tuples representing the conversation history.
+
+        Yields:
+            Dict with streaming data: {"type": "chunk", "content": "..."} or {"type": "sources", "sources": [...]} or {"type": "complete"}
+        """
+        try:
+            # Check cache first
+            cached_result = query_cache.get(query_text, chat_history)
+            if cached_result:
+                print(f"🔍 Cache hit for query: '{query_text}'")
+                cached_answer, cached_sources = cached_result
+
+                # Send sources first
+                yield {"type": "sources", "sources": cached_sources}
+
+                # Stream cached response character by character for consistent UX
+                import asyncio
+                for i, char in enumerate(cached_answer):
+                    yield {"type": "chunk", "content": char}
+                    # Small delay to control streaming speed
+                    if i % 10 == 0:  # Yield control every 10 characters
+                        await asyncio.sleep(0.001)
+
+                # Signal completion with cache flag
+                yield {"type": "complete", "from_cache": True}
+                return
+
+            # For non-cached responses, use the full async conversational RAG chain (same as aquery)
+            # Convert chat_history to Langchain's BaseMessage format for the history-aware retriever
+            converted_chat_history: List[BaseMessage] = []
+            for human_msg, ai_msg in chat_history:
+                converted_chat_history.append(HumanMessage(content=human_msg))
+                converted_chat_history.append(AIMessage(content=ai_msg))
+
+            # Invoke the async conversational retrieval chain with chat history
+            # The history-aware retriever will generate a standalone question from the chat history
+            result = await self.async_rag_chain.ainvoke({
+                "input": query_text,
+                "chat_history": converted_chat_history
+            })
+
+            answer = result.get("answer", "Error: Could not generate answer.")
+            # Get source documents from the chain result
+            sources = result.get("context", [])
+
+            # Filter out draft/unpublished documents from sources (same as aquery)
+            published_sources = [
+                doc for doc in sources
+                if doc.metadata.get("status") == "published"
+            ]
+
+            # Send sources first
+            yield {"type": "sources", "sources": published_sources}
+
+            # Cache the result (same as aquery)
+            query_cache.set(query_text, chat_history, answer, published_sources)
+
+            # Now stream the full response character by character for smooth animation
+            import asyncio
+            for i, char in enumerate(answer):
+                yield {"type": "chunk", "content": char}
+                # Small delay to control streaming speed (optional - frontend handles timing)
+                if i % 10 == 0:  # Yield control every 10 characters
+                    await asyncio.sleep(0.001)
+
+            # Signal completion
+            yield {"type": "complete", "from_cache": False}
+
+        except Exception as e:
+            print(f"Error during streaming RAG query execution: {e}")
+            import traceback
+            traceback.print_exc()
+            yield {"type": "error", "error": str(e)}
 
 # --- Standalone functions (can be removed or kept for other uses if RAGPipeline class is primary) ---
 

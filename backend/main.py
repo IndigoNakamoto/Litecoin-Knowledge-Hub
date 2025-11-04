@@ -9,8 +9,10 @@ if project_root not in sys.path:
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field # Re-add BaseModel and Field
 from typing import List, Dict, Any, Tuple
+import asyncio
 
 # Load environment variables from .env file
 load_dotenv()
@@ -153,4 +155,66 @@ async def chat_endpoint(request: ChatRequest):
     return ChatResponse(
         answer=answer,
         sources=source_documents
+    )
+
+@app.post("/api/v1/chat/stream")
+async def chat_stream_endpoint(request: ChatRequest):
+    """
+    Streaming endpoint for chat queries with real-time response delivery.
+    Returns Server-Sent Events with incremental chunks of the response.
+    """
+
+    # Convert ChatMessage list to the (human_message, ai_message) tuple format expected by RAGPipeline
+    paired_chat_history: List[Tuple[str, str]] = []
+    i = 0
+    while i < len(request.chat_history) - 1:  # Ensure we have pairs to process
+        human_msg = request.chat_history[i]
+        ai_msg = request.chat_history[i + 1]
+
+        if human_msg.role == "human" and ai_msg.role == "ai":
+            paired_chat_history.append((human_msg.content, ai_msg.content))
+            i += 2
+        else:
+            # Skip malformed pairs and continue
+            logger.warning(f"Skipping malformed chat history pair at index {i}")
+            i += 1
+
+    async def generate_stream():
+        try:
+            # Send initial status
+            yield f"data: {{\"status\": \"thinking\", \"chunk\": \"\", \"isComplete\": false}}\n\n"
+
+            # Get streaming response from RAG pipeline
+            from_cache = False
+            async for chunk_data in rag_pipeline_instance.astream_query(request.query, paired_chat_history):
+                if chunk_data["type"] == "chunk":
+                    # Escape the content for JSON
+                    escaped_content = chunk_data['content'].replace('\n', '\\n').replace('"', '\\"')
+                    yield f"data: {{\"status\": \"streaming\", \"chunk\": \"{escaped_content}\", \"isComplete\": false}}\n\n"
+                elif chunk_data["type"] == "sources":
+                    # Send sources information
+                    sources_json = jsonable_encoder([
+                        SourceDocument(page_content=doc.page_content, metadata=doc.metadata)
+                        for doc in chunk_data["sources"]
+                        if doc.metadata.get('status') == 'published'
+                    ])
+                    yield f"data: {{\"status\": \"sources\", \"sources\": {sources_json}, \"isComplete\": false}}\n\n"
+                elif chunk_data["type"] == "complete":
+                    from_cache = chunk_data.get("from_cache", False)
+                    yield f"data: {{\"status\": \"complete\", \"chunk\": \"\", \"isComplete\": true, \"fromCache\": {str(from_cache).lower()}}}\n\n"
+                    break
+
+        except Exception as e:
+            logger.error(f"Error in streaming response: {e}")
+            yield f"data: {{\"status\": \"error\", \"error\": \"{str(e)}\", \"isComplete\": true}}\n\n"
+
+    return StreamingResponse(
+        generate_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Cache-Control",
+        }
     )
