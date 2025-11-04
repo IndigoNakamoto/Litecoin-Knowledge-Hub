@@ -185,24 +185,25 @@ class HybridRetriever(BaseRetriever):
     def __init__(self, vector_store_manager: VectorStoreManager, bm25_indexer: BM25Indexer,
                  dense_weight: float = 0.7, sparse_weight: float = 0.3):
         super().__init__()
-        self.vector_store_manager = vector_store_manager
-        self.bm25_indexer = bm25_indexer
-        self.dense_weight = dense_weight
-        self.sparse_weight = sparse_weight
+        # Store references for hybrid retrieval
+        self._vector_store_manager = vector_store_manager
+        self._bm25_indexer = bm25_indexer
+        self._dense_weight = dense_weight
+        self._sparse_weight = sparse_weight
 
     def _get_relevant_documents(self, query: str, *, run_manager: CallbackManagerForRetrieverRun) -> List[Document]:
         """
         Retrieve documents using hybrid search with reciprocal rank fusion.
         """
         # Get dense retrieval results (semantic similarity)
-        dense_retriever = self.vector_store_manager.get_retriever(
+        dense_retriever = self._vector_store_manager.get_retriever(
             search_type="similarity",
             search_kwargs={"k": 20}  # Get more candidates for fusion
         )
         dense_docs = dense_retriever.get_relevant_documents(query)
 
         # Get sparse retrieval results (BM25)
-        sparse_results = self.bm25_indexer.search(query, top_k=20)
+        sparse_results = self._bm25_indexer.search(query, top_k=20)
 
         # Convert to common format for fusion
         dense_scores = {}
@@ -213,7 +214,7 @@ class HybridRetriever(BaseRetriever):
 
         sparse_scores = {}
         for idx, score in sparse_results:
-            doc = self.bm25_indexer.get_document(idx)
+            doc = self._bm25_indexer.get_document(idx)
             if doc:
                 doc_id = doc.metadata.get('payload_id', f"sparse_{idx}")
                 sparse_scores[doc_id] = score
@@ -249,7 +250,7 @@ class HybridRetriever(BaseRetriever):
             else:
                 # Find document from sparse results
                 for idx, _ in sparse_results:
-                    doc = self.bm25_indexer.get_document(idx)
+                    doc = self._bm25_indexer.get_document(idx)
                     if doc and doc.metadata.get('payload_id', '') == doc_id:
                         if doc.page_content not in seen_docs:
                             result_docs.append(doc)
@@ -339,7 +340,7 @@ class AdvancedRetrievalPipeline:
         try:
             # Try to load documents from MongoDB if available
             if self.vector_store_manager.mongodb_available:
-                mongo_docs = list(self.vector_store_manager.collection.find({"status": "published"}))
+                mongo_docs = list(self.vector_store_manager.collection.find({"metadata.status": "published"}))
                 documents = []
                 for doc in mongo_docs:
                     text = doc.get('text', '')
