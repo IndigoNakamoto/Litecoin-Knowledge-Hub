@@ -1,4 +1,3 @@
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Accordion,
   AccordionContent,
@@ -65,50 +64,55 @@ const StreamingMessage: React.FC<StreamingMessageProps> = ({
   };
 
   return (
-    <div className="flex items-start gap-4">
-      <Avatar>
-        <AvatarFallback>AI</AvatarFallback>
-      </Avatar>
-      <div className="flex flex-col gap-2 p-3 rounded-lg max-w-[70%] bg-muted">
-        {/* Status indicator */}
-        {status !== "complete" && (
-          <div className={`text-xs ${getStatusColor()} flex items-center gap-2`}>
-            <div className="flex gap-1">
-              <div className="w-1.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-              <div className="w-1.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-              <div className="w-1.5 h-1.5 bg-current rounded-full animate-bounce"></div>
-            </div>
-            {getStatusText()}
+    <div className="w-full">
+      {/* Status indicator */}
+      {status !== "complete" && (
+        <div className={`text-xs ${getStatusColor()} flex items-center gap-2 mb-2`}>
+          <div className="flex gap-1">
+            <div className="w-1.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+            <div className="w-1.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+            <div className="w-1.5 h-1.5 bg-current rounded-full animate-bounce"></div>
           </div>
-        )}
-
-        {/* Message content */}
-        <div className="prose prose-sm max-w-none dark:prose-invert prose-p:my-3 prose-headings:my-2">
-          <div className="animate-fade-in">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {content + (showCursor ? "▊" : "")}
-            </ReactMarkdown>
-          </div>
+          {getStatusText()}
         </div>
+      )}
 
-        {/* Sources */}
-        {sources && sources.length > 0 && status === "complete" && (
-          <Accordion type="single" collapsible className="w-full">
-            <AccordionItem value="sources">
-              <AccordionTrigger className="text-sm">Sources</AccordionTrigger>
-              <AccordionContent>
-                <ul className="list-disc pl-5 text-xs">
-                  {sources.map((source, index) => (
-                    <li key={index}>
-                      {source.metadata?.title || source.metadata?.source || "Unknown Source"}
-                    </li>
-                  ))}
-                </ul>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
-        )}
+      {/* Message content */}
+      <div className="prose prose-lg max-w-none dark:prose-invert prose-p:my-8 prose-headings:my-2 text-lg">
+        <div className="animate-fade-in">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              h1: ({ children }) => <h1 className="text-xl font-semibold mt-4 mb-2 text-foreground">{children}</h1>,
+              h2: ({ children }) => <h2 className="text-lg font-semibold mt-3 mb-2 text-foreground">{children}</h2>,
+              h3: ({ children }) => <h3 className="text-base font-semibold mt-2 mb-1 text-foreground">{children}</h3>,
+              h4: ({ children }) => <h4 className="text-sm font-semibold mt-2 mb-1 text-foreground">{children}</h4>,
+              h5: ({ children }) => <h5 className="text-sm font-medium mt-1 mb-1 text-foreground">{children}</h5>,
+              h6: ({ children }) => <h6 className="text-sm font-medium mt-1 mb-1 text-foreground">{children}</h6>,
+            }}
+          >
+            {content + (showCursor ? "▊" : "")}
+          </ReactMarkdown>
+        </div>
       </div>
+
+      {/* Sources */}
+      {sources && sources.length > 0 && status === "complete" && (
+        <Accordion type="single" collapsible className="w-full mt-4">
+          <AccordionItem value="sources">
+            <AccordionTrigger className="text-sm">Sources</AccordionTrigger>
+            <AccordionContent>
+              <ul className="list-disc pl-5 text-xs">
+                {sources.map((source, index) => (
+                  <li key={index}>
+                    {source.metadata?.title || source.metadata?.source || "Unknown Source"}
+                  </li>
+                ))}
+              </ul>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      )}
     </div>
   );
 };

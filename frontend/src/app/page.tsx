@@ -6,6 +6,7 @@ import Message from "@/components/Message";
 import StreamingMessage from "@/components/StreamingMessage";
 import MessageLoader from "@/components/MessageLoader";
 import InputBox from "@/components/InputBox";
+import SuggestedQuestions from "@/components/SuggestedQuestions";
 
 interface Message {
   role: "human" | "ai"; // Changed to match backend Pydantic model
@@ -198,25 +199,31 @@ export default function Home() {
   return (
     <div className="flex flex-col h-screen max-h-screen bg-background">
       <div className="flex-1 overflow-hidden">
-        <ChatWindow shouldScrollToBottom={true}>
-          {messages.map((msg, index) => (
-            <Message
-              key={index}
-              role={msg.role === "human" ? "user" : "assistant"}
-              content={msg.content}
-              sources={msg.sources}
-            />
-          ))}
-          {streamingMessage && (
-            <StreamingMessage
-              content={streamingMessage.content}
-              status={streamingMessage.status || "thinking"}
-              sources={streamingMessage.sources}
-              isStreamActive={streamingMessage.isStreamActive || false}
-            />
-          )}
-          {!streamingMessage && isLoading && <MessageLoader />}
-        </ChatWindow>
+        {messages.length === 0 && !streamingMessage && !isLoading ? (
+          <div className="flex items-center justify-center h-full">
+            <SuggestedQuestions onQuestionClick={handleSendMessage} />
+          </div>
+        ) : (
+          <ChatWindow shouldScrollToBottom={true}>
+            {messages.map((msg, index) => (
+              <Message
+                key={index}
+                role={msg.role === "human" ? "user" : "assistant"}
+                content={msg.content}
+                sources={msg.sources}
+              />
+            ))}
+            {streamingMessage && (
+              <StreamingMessage
+                content={streamingMessage.content}
+                status={streamingMessage.status || "thinking"}
+                sources={streamingMessage.sources}
+                isStreamActive={streamingMessage.isStreamActive || false}
+              />
+            )}
+            {!streamingMessage && isLoading && <MessageLoader />}
+          </ChatWindow>
+        )}
       </div>
       <InputBox onSendMessage={handleSendMessage} isLoading={isLoading} />
     </div>

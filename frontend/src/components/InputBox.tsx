@@ -24,13 +24,14 @@ const InputBox: React.FC<InputBoxProps> = ({ onSendMessage, isLoading }) => {
   };
 
   return (
-    <div className="flex gap-2 p-4">
+    <div className="flex gap-2 p-4 w-3xl mx-auto">
       <Input
         placeholder="Ask a question about Litecoin..."
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyPress={handleKeyPress}
         disabled={isLoading}
+        className="flex-grow text-2xl"
       />
       <Button onClick={handleSend} disabled={!input.trim() || isLoading}>
         Send

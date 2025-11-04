@@ -56,9 +56,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ children, shouldScrollToBottom 
   }, [handleScroll]);
 
   return (
-    <Card ref={scrollRef} className="flex flex-col h-full p-4 overflow-y-auto">
+    <div ref={scrollRef} className="flex flex-col h-full m-4 p-16 overflow-y-auto">
       {children}
-    </Card>
+    </div>
   );
 };
 
