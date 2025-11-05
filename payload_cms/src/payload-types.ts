@@ -143,7 +143,30 @@ export interface User {
  */
 export interface Category {
   id: string;
+  /**
+   * Display name for the category
+   */
   name: string;
+  /**
+   * Explain what content belongs in this category for writers
+   */
+  description?: string | null;
+  /**
+   * Parent category for hierarchical organization (leave blank for main categories)
+   */
+  parent?: (string | null) | Category;
+  /**
+   * Sort order within parent category (lower numbers appear first)
+   */
+  order: number;
+  /**
+   * Target audience level for this category
+   */
+  audienceLevel?: ('beginner' | 'intermediate' | 'advanced') | null;
+  /**
+   * Emoji or icon for visual identification (e.g., 🏛️, 💸)
+   */
+  icon?: string | null;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -173,6 +196,9 @@ export interface Article {
   title: string;
   author?: (string | null) | User;
   publishedDate?: string | null;
+  /**
+   * Select categories that best describe your article content
+   */
   category?: (string | Category)[] | null;
   content?: {
     root: {
@@ -316,6 +342,11 @@ export interface ArticlesSelect<T extends boolean = true> {
  */
 export interface CategoriesSelect<T extends boolean = true> {
   name?: T;
+  description?: T;
+  parent?: T;
+  order?: T;
+  audienceLevel?: T;
+  icon?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema

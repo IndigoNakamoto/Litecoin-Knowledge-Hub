@@ -19,6 +19,7 @@ import { CollectionConfig } from 'payload'
 import { isVerifiedTranslatorField } from '../access/isVerifiedTranslatorField'
 import type { User } from '../payload-types' // It's good practice to import your generated types
 import StatusBadge from '../components/StatusBadge'
+import CategorySelector from '../components/CategorySelector'
 
 export const Article: CollectionConfig = {
   slug: 'articles',
@@ -142,6 +143,10 @@ export const Article: CollectionConfig = {
       hasMany: true,
       admin: {
         position: 'sidebar',
+        description: 'Select categories that best describe your article content',
+        components: {
+          Field: CategorySelector,
+        },
       },
     },
     {
