@@ -22,7 +22,7 @@ if not MONGO_URI:
 # --- Constants ---
 DB_NAME = os.getenv("MONGO_DB_NAME", "litecoin_rag_db")
 COLLECTION_NAME = os.getenv("MONGO_COLLECTION_NAME", "litecoin_docs")
-LLM_MODEL_NAME = "gemini-2.5-flash"  # Google Flash 2.0 experimental. If "gemini-2.5-flash" becomes available, update here.
+LLM_MODEL_NAME = "gemini-2.0-flash-lite"  # Google Flash 2.0 experimental. If "gemini-2.5-flash" becomes available, update here.
 
 # --- RAG Prompt Templates ---
 # 1. History-aware question rephrasing prompt
