@@ -6,11 +6,9 @@ from typing import List
 import yaml # Added for frontmatter parsing
 import re   # Added for regex-based heading parsing
 
-import google.generativeai as genai
-from google.api_core.exceptions import ResourceExhausted, GoogleAPIError, InvalidArgument
 from langchain_core.documents import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from data_models import PayloadWebhookDoc, PayloadArticleMetadata
 
 # --- Setup Logger ---
@@ -77,9 +75,9 @@ class MarkdownTextSplitter:
         return all_chunks
 
 # --- Configuration Constants ---
-DEFAULT_EMBEDDING_MODEL = "text-embedding-004"
-MAX_RETRIES = 5
-BACKOFF_FACTOR = 2
+DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_MODEL_KWARGS = {"device": "cpu"}
+ENCODE_KWARGS = {"normalize_embeddings": True}
 
 # --- Custom Exception ---
 class PayloadTooLargeError(Exception):
@@ -89,27 +87,28 @@ class PayloadTooLargeError(Exception):
 # --- Embedding Service ---
 class EmbeddingService:
     """
-    Handles generating embeddings using Google's Generative AI with robust error handling.
+    Handles generating embeddings using local sentence-transformers models.
+    This eliminates API calls and avoids 504 errors.
     """
-    def __init__(self, api_key=None, model_name=None):
-        self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
-        if not self.api_key:
-            raise ValueError("GOOGLE_API_KEY environment variable not set.")
-        genai.configure(api_key=self.api_key)
+    def __init__(self, model_name=None):
         self.model_name = model_name or os.getenv("EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL)
-        logger.info(f"EmbeddingService initialized with model: {self.model_name}")
+        logger.info(f"EmbeddingService initialized with local model: {self.model_name}")
 
     def get_embeddings_client(self):
         """
-        Returns an instance of the Langchain GoogleGenerativeAIEmbeddings client.
+        Returns an instance of the Langchain HuggingFaceEmbeddings client.
         This is used for integration with Langchain's vector store functions.
-        It's configured for document retrieval.
+        Uses local sentence-transformers model for document embeddings.
         """
-        return GoogleGenerativeAIEmbeddings(
-            model=f"models/{self.model_name}",
-            task_type="retrieval_document",
-            request_options={"timeout": 60}
-        )
+        try:
+            return HuggingFaceEmbeddings(
+                model_name=self.model_name,
+                model_kwargs=EMBEDDING_MODEL_KWARGS,
+                encode_kwargs=ENCODE_KWARGS
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize local embedding model: {e}")
+            raise
 
 
 def parse_markdown_hierarchically(content: str, initial_metadata: dict, recursive_splitter: RecursiveCharacterTextSplitter) -> List[Document]:
@@ -364,7 +363,7 @@ def process_documents(docs: List[Document]) -> List[Document]:
 # This function is kept for compatibility with how vector_store_manager expects to get the embeddings client.
 def get_embedding_client():
     """
-    Initializes and returns the embedding service client.
+    Initializes and returns the local embedding service client.
     """
     service = EmbeddingService()
     return service.get_embeddings_client()
