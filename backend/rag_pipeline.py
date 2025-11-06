@@ -466,6 +466,7 @@ class RAGPipeline:
         Yields:
             Dict with streaming data: {"type": "chunk", "content": "..."} or {"type": "sources", "sources": [...]} or {"type": "complete"}
         """
+        start_time = time.time()
         try:
             # Truncate chat history to prevent token overflow
             truncated_history = self._truncate_chat_history(chat_history)
@@ -475,6 +476,14 @@ class RAGPipeline:
             if cached_result:
                 print(f"🔍 Cache hit for query: '{query_text}'")
                 cached_answer, cached_sources = cached_result
+                
+                # Track cache hit metrics
+                if MONITORING_ENABLED:
+                    rag_cache_hits_total.labels(cache_type="query").inc()
+                    rag_query_duration_seconds.labels(
+                        query_type="stream",
+                        cache_hit="true"
+                    ).observe(time.time() - start_time)
 
                 # Send sources first
                 yield {"type": "sources", "sources": cached_sources}
@@ -490,6 +499,13 @@ class RAGPipeline:
                 yield {"type": "complete", "from_cache": True}
                 return
 
+            # Cache miss
+            if MONITORING_ENABLED:
+                rag_cache_misses_total.labels(cache_type="query").inc()
+
+            # Track retrieval time
+            retrieval_start = time.time()
+            
             # For non-cached responses, use async conversational RAG chain
             converted_chat_history: List[BaseMessage] = []
             for human_msg, ai_msg in truncated_history:
@@ -502,6 +518,8 @@ class RAGPipeline:
                 "chat_history": converted_chat_history
             })
 
+            retrieval_duration = time.time() - retrieval_start
+
             answer = result.get("answer", "Error: Could not generate answer.")
             # Get source documents from the chain result
             sources = result.get("context", [])
@@ -511,6 +529,35 @@ class RAGPipeline:
                 doc for doc in sources
                 if doc.metadata.get("status") == "published"
             ]
+
+            total_duration = time.time() - start_time
+
+            # Track metrics
+            if MONITORING_ENABLED:
+                rag_retrieval_duration_seconds.observe(retrieval_duration)
+                rag_documents_retrieved_total.observe(len(published_sources))
+                rag_query_duration_seconds.labels(
+                    query_type="stream",
+                    cache_hit="false"
+                ).observe(total_duration)
+                
+                # Estimate and track LLM costs
+                estimated_input_tokens = len(query_text.split()) * 1.3
+                estimated_output_tokens = len(answer.split()) * 1.3
+                estimated_cost = estimate_gemini_cost(
+                    int(estimated_input_tokens),
+                    int(estimated_output_tokens),
+                    LLM_MODEL_NAME
+                )
+                track_llm_metrics(
+                    model=LLM_MODEL_NAME,
+                    operation="generate",
+                    input_tokens=int(estimated_input_tokens),
+                    output_tokens=int(estimated_output_tokens),
+                    cost_usd=estimated_cost,
+                    duration_seconds=total_duration,
+                    status="success",
+                )
 
             # Send sources first
             yield {"type": "sources", "sources": published_sources}
@@ -532,6 +579,21 @@ class RAGPipeline:
             print(f"Error during streaming RAG query execution: {e}")
             import traceback
             traceback.print_exc()
+            
+            # Track error metrics
+            if MONITORING_ENABLED:
+                total_duration = time.time() - start_time
+                rag_query_duration_seconds.labels(
+                    query_type="stream",
+                    cache_hit="false"
+                ).observe(total_duration)
+                track_llm_metrics(
+                    model=LLM_MODEL_NAME,
+                    operation="generate",
+                    duration_seconds=total_duration,
+                    status="error",
+                )
+            
             yield {"type": "error", "error": str(e)}
 
 

@@ -8,9 +8,9 @@ This project's value is not in competing with general-purpose AI models like Cha
 
 **Target Users/Audience:** Litecoin users (novice and experienced), cryptocurrency enthusiasts, developers building on Litecoin, and potential adopters seeking reliable information.
 
-## **Project Status: 📝 In Progress**
+## **Project Status: 📝 Phase 1 Nearly Complete**
 
-The project has successfully completed the implementation of the core RAG pipeline and backend services, including **conversational memory and history-aware retrieval** that enables natural follow-up conversations. The **Payload CMS integration is now fully operational** with complete content lifecycle management (draft → publish → unpublish → delete) and real-time synchronization. The current focus is on populating the CMS with comprehensive Litecoin knowledge base content and preparing for MVP testing and deployment.
+The project has successfully completed the implementation of the core RAG pipeline and backend services, including **conversational memory and history-aware retrieval** that enables natural follow-up conversations. The **Payload CMS integration is now fully operational** with complete content lifecycle management (draft → publish → unpublish → delete) and real-time synchronization. **Comprehensive monitoring infrastructure** (Prometheus, Grafana) and **question logging** have been implemented to track system performance and user queries. The current focus is on populating the CMS with comprehensive Litecoin knowledge base content and preparing for MVP testing and deployment.
 
 ## **Key Features & User Stories**
 
@@ -21,25 +21,29 @@ The project has successfully completed the implementation of the core RAG pipeli
 
 | Feature Area | Description |
 | :---- | :---- |
-| **Conversational Memory** | Enables natural follow-up conversations with context-aware responses, allowing users to ask questions like "Who created it?" or "What about the second one?" that reference previous conversation context. |
-| **Litecoin Basics & FAQ** | Provides clear, concise answers to fundamental questions about Litecoin, its history, how it works, and common terminology. Caters especially to new users. |
-| **Transaction & Block Explorer** | Allows users to look up details of Litecoin transactions and explore block information. |
-| **Market Data & Insights** | Delivers real-time Litecoin price information, market capitalization, and trading volume from reliable market APIs. |
-| **Developer Documentation** | Provides quick access to snippets from Litecoin developer documentation and technical resources. |
-| **Curated Knowledge Base** | A continuously updated library of well-researched articles and data serving as the primary source for the chatbot's answers. |
-| **Payload CMS Integration** | Complete content lifecycle management system with draft→publish→unpublish→delete workflows, real-time webhook synchronization, automated content filtering, and Foundation-controlled editorial oversight ensuring knowledge base quality and accuracy. |
+| **Conversational Memory** | ✅ **IMPLEMENTED** - Enables natural follow-up conversations with context-aware responses, allowing users to ask questions like "Who created it?" or "What about the second one?" that reference previous conversation context. |
+| **Payload CMS Integration** | ✅ **IMPLEMENTED** - Complete content lifecycle management system with draft→publish→unpublish→delete workflows, real-time webhook synchronization, automated content filtering, and Foundation-controlled editorial oversight ensuring knowledge base quality and accuracy. |
+| **Monitoring & Observability** | ✅ **IMPLEMENTED** - Comprehensive monitoring infrastructure with Prometheus metrics, Grafana dashboards, health checks, structured logging, and LLM observability (LangSmith integration). Tracks RAG pipeline performance, LLM costs, cache performance, and system health. |
+| **Question Logging** | ✅ **IMPLEMENTED** - All user questions are logged to MongoDB for analysis, enabling insights into user needs, query patterns, and system usage. Includes API endpoints for querying logged questions and statistics. |
+| **Litecoin Basics & FAQ** | 📝 **IN PROGRESS** - Provides clear, concise answers to fundamental questions about Litecoin, its history, how it works, and common terminology. Caters especially to new users. Content population in progress. |
+| **Transaction & Block Explorer** | 📝 **PLANNED** - Allows users to look up details of Litecoin transactions and explore block information. |
+| **Market Data & Insights** | 📝 **PLANNED** - Delivers real-time Litecoin price information, market capitalization, and trading volume from reliable market APIs. |
+| **Developer Documentation** | 📝 **PLANNED** - Provides quick access to snippets from Litecoin developer documentation and technical resources. |
+| **Curated Knowledge Base** | ✅ **IMPLEMENTED** - A continuously updated library of well-researched articles and data serving as the primary source for the chatbot's answers. Managed through Payload CMS. |
 
 ## **Project Roadmap**
 
-### **Phase 1: MVP Core Foundation**
+### **Phase 1: MVP Core Foundation** 📝 **Nearly Complete**
 
 *The goal of this phase is to launch a functional, reliable chatbot based on a trusted, human-vetted knowledge base managed with professional editorial controls.*
 
-* **Foundation Editorial Control:** Implement Payload's role-based system where community contributors create drafts and the Foundation team controls publishing decisions.  
-* **Flexible Content Structuring:** Leverage Payload's customizable content types (collections) to structure data for optimal RAG performance.  
-* **Real-time Synchronization:** Establish afterChange hook-based synchronization between Payload CMS and the RAG pipeline for immediate content updates.  
-* **Initial Launch Content:** Provide clear, concise answers to fundamental questions about Litecoin.  
-* **Production Deployment:** Deploy the frontend (Next.js), backend (FastAPI), and Payload CMS applications to their respective hosted services.
+* ✅ **Foundation Editorial Control:** Implemented Payload's role-based system where community contributors create drafts and the Foundation team controls publishing decisions.  
+* ✅ **Flexible Content Structuring:** Leveraged Payload's customizable content types (collections) to structure data for optimal RAG performance.  
+* ✅ **Real-time Synchronization:** Established afterChange hook-based synchronization between Payload CMS and the RAG pipeline for immediate content updates.  
+* ✅ **Monitoring Infrastructure:** Implemented comprehensive monitoring with Prometheus metrics, Grafana dashboards, health checks, and structured logging.  
+* ✅ **Question Logging:** Implemented user question logging system for analytics and insights.  
+* 📝 **Initial Launch Content:** In progress - Populating Payload CMS with comprehensive Litecoin knowledge base content.  
+* 📝 **Production Deployment:** Planned - Deploy the frontend (Next.js), backend (FastAPI), and Payload CMS applications to their respective hosted services.
 
 ### **Phase 2: User Experience & Accuracy Enhancements (Post-MVP)**
 
@@ -48,7 +52,7 @@ The project has successfully completed the implementation of the core RAG pipeli
 * **Conversational Memory & Context:** ✅ **COMPLETED** - Implemented history-aware retrieval using LangChain conversational chains to retain conversation history, enabling users to ask natural follow-up questions with context-aware responses.
 * **Trust & Transparency (Source Citations):** Implement in-line citations in AI responses, linking directly to source documents.
 * **Contextual Discovery (AI-Generated Follow-up Questions):** Generate relevant, clickable follow-up questions after each response.
-* **Upgraded Retrieval Engine (Hybrid Search & Re-ranking):** Enhance retrieval accuracy by combining vector similarity with keyword search.
+* **Upgraded Retrieval Engine (Hybrid Search & Re-ranking):** ⚠️ **EVALUATED BUT NOT IMPLEMENTED** - Advanced retrieval techniques (hybrid search combining vector similarity with BM25 keyword search, and cross-encoder re-ranking) were implemented and tested but found to degrade performance without significant accuracy improvements. The current simple vector similarity search provides optimal performance for this use case.
 * **User Feedback Loop:** Introduce a mechanism for users to provide direct feedback on AI answer quality.
 
 ### **Phase 3: Live Data & Developer Integrations (Post-MVP)**
@@ -116,7 +120,7 @@ flowchart TD
     PAYLOAD_API -- "Returns Content" --> SYNC
     SYNC -- "Sends to Processor" --> PROC
     PROC -- "Parses & Chunks" --> CHUNK
-    CHUNK -- "Embeds (text-embedding-004) & Stores" --> VDB
+    CHUNK -- "Embeds (Local OSS: all-MiniLM-L6-v2) & Stores" --> VDB
 
     %% Flow 2: User Query & RAG
     U -- "Submits Query" --> FE
@@ -163,6 +167,20 @@ flowchart TD
 
 ## **Log of Completed Milestones**
 
+* **Monitoring & Observability Infrastructure (Recent)**
+  * Implemented comprehensive Prometheus metrics system tracking HTTP requests, RAG pipeline performance, LLM costs, cache performance, and vector store health
+  * Set up Grafana dashboards with pre-configured panels for key metrics visualization
+  * Added health check endpoints (`/health`, `/health/live`, `/health/ready`) for service monitoring
+  * Implemented structured logging with JSON format support for production environments
+  * Integrated LangSmith for LLM observability and tracing (optional)
+  * Created monitoring middleware for automatic request/response metrics collection
+  * Added Docker Compose stack for easy monitoring infrastructure deployment
+* **Question Logging System (Recent)**
+  * Implemented user question logging to MongoDB for analytics and insights
+  * Created API endpoints (`/api/v1/questions`) for querying logged questions with pagination and filtering
+  * Added question statistics endpoint for usage analytics
+  * Integrated Prometheus metrics for tracking question volume by endpoint type
+  * Background logging ensures no performance impact on user queries
 * **Payload CMS Content Lifecycle Management (11/3/2025)**
   * Implemented complete CMS content lifecycle with draft→publish→unpublish→delete workflows
   * Added comprehensive webhook support for all content operations (create, update, delete)
@@ -182,7 +200,7 @@ flowchart TD
 * **Milestone 4: Backend & Knowledge Base Completion (6/7/2025)**
   * Implemented a full suite of CRUD API endpoints (/api/v1/sources) for managing data sources and successfully ingested the entire initial knowledge base.
 * **Milestone 3: Core RAG Pipeline Implementation (6/6/2025)**
-  * Implemented and tested the end-to-end pipeline, including multi-source data loaders, Google Text Embedding 004, MongoDB Atlas Vector Search, and a gemini-pro generation layer. Enhanced pipeline with hierarchical chunking and metadata filtering.
+  * Implemented and tested the end-to-end pipeline, including multi-source data loaders, local OSS embeddings (sentence-transformers/all-MiniLM-L6-v2), MongoDB Atlas Vector Search / FAISS, and a gemini-pro generation layer. Enhanced pipeline with hierarchical chunking and metadata filtering.
 * **Milestone 2: Basic Project Scaffold (6/5/2025)**
   * Frontend (Next.js) and Backend (FastAPI) directory structures established with basic functionality confirmed.
 * **Milestone 1: Project Initialization & Documentation Setup (6/5/2025)**
@@ -194,11 +212,14 @@ For more details, see cline\_docs/techStack.md.
 
 * **Frontend:** Next.js, TypeScript, Tailwind CSS
 * **Backend:** Python, FastAPI, LangChain (LCEL, Conversational Chains, History-Aware Retrieval)
-* **AI/LLM:** Google Text Embedding 004, Gemini Pro
+* **AI/LLM:** Gemini Flash 2.0 Lite (for generation)
+* **Embeddings:** sentence-transformers/all-MiniLM-L6-v2 (local OSS model via HuggingFace) - Runs locally on CPU/GPU, no API calls required, eliminates rate limits and reduces costs
 * **Content Management:** Payload CMS (self-hosted)
 * **Database:** MongoDB, MongoDB Atlas Vector Search / FAISS (hybrid for local development)
+* **Monitoring:** Prometheus, Grafana, LangSmith (optional LLM tracing)
 * **Deployment:** Vercel (Frontend), Railway/Render/Fly.io (Backend), Vercel/Docker (Payload CMS)
   * See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment instructions
+  * See [monitoring/README.md](./monitoring/README.md) for monitoring setup
 
 ## **Getting Started**
 

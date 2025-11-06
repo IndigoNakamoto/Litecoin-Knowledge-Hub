@@ -139,6 +139,25 @@ active_connections = Gauge(
     ["connection_type"],
 )
 
+# User Questions Metrics
+user_questions_total = Counter(
+    "user_questions_total",
+    "Total number of user questions asked",
+    ["endpoint_type"],  # endpoint_type: "chat" or "stream"
+)
+
+user_questions_analyzed_total = Counter(
+    "user_questions_analyzed_total",
+    "Total number of user questions that have been analyzed",
+)
+
+# Gauge for total questions from MongoDB (updated periodically)
+user_questions_count_from_db = Gauge(
+    "user_questions_count_from_db",
+    "Total number of user questions from MongoDB database",
+    ["endpoint_type"],  # endpoint_type: "chat", "stream", or "total"
+)
+
 
 def setup_metrics():
     """Initialize metrics registry. Called at application startup."""
