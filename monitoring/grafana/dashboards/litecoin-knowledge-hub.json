@@ -534,7 +534,7 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(llm_tokens_total[5m])) by (model, token_type) / 300",
+          "expr": "sum(rate(llm_tokens_total[5m])) by (model, token_type)",
           "legendFormat": "{{model}} - {{token_type}}",
           "refId": "A"
         }
@@ -551,7 +551,7 @@
     "list": []
   },
   "time": {
-    "from": "now-6h",
+    "from": "now-15m",
     "to": "now"
   },
   "timepicker": {},
