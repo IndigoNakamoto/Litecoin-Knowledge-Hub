@@ -26,10 +26,12 @@ scrape_configs:
     scrape_timeout: 10s
     metrics_path: '/metrics'
     static_configs:
-      - targets: ['backend:8000']
+      # For local development: backend running on host machine
+      - targets: ['host.docker.internal:8000']
         labels:
           service: 'backend'
           component: 'api'
+          environment: 'development'
     relabel_configs:
       - source_labels: [__address__]
         target_label: instance
