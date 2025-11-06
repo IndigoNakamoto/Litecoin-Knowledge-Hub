@@ -23,6 +23,9 @@ if not MONGO_URI:
 DB_NAME = os.getenv("MONGO_DB_NAME", "litecoin_rag_db")
 COLLECTION_NAME = os.getenv("MONGO_COLLECTION_NAME", "litecoin_docs")
 LLM_MODEL_NAME = "gemini-2.0-flash-lite"  # Google Flash 2.0 experimental. If "gemini-2.5-flash" becomes available, update here.
+# Maximum number of chat history pairs (human-AI exchanges) to include in context
+# This prevents token overflow and keeps context manageable. Default: 10 pairs (20 messages)
+MAX_CHAT_HISTORY_PAIRS = int(os.getenv("MAX_CHAT_HISTORY_PAIRS", "4"))
 
 # --- RAG Prompt Templates ---
 # 1. History-aware question rephrasing prompt
@@ -83,6 +86,7 @@ class RAGPipeline:
                 collection_name=self.collection_name
             )
             print(f"RAGPipeline initialized with VectorStoreManager for collection: {self.collection_name} (MongoDB: {'available' if self.vector_store_manager.mongodb_available else 'unavailable'})")
+            print(f"📊 Chat history context limit: {MAX_CHAT_HISTORY_PAIRS} pairs (configure via MAX_CHAT_HISTORY_PAIRS env var)")
 
         # Initialize LLM with Google Flash 2.5
         self.llm = ChatGoogleGenerativeAI(
@@ -151,6 +155,24 @@ class RAGPipeline:
             answer=self.async_document_chain
         )
 
+    def _truncate_chat_history(self, chat_history: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+        """
+        Truncates chat history to the configured maximum length, keeping the most recent exchanges.
+        
+        Args:
+            chat_history: A list of (human_message, ai_message) tuples representing the conversation history.
+            
+        Returns:
+            A truncated list containing at most MAX_CHAT_HISTORY_PAIRS exchanges, keeping the most recent ones.
+        """
+        if len(chat_history) <= MAX_CHAT_HISTORY_PAIRS:
+            return chat_history
+        
+        # Keep only the most recent N pairs
+        truncated = chat_history[-MAX_CHAT_HISTORY_PAIRS:]
+        print(f"⚠️ Chat history truncated from {len(chat_history)} to {len(truncated)} pairs (max: {MAX_CHAT_HISTORY_PAIRS})")
+        return truncated
+
     def refresh_vector_store(self):
         """
         Refreshes the vector store by reloading from disk and recreating the RAG chain.
@@ -186,8 +208,11 @@ class RAGPipeline:
         Returns:
             A tuple containing the generated answer (str) and a list of source documents (List[Document]).
         """
-        # Check cache first
-        cached_result = query_cache.get(query_text, chat_history)
+        # Truncate chat history to prevent token overflow
+        truncated_history = self._truncate_chat_history(chat_history)
+        
+        # Check cache first (using truncated history for cache key)
+        cached_result = query_cache.get(query_text, truncated_history)
         if cached_result:
             print(f"🔍 Cache hit for query: '{query_text}'")
             return cached_result
@@ -195,7 +220,7 @@ class RAGPipeline:
         try:
             # Convert chat_history to Langchain's BaseMessage format for the history-aware retriever
             converted_chat_history: List[BaseMessage] = []
-            for human_msg, ai_msg in chat_history:
+            for human_msg, ai_msg in truncated_history:
                 converted_chat_history.append(HumanMessage(content=human_msg))
                 converted_chat_history.append(AIMessage(content=ai_msg))
 
@@ -215,8 +240,8 @@ class RAGPipeline:
                 if doc.metadata.get("status") == "published"
             ]
 
-            # Cache the result
-            query_cache.set(query_text, chat_history, answer, published_sources)
+            # Cache the result (using truncated history)
+            query_cache.set(query_text, truncated_history, answer, published_sources)
 
             return answer, published_sources
         except Exception as e:
@@ -236,8 +261,11 @@ class RAGPipeline:
         Returns:
             A tuple containing the generated answer (str) and a list of source documents (List[Document]).
         """
-        # Check cache first
-        cached_result = query_cache.get(query_text, chat_history)
+        # Truncate chat history to prevent token overflow
+        truncated_history = self._truncate_chat_history(chat_history)
+        
+        # Check cache first (using truncated history for cache key)
+        cached_result = query_cache.get(query_text, truncated_history)
         if cached_result:
             print(f"🔍 Cache hit for query: '{query_text}'")
             return cached_result
@@ -245,7 +273,7 @@ class RAGPipeline:
         try:
             # Convert chat_history to Langchain's BaseMessage format
             converted_chat_history: List[BaseMessage] = []
-            for human_msg, ai_msg in chat_history:
+            for human_msg, ai_msg in truncated_history:
                 converted_chat_history.append(HumanMessage(content=human_msg))
                 converted_chat_history.append(AIMessage(content=ai_msg))
 
@@ -275,8 +303,8 @@ class RAGPipeline:
                 if doc.metadata.get("status") == "published"
             ]
 
-            # Cache the result
-            query_cache.set(query_text, chat_history, answer, published_sources)
+            # Cache the result (using truncated history)
+            query_cache.set(query_text, truncated_history, answer, published_sources)
 
             return answer, published_sources
         except Exception as e:
@@ -297,8 +325,11 @@ class RAGPipeline:
             Dict with streaming data: {"type": "chunk", "content": "..."} or {"type": "sources", "sources": [...]} or {"type": "complete"}
         """
         try:
-            # Check cache first
-            cached_result = query_cache.get(query_text, chat_history)
+            # Truncate chat history to prevent token overflow
+            truncated_history = self._truncate_chat_history(chat_history)
+            
+            # Check cache first (using truncated history for cache key)
+            cached_result = query_cache.get(query_text, truncated_history)
             if cached_result:
                 print(f"🔍 Cache hit for query: '{query_text}'")
                 cached_answer, cached_sources = cached_result
@@ -319,7 +350,7 @@ class RAGPipeline:
 
             # For non-cached responses, use async conversational RAG chain
             converted_chat_history: List[BaseMessage] = []
-            for human_msg, ai_msg in chat_history:
+            for human_msg, ai_msg in truncated_history:
                 converted_chat_history.append(HumanMessage(content=human_msg))
                 converted_chat_history.append(AIMessage(content=ai_msg))
 
@@ -342,8 +373,8 @@ class RAGPipeline:
             # Send sources first
             yield {"type": "sources", "sources": published_sources}
 
-            # Cache the result
-            query_cache.set(query_text, chat_history, answer, published_sources)
+            # Cache the result (using truncated history)
+            query_cache.set(query_text, truncated_history, answer, published_sources)
 
             # Now stream the full response character by character for smooth animation
             for i, char in enumerate(answer):
