@@ -9,7 +9,9 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({ onQuestionClick
     "What is Litecoin and how does it differ from Bitcoin?",
     "How do I buy Litecoin?",
     "What are the benefits of Litecoin's faster transactions?",
-    "How does Litecoin mining work?"
+    "How does Litecoin mining work?",
+    "Does Litecoin have privacy features?",
+    "what are the scalability solutions for Litecoin?"
   ];
 
   return (
