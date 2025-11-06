@@ -534,9 +534,15 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(llm_tokens_total[5m])) by (model, token_type)",
+          "expr": "sum(rate(llm_tokens_total[1m])) by (model, token_type)",
           "legendFormat": "{{model}} - {{token_type}}",
           "refId": "A"
+        },
+        {
+          "expr": "sum(increase(llm_tokens_total[5m])) by (model, token_type) / 300",
+          "legendFormat": "{{model}} - {{token_type}} (5m avg)",
+          "refId": "B",
+          "hide": false
         }
       ],
       "title": "LLM Token Usage Rate",
