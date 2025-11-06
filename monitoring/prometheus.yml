@@ -1,0 +1,43 @@
+# Prometheus configuration for Litecoin Knowledge Hub
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'litecoin-knowledge-hub'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          # - alertmanager:9093
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - "alerts.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Litecoin Knowledge Hub Backend
+  - job_name: 'litecoin-backend'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['backend:8000']
+        labels:
+          service: 'backend'
+          component: 'api'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'litecoin-backend'
+
+  # Optional: Monitor Prometheus itself
+  - job_name: 'prometheus'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['localhost:9090']
+

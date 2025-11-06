@@ -1,5 +1,6 @@
 import os
 import asyncio
+import time
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
@@ -9,6 +10,25 @@ from langchain_core.documents import Document
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from data_ingestion.vector_store_manager import VectorStoreManager
 from cache_utils import query_cache
+
+# Import monitoring metrics
+try:
+    from backend.monitoring.metrics import (
+        rag_query_duration_seconds,
+        rag_cache_hits_total,
+        rag_cache_misses_total,
+        rag_retrieval_duration_seconds,
+        rag_documents_retrieved_total,
+    )
+    from backend.monitoring.llm_observability import track_llm_metrics, estimate_gemini_cost
+    MONITORING_ENABLED = True
+except ImportError:
+    # Monitoring not available, use no-op functions
+    MONITORING_ENABLED = False
+    def track_llm_metrics(*args, **kwargs):
+        pass
+    def estimate_gemini_cost(*args, **kwargs):
+        return 0.0
 
 # --- Environment Variable Checks ---
 google_api_key = os.getenv("GOOGLE_API_KEY")
@@ -208,6 +228,8 @@ class RAGPipeline:
         Returns:
             A tuple containing the generated answer (str) and a list of source documents (List[Document]).
         """
+        start_time = time.time()
+        
         # Truncate chat history to prevent token overflow
         truncated_history = self._truncate_chat_history(chat_history)
         
@@ -215,7 +237,17 @@ class RAGPipeline:
         cached_result = query_cache.get(query_text, truncated_history)
         if cached_result:
             print(f"🔍 Cache hit for query: '{query_text}'")
+            if MONITORING_ENABLED:
+                rag_cache_hits_total.labels(cache_type="query").inc()
+                rag_query_duration_seconds.labels(
+                    query_type="sync",
+                    cache_hit="true"
+                ).observe(time.time() - start_time)
             return cached_result
+        
+        # Cache miss
+        if MONITORING_ENABLED:
+            rag_cache_misses_total.labels(cache_type="query").inc()
 
         try:
             # Convert chat_history to Langchain's BaseMessage format for the history-aware retriever
@@ -224,12 +256,17 @@ class RAGPipeline:
                 converted_chat_history.append(HumanMessage(content=human_msg))
                 converted_chat_history.append(AIMessage(content=ai_msg))
 
+            # Track retrieval time
+            retrieval_start = time.time()
+            
             # Invoke the conversational retrieval chain with chat history
             result = self.rag_chain.invoke({
                 "input": query_text,
                 "chat_history": converted_chat_history
             })
 
+            retrieval_duration = time.time() - retrieval_start
+            
             answer = result.get("answer", "Error: Could not generate answer.")
             # Get source documents from the chain result
             sources = result.get("context", [])
@@ -240,6 +277,36 @@ class RAGPipeline:
                 if doc.metadata.get("status") == "published"
             ]
 
+            # Track metrics
+            if MONITORING_ENABLED:
+                rag_retrieval_duration_seconds.observe(retrieval_duration)
+                rag_documents_retrieved_total.observe(len(published_sources))
+                total_duration = time.time() - start_time
+                rag_query_duration_seconds.labels(
+                    query_type="sync",
+                    cache_hit="false"
+                ).observe(total_duration)
+                
+                # Estimate and track LLM costs (approximate)
+                # Note: Actual token counts would require LLM response metadata
+                # This is a placeholder - LangSmith integration provides better tracking
+                estimated_input_tokens = len(query_text.split()) * 1.3  # Rough estimate
+                estimated_output_tokens = len(answer.split()) * 1.3
+                estimated_cost = estimate_gemini_cost(
+                    int(estimated_input_tokens),
+                    int(estimated_output_tokens),
+                    LLM_MODEL_NAME
+                )
+                track_llm_metrics(
+                    model=LLM_MODEL_NAME,
+                    operation="generate",
+                    input_tokens=int(estimated_input_tokens),
+                    output_tokens=int(estimated_output_tokens),
+                    cost_usd=estimated_cost,
+                    duration_seconds=total_duration,
+                    status="success",
+                )
+
             # Cache the result (using truncated history)
             query_cache.set(query_text, truncated_history, answer, published_sources)
 
@@ -248,6 +315,20 @@ class RAGPipeline:
             print(f"Error during conversational RAG query execution: {e}")
             import traceback
             traceback.print_exc()
+            
+            if MONITORING_ENABLED:
+                total_duration = time.time() - start_time
+                rag_query_duration_seconds.labels(
+                    query_type="sync",
+                    cache_hit="false"
+                ).observe(total_duration)
+                track_llm_metrics(
+                    model=LLM_MODEL_NAME,
+                    operation="generate",
+                    duration_seconds=total_duration,
+                    status="error",
+                )
+            
             return f"Error processing query: {e}", []
 
     async def aquery(self, query_text: str, chat_history: List[Tuple[str, str]]) -> Tuple[str, List[Document]]:
@@ -261,6 +342,8 @@ class RAGPipeline:
         Returns:
             A tuple containing the generated answer (str) and a list of source documents (List[Document]).
         """
+        start_time = time.time()
+        
         # Truncate chat history to prevent token overflow
         truncated_history = self._truncate_chat_history(chat_history)
         
@@ -268,7 +351,17 @@ class RAGPipeline:
         cached_result = query_cache.get(query_text, truncated_history)
         if cached_result:
             print(f"🔍 Cache hit for query: '{query_text}'")
+            if MONITORING_ENABLED:
+                rag_cache_hits_total.labels(cache_type="query").inc()
+                rag_query_duration_seconds.labels(
+                    query_type="async",
+                    cache_hit="true"
+                ).observe(time.time() - start_time)
             return cached_result
+        
+        # Cache miss
+        if MONITORING_ENABLED:
+            rag_cache_misses_total.labels(cache_type="query").inc()
 
         try:
             # Convert chat_history to Langchain's BaseMessage format
@@ -277,22 +370,29 @@ class RAGPipeline:
                 converted_chat_history.append(HumanMessage(content=human_msg))
                 converted_chat_history.append(AIMessage(content=ai_msg))
 
+            # Track retrieval time
+            retrieval_start = time.time()
+            
             # Use direct vector search for performance
             retriever = self.vector_store_manager.get_retriever(
                 search_type="similarity",
                 search_kwargs={"k": 10}
             )
             context_docs = retriever.get_relevant_documents(query_text)
+            
+            retrieval_duration = time.time() - retrieval_start
 
             # Format context for LLM
             context_text = format_docs(context_docs)
 
             # Generate answer using LLM with retrieved context
+            llm_start = time.time()
             chain = rag_prompt | self.llm | StrOutputParser()
             answer = await chain.ainvoke({
                 "input": query_text,
                 "context": context_text
             })
+            llm_duration = time.time() - llm_start
 
             # Use retrieved docs as sources
             sources = context_docs
@@ -303,6 +403,34 @@ class RAGPipeline:
                 if doc.metadata.get("status") == "published"
             ]
 
+            # Track metrics
+            if MONITORING_ENABLED:
+                rag_retrieval_duration_seconds.observe(retrieval_duration)
+                rag_documents_retrieved_total.observe(len(published_sources))
+                total_duration = time.time() - start_time
+                rag_query_duration_seconds.labels(
+                    query_type="async",
+                    cache_hit="false"
+                ).observe(total_duration)
+                
+                # Estimate and track LLM costs
+                estimated_input_tokens = len(query_text.split()) * 1.3
+                estimated_output_tokens = len(answer.split()) * 1.3
+                estimated_cost = estimate_gemini_cost(
+                    int(estimated_input_tokens),
+                    int(estimated_output_tokens),
+                    LLM_MODEL_NAME
+                )
+                track_llm_metrics(
+                    model=LLM_MODEL_NAME,
+                    operation="generate",
+                    input_tokens=int(estimated_input_tokens),
+                    output_tokens=int(estimated_output_tokens),
+                    cost_usd=estimated_cost,
+                    duration_seconds=llm_duration,
+                    status="success",
+                )
+
             # Cache the result (using truncated history)
             query_cache.set(query_text, truncated_history, answer, published_sources)
 
@@ -311,6 +439,20 @@ class RAGPipeline:
             print(f"Error during async RAG query execution: {e}")
             import traceback
             traceback.print_exc()
+            
+            if MONITORING_ENABLED:
+                total_duration = time.time() - start_time
+                rag_query_duration_seconds.labels(
+                    query_type="async",
+                    cache_hit="false"
+                ).observe(total_duration)
+                track_llm_metrics(
+                    model=LLM_MODEL_NAME,
+                    operation="generate",
+                    duration_seconds=total_duration,
+                    status="error",
+                )
+            
             return f"Error processing query: {e}", []
 
     async def astream_query(self, query_text: str, chat_history: List[Tuple[str, str]]):

@@ -30,3 +30,4 @@ scipy
 sentence-transformers
 transformers
 numpy
+prometheus-client

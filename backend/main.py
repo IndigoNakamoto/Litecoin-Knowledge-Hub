@@ -28,16 +28,37 @@ import json
 import logging
 
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Import monitoring components
+from backend.monitoring import (
+    setup_logging,
+    setup_metrics,
+    MetricsMiddleware,
+    get_health_status,
+    get_liveness,
+    get_readiness,
+    generate_metrics_response,
+)
+from backend.monitoring.llm_observability import setup_langsmith
+
+# Configure structured logging
+log_level = os.getenv("LOG_LEVEL", "INFO")
+json_logging = os.getenv("JSON_LOGGING", "false").lower() == "true"
+setup_logging(log_level=log_level, json_format=json_logging)
 logger = logging.getLogger(__name__)
 
-# Set uvicorn loggers to INFO to see detailed request/response info
-logging.getLogger("uvicorn.access").setLevel(logging.INFO)
-logging.getLogger("uvicorn.error").setLevel(logging.INFO)
+# Initialize metrics
+setup_metrics()
 
-app = FastAPI()
+# Setup LangSmith for LLM observability (optional)
+langsmith_enabled = setup_langsmith()
+
+app = FastAPI(
+    title="Litecoin Knowledge Hub API",
+    description="AI-powered conversational tool for Litecoin information",
+    version="1.0.0",
+)
 
 # Add custom JSON encoder for ObjectId
 app.json_encoders = {
@@ -47,6 +68,9 @@ app.json_encoders = {
 # CORS configuration - supports both development and production
 cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:3000")
 origins = [origin.strip() for origin in cors_origins_env.split(",")]
+
+# Add monitoring middleware (before CORS to capture all requests)
+app.add_middleware(MetricsMiddleware)
 
 app.add_middleware(
     CORSMiddleware, 
@@ -74,7 +98,38 @@ class ChatResponse(BaseModel):
 
 @app.get("/")
 def read_root():
-    return {"Hello": "World"}
+    return {
+        "name": "Litecoin Knowledge Hub API",
+        "version": "1.0.0",
+        "status": "operational",
+        "langsmith_enabled": langsmith_enabled,
+    }
+
+@app.get("/metrics")
+async def metrics_endpoint(format: str = "prometheus"):
+    """
+    Prometheus metrics endpoint.
+    
+    Args:
+        format: Output format - "prometheus" or "openmetrics"
+    """
+    metrics_bytes, content_type = generate_metrics_response(format=format)
+    return Response(content=metrics_bytes, media_type=content_type)
+
+@app.get("/health")
+async def health_endpoint():
+    """Comprehensive health check endpoint."""
+    return get_health_status()
+
+@app.get("/health/live")
+async def liveness_endpoint():
+    """Kubernetes liveness probe endpoint."""
+    return get_liveness()
+
+@app.get("/health/ready")
+async def readiness_endpoint():
+    """Kubernetes readiness probe endpoint."""
+    return get_readiness()
 
 @app.options("/api/v1/chat")
 async def chat_options():
