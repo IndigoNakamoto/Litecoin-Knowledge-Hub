@@ -330,7 +330,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(rag_cache_hits_total[5m])) / (sum(rate(rag_cache_hits_total[5m])) + sum(rate(rag_cache_misses_total[5m])))",
+          "expr": "(sum(rate(rag_cache_hits_total[5m])) / (sum(rate(rag_cache_hits_total[5m])) + sum(rate(rag_cache_misses_total[5m])))) or (sum(rag_cache_hits_total) / (sum(rag_cache_hits_total) + sum(rag_cache_misses_total)))",
           "legendFormat": "Cache Hit Rate",
           "refId": "A"
         }
@@ -535,7 +535,7 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(llm_tokens_total[15s])) by (model, token_type)",
+          "expr": "sum(delta(llm_tokens_total[1m])) by (model, token_type)",
           "legendFormat": "{{model}} - {{token_type}}",
           "refId": "A"
         }
