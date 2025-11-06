@@ -24,6 +24,7 @@ from backend.api.v1.sources import router as sources_router
 from backend.api.v1.sync.payload import router as payload_sync_router
 from bson import ObjectId
 from fastapi.encoders import jsonable_encoder # Import jsonable_encoder
+import json
 import logging
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -182,15 +183,24 @@ async def chat_stream_endpoint(request: ChatRequest):
     async def generate_stream():
         try:
             # Send initial status
-            yield f"data: {{\"status\": \"thinking\", \"chunk\": \"\", \"isComplete\": false}}\n\n"
+            payload = {
+                "status": "thinking",
+                "chunk": "",
+                "isComplete": False
+            }
+            yield f"data: {json.dumps(payload)}\n\n"
 
             # Get streaming response from RAG pipeline
             from_cache = False
             async for chunk_data in rag_pipeline_instance.astream_query(request.query, paired_chat_history):
                 if chunk_data["type"] == "chunk":
-                    # Escape the content for JSON
-                    escaped_content = chunk_data['content'].replace('\n', '\\n').replace('"', '\\"')
-                    yield f"data: {{\"status\": \"streaming\", \"chunk\": \"{escaped_content}\", \"isComplete\": false}}\n\n"
+                    # Use proper JSON encoding for the chunk content
+                    payload = {
+                        "status": "streaming",
+                        "chunk": chunk_data['content'],
+                        "isComplete": False
+                    }
+                    yield f"data: {json.dumps(payload)}\n\n"
                 elif chunk_data["type"] == "sources":
                     # Send sources information
                     sources_json = jsonable_encoder([
@@ -198,15 +208,31 @@ async def chat_stream_endpoint(request: ChatRequest):
                         for doc in chunk_data["sources"]
                         if doc.metadata.get('status') == 'published'
                     ])
-                    yield f"data: {{\"status\": \"sources\", \"sources\": {sources_json}, \"isComplete\": false}}\n\n"
+                    payload = {
+                        "status": "sources",
+                        "sources": sources_json,
+                        "isComplete": False
+                    }
+                    yield f"data: {json.dumps(payload)}\n\n"
                 elif chunk_data["type"] == "complete":
                     from_cache = chunk_data.get("from_cache", False)
-                    yield f"data: {{\"status\": \"complete\", \"chunk\": \"\", \"isComplete\": true, \"fromCache\": {str(from_cache).lower()}}}\n\n"
+                    payload = {
+                        "status": "complete",
+                        "chunk": "",
+                        "isComplete": True,
+                        "fromCache": from_cache
+                    }
+                    yield f"data: {json.dumps(payload)}\n\n"
                     break
 
         except Exception as e:
             logger.error(f"Error in streaming response: {e}")
-            yield f"data: {{\"status\": \"error\", \"error\": \"{str(e)}\", \"isComplete\": true}}\n\n"
+            payload = {
+                "status": "error",
+                "error": str(e),
+                "isComplete": True
+            }
+            yield f"data: {json.dumps(payload)}\n\n"
 
     return StreamingResponse(
         generate_stream(),

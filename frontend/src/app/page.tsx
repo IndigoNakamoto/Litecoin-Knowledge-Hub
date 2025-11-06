@@ -88,7 +88,11 @@ export default function Home() {
             for (const line of lines) {
               if (line.startsWith('data: ')) {
                 try {
-                  const data = JSON.parse(line.slice(6));
+                  const jsonStr = line.slice(6).trim();
+                  // Skip empty lines
+                  if (!jsonStr) continue;
+                  
+                  const data = JSON.parse(jsonStr);
 
                   if (data.status === 'thinking') {
                     setStreamingMessage(prev => prev ? { ...prev, status: 'thinking' } : null);
@@ -151,7 +155,11 @@ export default function Home() {
                     break;
                   }
                 } catch (parseError) {
+                  // Log the problematic JSON string for debugging
+                  const jsonStr = line.slice(6).trim();
                   console.error('Error parsing SSE data:', parseError);
+                  console.error('Problematic JSON string:', jsonStr.substring(0, 100));
+                  // Continue processing other lines instead of breaking
                 }
               }
             }
