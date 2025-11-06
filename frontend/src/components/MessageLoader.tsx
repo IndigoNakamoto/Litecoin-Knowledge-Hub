@@ -4,7 +4,7 @@ const MessageLoader: React.FC = () => {
   return (
     <div className="flex items-start gap-4">
       <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-        <span className="text-xs">AI</span>
+        <span className="text-sm">AI</span>
       </div>
       <div className="flex flex-col gap-2 p-3 rounded-lg max-w-[70%] bg-muted">
         <div className="flex items-center gap-1">

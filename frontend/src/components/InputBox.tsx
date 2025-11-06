@@ -1,6 +1,6 @@
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
+import { Send } from "lucide-react";
 
 interface InputBoxProps {
   onSendMessage: (message: string) => void;
@@ -9,33 +9,70 @@ interface InputBoxProps {
 
 const InputBox: React.FC<InputBoxProps> = ({ onSendMessage, isLoading }) => {
   const [input, setInput] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSend = () => {
-    if (input.trim()) {
+    if (input.trim() && !isLoading) {
       onSendMessage(input);
       setInput("");
+      // Reset textarea height
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+      }
     }
   };
 
-  const handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter" && !isLoading) {
+  const handleKeyPress = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey && !isLoading) {
+      event.preventDefault();
       handleSend();
     }
   };
 
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+    }
+  }, [input]);
+
   return (
-    <div className="flex gap-2 p-4 w-3xl mx-auto">
-      <Input
-        placeholder="Ask a question about Litecoin..."
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onKeyPress={handleKeyPress}
-        disabled={isLoading}
-        className="flex-grow text-2xl"
-      />
-      <Button onClick={handleSend} disabled={!input.trim() || isLoading}>
-        Send
-      </Button>
+    <div className="border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="mx-auto max-w-4xl px-4 py-4">
+        <div className="relative flex items-end gap-3 rounded-2xl border border-border bg-background shadow-lg shadow-black/5 dark:shadow-black/20 transition-all focus-within:border-primary/50 focus-within:shadow-xl focus-within:shadow-primary/5">
+          <textarea
+            ref={textareaRef}
+            placeholder="Ask anything about Litecoin..."
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyPress}
+            disabled={isLoading}
+            rows={1}
+            className="flex-1 resize-none border-0 bg-transparent px-4 py-3.5 text-lg leading-7 text-foreground placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 min-h-[56px] max-h-[200px] overflow-y-auto"
+            style={{
+              scrollbarWidth: "thin",
+              scrollbarColor: "var(--muted) transparent",
+            }}
+          />
+          <div className="flex items-end pb-2 pr-2">
+            <Button
+              onClick={handleSend}
+              disabled={!input.trim() || isLoading}
+              size="icon"
+              className="h-9 w-9 rounded-xl bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0"
+              aria-label="Send message"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        <div className="mt-2 text-center">
+          <p className="text-sm text-muted-foreground">
+            Press Enter to send, Shift+Enter for new line
+          </p>
+        </div>
+      </div>
     </div>
   );
 };

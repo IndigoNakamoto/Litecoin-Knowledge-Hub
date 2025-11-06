@@ -1,24 +1,16 @@
 import os
 import asyncio
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.runnables import RunnablePassthrough, RunnableParallel
+from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
-from langchain_mongodb import MongoDBAtlasVectorSearch
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-from pymongo import MongoClient
+from langchain_google_genai import ChatGoogleGenerativeAI
 from typing import List, Tuple, Dict, Any
 from langchain_core.documents import Document
-from langchain_core.retrievers import BaseRetriever
-from langchain.chains import create_history_aware_retriever, create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain # Corrected import path
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
-from langchain.memory import ConversationBufferWindowMemory
 from data_ingestion.vector_store_manager import VectorStoreManager
-from advanced_retrieval import AdvancedRetrievalPipeline
-from cache_utils import query_cache, embedding_cache, async_executor
+from cache_utils import query_cache
 
 # --- Environment Variable Checks ---
-# Ensure GOOGLE_API_KEY is loaded. This check is critical.
 google_api_key = os.getenv("GOOGLE_API_KEY")
 if not google_api_key:
     raise ValueError("GOOGLE_API_KEY environment variable not set!")
@@ -30,9 +22,7 @@ if not MONGO_URI:
 # --- Constants ---
 DB_NAME = os.getenv("MONGO_DB_NAME", "litecoin_rag_db")
 COLLECTION_NAME = os.getenv("MONGO_COLLECTION_NAME", "litecoin_docs")
-INDEX_NAME = os.getenv("MONGO_VECTOR_INDEX_NAME", "vector_index") # Default to 'vector_index'
-EMBEDDING_MODEL_NAME = "models/text-embedding-004"
-LLM_MODEL_NAME = "gemini-2.5-flash" # Updated to correct model name
+LLM_MODEL_NAME = "gemini-2.5-flash"  # Google Flash 2.0 experimental. If "gemini-2.5-flash" becomes available, update here.
 
 # --- RAG Prompt Templates ---
 # 1. History-aware question rephrasing prompt
@@ -64,82 +54,62 @@ def format_docs(docs: List[Document]) -> str:
     """Helper function to format a list of documents into a single string."""
     return "\n\n".join(doc.page_content for doc in docs)
 
+
 class RAGPipeline:
     """
-    Encapsulates the Retrieval-Augmented Generation pipeline.
+    Simplified RAG Pipeline using FAISS with local embeddings and Google Flash 2.5 LLM.
     """
+    
     def __init__(self, vector_store_manager=None, db_name=None, collection_name=None):
         """
         Initializes the RAGPipeline.
 
         Args:
             vector_store_manager: An instance of VectorStoreManager. If provided, it's used.
-                                  Otherwise, a new MongoDBAtlasVectorSearch instance is created.
+                                  Otherwise, a new VectorStoreManager instance is created.
             db_name: Name of the database. Defaults to MONGO_DB_NAME env var or "litecoin_rag_db".
             collection_name: Name of the collection. Defaults to MONGO_COLLECTION_NAME env var or "litecoin_docs".
         """
         self.db_name = db_name or DB_NAME
         self.collection_name = collection_name or COLLECTION_NAME
         
-        # Initialize Embeddings for queries
-        # Reason: Setting task_type to 'retrieval_query' for embedding user queries.
-        self.query_embeddings = GoogleGenerativeAIEmbeddings(
-            model=EMBEDDING_MODEL_NAME,
-            task_type="retrieval_query",
-            google_api_key=google_api_key
-        )
-
         if vector_store_manager:
-            # If a VectorStoreManager instance is passed (e.g., from the test with a specific test collection)
-            self.vector_store = vector_store_manager.vector_store # Use its underlying Langchain vector store
+            self.vector_store_manager = vector_store_manager
             print(f"RAGPipeline using provided VectorStoreManager for collection: {vector_store_manager.collection_name}")
         else:
-            # Default initialization using VectorStoreManager for better compatibility
-            # This will use FAISS + MongoDB if available, or FAISS-only if MongoDB Atlas features aren't available
+            # Initialize VectorStoreManager with local embeddings
             self.vector_store_manager = VectorStoreManager(
                 db_name=self.db_name,
                 collection_name=self.collection_name
             )
-            self.vector_store = self.vector_store_manager.vector_store
             print(f"RAGPipeline initialized with VectorStoreManager for collection: {self.collection_name} (MongoDB: {'available' if self.vector_store_manager.mongodb_available else 'unavailable'})")
 
-        # Initialize LLM
-        self.llm = ChatGoogleGenerativeAI(model=LLM_MODEL_NAME, temperature=0.7, google_api_key=google_api_key)
-
-        # Initialize advanced retrieval pipeline
-        self.advanced_retrieval = AdvancedRetrievalPipeline(self.vector_store_manager)
+        # Initialize LLM with Google Flash 2.5
+        self.llm = ChatGoogleGenerativeAI(
+            model=LLM_MODEL_NAME, 
+            temperature=0.7, 
+            google_api_key=google_api_key
+        )
 
         # Construct the RAG chains (both sync and async)
         self._setup_rag_chain()
         self._setup_async_rag_chain()
 
     def _setup_rag_chain(self):
-        """Sets up the conversational RAG chain with memory and advanced retrieval."""
-        # Create advanced retriever wrapper for Langchain compatibility
-        from pydantic import Field
-
-        class AdvancedRetrieverWrapper(BaseRetriever):
-            advanced_retrieval: AdvancedRetrievalPipeline = Field(...)
-
-            def __init__(self, advanced_retrieval_pipeline):
-                super().__init__(advanced_retrieval=advanced_retrieval_pipeline)
-
-            def _get_relevant_documents(self, query: str, *, run_manager=None) -> List[Document]:
-                """Get relevant documents using advanced retrieval."""
-                return self.advanced_retrieval.retrieve(
-                    query=query,
-                    expand_query=True,
-                    rerank=True,
-                    top_k=10
-                )
-
-        # Create base retriever using advanced retrieval
-        base_retriever = AdvancedRetrieverWrapper(self.advanced_retrieval)
+        """Sets up the conversational RAG chain with memory."""
+        # Get retriever from vector store
+        retriever = self.vector_store_manager.get_retriever(
+            search_type="similarity",
+            search_kwargs={"k": 10}
+        )
 
         # Create history-aware retriever for standalone question generation
+        from langchain.chains import create_history_aware_retriever, create_retrieval_chain
+        from langchain.chains.combine_documents import create_stuff_documents_chain
+        
         self.history_aware_retriever = create_history_aware_retriever(
             self.llm,
-            base_retriever,
+            retriever,
             QA_WITH_HISTORY_PROMPT
         )
 
@@ -155,43 +125,23 @@ class RAGPipeline:
 
     def _setup_async_rag_chain(self):
         """Sets up async conversational RAG chain for concurrent processing."""
-        from pydantic import Field
-
-        class AsyncAdvancedRetrieverWrapper(BaseRetriever):
-            advanced_retrieval: AdvancedRetrievalPipeline = Field(...)
-
-            def __init__(self, advanced_retrieval_pipeline):
-                super().__init__(advanced_retrieval=advanced_retrieval_pipeline)
-
-            def _get_relevant_documents(self, query: str, *, run_manager=None) -> List[Document]:
-                """Sync version for compatibility."""
-                return self.advanced_retrieval.retrieve(
-                    query=query,
-                    expand_query=True,
-                    rerank=True,
-                    top_k=10
-                )
-
-            async def _aget_relevant_documents(self, query: str, *, run_manager=None) -> List[Document]:
-                """Async version for concurrent retrieval."""
-                return await self.advanced_retrieval.retrieve_async(
-                    query=query,
-                    expand_query=True,
-                    rerank=True,
-                    top_k=10
-                )
-
-        # Create async base retriever using advanced retrieval
-        async_base_retriever = AsyncAdvancedRetrieverWrapper(self.advanced_retrieval)
+        # Get retriever from vector store
+        retriever = self.vector_store_manager.get_retriever(
+            search_type="similarity",
+            search_kwargs={"k": 10}
+        )
 
         # Create history-aware retriever for standalone question generation
+        from langchain.chains import create_history_aware_retriever
+        
         self.async_history_aware_retriever = create_history_aware_retriever(
             self.llm,
-            async_base_retriever,
+            retriever,
             QA_WITH_HISTORY_PROMPT
         )
 
         # Create document combining chain for final answer generation
+        from langchain.chains.combine_documents import create_stuff_documents_chain
         self.async_document_chain = create_stuff_documents_chain(self.llm, rag_prompt)
 
         # Create conversational retrieval chain using LCEL
@@ -209,34 +159,21 @@ class RAGPipeline:
         try:
             print("🔄 Refreshing RAG pipeline vector store...")
 
-            # Reload the vector store from disk (this will include newly added documents)
+            # Reload the vector store from disk
             if hasattr(self, 'vector_store_manager') and self.vector_store_manager:
-                # For VectorStoreManager instances, reload the FAISS index
+                # Rebuild FAISS from MongoDB
                 self.vector_store_manager.vector_store = self.vector_store_manager._create_faiss_from_mongodb()
-                self.vector_store = self.vector_store_manager.vector_store
                 print("✅ Vector store reloaded from disk")
-            else:
-                # Fallback: try to reload FAISS directly
-                from langchain_community.vectorstores import FAISS
-                faiss_index_path = getattr(self.vector_store, 'index_to_docstore_id', None)
-                if faiss_index_path and hasattr(self.vector_store, 'save_local'):
-                    # Try to reload from the same path
-                    import os
-                    index_path = os.path.join(os.path.dirname(faiss_index_path) if faiss_index_path else ".", "faiss_index")
-                    if os.path.exists(os.path.join(index_path, "index.faiss")):
-                        self.vector_store = FAISS.load_local(index_path, self.query_embeddings, allow_dangerous_deserialization=True)
-                        print("✅ FAISS index reloaded from disk")
-
-            # Update advanced retrieval index
-            self.advanced_retrieval.update_index()
 
             # Recreate the RAG chain with the updated vector store
             self._setup_rag_chain()
+            self._setup_async_rag_chain()
             print("🎯 RAG pipeline refreshed successfully")
 
         except Exception as e:
             print(f"❌ Error refreshing vector store: {e}")
-            # Don't raise the exception - continue with the old vector store rather than crashing
+            import traceback
+            traceback.print_exc()
 
     def query(self, query_text: str, chat_history: List[Tuple[str, str]]) -> Tuple[str, List[Document]]:
         """
@@ -263,7 +200,6 @@ class RAGPipeline:
                 converted_chat_history.append(AIMessage(content=ai_msg))
 
             # Invoke the conversational retrieval chain with chat history
-            # The history-aware retriever will generate a standalone question from the chat history
             result = self.rag_chain.invoke({
                 "input": query_text,
                 "chat_history": converted_chat_history
@@ -292,7 +228,6 @@ class RAGPipeline:
     async def aquery(self, query_text: str, chat_history: List[Tuple[str, str]]) -> Tuple[str, List[Document]]:
         """
         Async version of query method optimized for performance with caching.
-        Uses direct async retrieval for speed while maintaining conversational context.
 
         Args:
             query_text: The user's current query.
@@ -308,8 +243,13 @@ class RAGPipeline:
             return cached_result
 
         try:
-            # For maximum performance, bypass advanced retrieval and use direct vector search
-            # This gives us the fastest possible retrieval for the API
+            # Convert chat_history to Langchain's BaseMessage format
+            converted_chat_history: List[BaseMessage] = []
+            for human_msg, ai_msg in chat_history:
+                converted_chat_history.append(HumanMessage(content=human_msg))
+                converted_chat_history.append(AIMessage(content=ai_msg))
+
+            # Use direct vector search for performance
             retriever = self.vector_store_manager.get_retriever(
                 search_type="similarity",
                 search_kwargs={"k": 10}
@@ -340,7 +280,7 @@ class RAGPipeline:
 
             return answer, published_sources
         except Exception as e:
-            print(f"Error during async optimized RAG query execution: {e}")
+            print(f"Error during async RAG query execution: {e}")
             import traceback
             traceback.print_exc()
             return f"Error processing query: {e}", []
@@ -348,8 +288,6 @@ class RAGPipeline:
     async def astream_query(self, query_text: str, chat_history: List[Tuple[str, str]]):
         """
         Streaming version of aquery that yields response chunks progressively.
-        Uses the same RAG processing capabilities as aquery (conversational context, advanced retrieval, etc.)
-        but streams the response character-by-character for smooth typing animation.
 
         Args:
             query_text: The user's current query.
@@ -369,7 +307,6 @@ class RAGPipeline:
                 yield {"type": "sources", "sources": cached_sources}
 
                 # Stream cached response character by character for consistent UX
-                import asyncio
                 for i, char in enumerate(cached_answer):
                     yield {"type": "chunk", "content": char}
                     # Small delay to control streaming speed
@@ -380,15 +317,13 @@ class RAGPipeline:
                 yield {"type": "complete", "from_cache": True}
                 return
 
-            # For non-cached responses, use the full async conversational RAG chain (same as aquery)
-            # Convert chat_history to Langchain's BaseMessage format for the history-aware retriever
+            # For non-cached responses, use async conversational RAG chain
             converted_chat_history: List[BaseMessage] = []
             for human_msg, ai_msg in chat_history:
                 converted_chat_history.append(HumanMessage(content=human_msg))
                 converted_chat_history.append(AIMessage(content=ai_msg))
 
             # Invoke the async conversational retrieval chain with chat history
-            # The history-aware retriever will generate a standalone question from the chat history
             result = await self.async_rag_chain.ainvoke({
                 "input": query_text,
                 "chat_history": converted_chat_history
@@ -398,7 +333,7 @@ class RAGPipeline:
             # Get source documents from the chain result
             sources = result.get("context", [])
 
-            # Filter out draft/unpublished documents from sources (same as aquery)
+            # Filter out draft/unpublished documents from sources
             published_sources = [
                 doc for doc in sources
                 if doc.metadata.get("status") == "published"
@@ -407,11 +342,10 @@ class RAGPipeline:
             # Send sources first
             yield {"type": "sources", "sources": published_sources}
 
-            # Cache the result (same as aquery)
+            # Cache the result
             query_cache.set(query_text, chat_history, answer, published_sources)
 
             # Now stream the full response character by character for smooth animation
-            import asyncio
             for i, char in enumerate(answer):
                 yield {"type": "chunk", "content": char}
                 # Small delay to control streaming speed (optional - frontend handles timing)
@@ -427,38 +361,6 @@ class RAGPipeline:
             traceback.print_exc()
             yield {"type": "error", "error": str(e)}
 
-# --- Standalone functions (can be removed or kept for other uses if RAGPipeline class is primary) ---
-
-async def retrieve_documents(query: str, vector_store_instance: MongoDBAtlasVectorSearch) -> List[Document]:
-    """
-    Retrieves documents from a given MongoDB Atlas Vector Search instance.
-    """
-    retriever = vector_store_instance.as_retriever(
-        search_type="similarity",
-        search_kwargs={"k": 10} 
-    )
-    retrieved_docs = await retriever.ainvoke(query)
-    return retrieved_docs
-
-async def get_rag_chain_async(vector_store_instance: MongoDBAtlasVectorSearch, llm_instance: ChatGoogleGenerativeAI):
-    """
-    Constructs and returns an asynchronous RAG chain using provided instances.
-    """
-    retriever = vector_store_instance.as_retriever(
-        search_type="similarity",
-        search_kwargs={"k": 10} 
-    )
-    rag_chain_from_docs = (
-        RunnablePassthrough.assign(context=(lambda x: format_docs(x["context"])))
-        | rag_prompt
-        | llm_instance
-        | StrOutputParser()
-    )
-    rag_chain_with_source = RunnableParallel(
-        {"context": retriever, "question": RunnablePassthrough()}
-    ).assign(answer=rag_chain_from_docs)
-    return rag_chain_with_source
-
 
 # Example of how to use the RAGPipeline class (for testing or direct script use)
 if __name__ == "__main__":
@@ -471,9 +373,9 @@ if __name__ == "__main__":
     else:
         print("RAGPipeline direct run: .env file not found. Ensure GOOGLE_API_KEY and MONGO_URI are set.")
 
-    print("Testing RAGPipeline class with conversational history...")
+    print("Testing RAGPipeline class with local embeddings and Google Flash 2.5...")
     try:
-        pipeline = RAGPipeline() # Uses default collection
+        pipeline = RAGPipeline()  # Uses default collection
 
         # Test 1: Initial query
         initial_query = "What is Litecoin?"
@@ -490,8 +392,6 @@ if __name__ == "__main__":
 
         # Test 2: Follow-up query with history
         follow_up_query = "Who created it?"
-        # Assuming the AI's previous answer was 'Litecoin was created by Charlie Lee.'
-        # For testing purposes, we'll simulate a simple history.
         simulated_history = [
             ("What is Litecoin?", "Litecoin is a peer-to-peer cryptocurrency and open-source software project released under the MIT/X11 license. It was inspired by Bitcoin but designed to have a faster block generation rate and use a different hashing algorithm.")
         ]
@@ -511,3 +411,5 @@ if __name__ == "__main__":
         print(f"Initialization Error: {ve}")
     except Exception as e:
         print(f"An error occurred: {e}")
+        import traceback
+        traceback.print_exc()

@@ -29,3 +29,4 @@ rank-bm25
 scipy
 sentence-transformers
 transformers
+numpy
