@@ -466,7 +466,7 @@
       },
       "targets": [
         {
-          "expr": "rate(llm_cost_usd_total[1h]) * 3600",
+          "expr": "sum(rate(llm_cost_usd_total[1h]) * 3600) by (model, operation)",
           "legendFormat": "{{model}} - {{operation}}",
           "refId": "A"
         }
@@ -534,7 +534,7 @@
       },
       "targets": [
         {
-          "expr": "rate(llm_tokens_total[5m])",
+          "expr": "sum(rate(llm_tokens_total[5m])) by (model, token_type)",
           "legendFormat": "{{model}} - {{token_type}}",
           "refId": "A"
         }

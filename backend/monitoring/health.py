@@ -10,6 +10,16 @@ from enum import Enum
 
 from backend.data_ingestion.vector_store_manager import VectorStoreManager
 
+# Import metrics to update them
+try:
+    from backend.monitoring.metrics import (
+        vector_store_documents_total,
+        vector_store_health,
+    )
+    MONITORING_ENABLED = True
+except ImportError:
+    MONITORING_ENABLED = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -54,6 +64,13 @@ class HealthChecker:
                 })
             
             check_duration = time.time() - start_time
+            
+            # Update Prometheus metrics
+            if MONITORING_ENABLED:
+                vector_store_documents_total.labels(status="total").set(total_count)
+                vector_store_documents_total.labels(status="published").set(published_count)
+                vector_store_documents_total.labels(status="draft").set(draft_count)
+                vector_store_health.set(1 if mongodb_available else 0)
             
             return {
                 "status": HealthStatus.HEALTHY if mongodb_available else HealthStatus.UNHEALTHY,
