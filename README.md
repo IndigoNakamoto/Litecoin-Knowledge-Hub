@@ -197,7 +197,8 @@ For more details, see cline\_docs/techStack.md.
 * **AI/LLM:** Google Text Embedding 004, Gemini Pro
 * **Content Management:** Payload CMS (self-hosted)
 * **Database:** MongoDB, MongoDB Atlas Vector Search / FAISS (hybrid for local development)
-* **Deployment:** Vercel (Frontend), TBD (Backend, Payload)
+* **Deployment:** Vercel (Frontend), Railway/Render/Fly.io (Backend), Vercel/Docker (Payload CMS)
+  * See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment instructions
 
 ## **Getting Started**
 
@@ -291,6 +292,10 @@ For local development, the backend uses FAISS vector store instead of MongoDB At
    - Create your first admin user account
    - Access the admin panel to manage content collections
    - Content published here will automatically sync with the RAG pipeline
+
+## **Deployment**
+
+For detailed deployment instructions for all services (Frontend, Backend, and Payload CMS), see [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ## **Contributing**
 

@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: litecoin-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGO_URI=${MONGO_URI}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - MONGO_DB_NAME=${MONGO_DB_NAME:-litecoin_rag_db}
+      - MONGO_COLLECTION_NAME=${MONGO_COLLECTION_NAME:-litecoin_docs}
+      - MONGO_DETAILS=${MONGO_DETAILS:-${MONGO_URI}}
+      - MONGO_DATABASE_NAME=${MONGO_DATABASE_NAME:-litecoin_rag_db}
+      - CMS_ARTICLES_COLLECTION_NAME=${CMS_ARTICLES_COLLECTION_NAME:-cms_articles}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-004}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
+    env_file:
+      - ./backend/.env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: litecoin-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8000}
+      - NODE_ENV=production
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  payload_cms:
+    build:
+      context: ./payload_cms
+      dockerfile: Dockerfile
+    container_name: litecoin-payload-cms
+    ports:
+      - "3001:3000"
+    environment:
+      - DATABASE_URI=${DATABASE_URI}
+      - PAYLOAD_SECRET=${PAYLOAD_SECRET}
+      - PAYLOAD_PUBLIC_SERVER_URL=${PAYLOAD_PUBLIC_SERVER_URL:-http://localhost:3001}
+      - BACKEND_URL=${BACKEND_URL:-http://localhost:8000}
+      - NODE_ENV=production
+    env_file:
+      - ./payload_cms/.env
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+

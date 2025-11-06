@@ -43,13 +43,13 @@ app.json_encoders = {
     ObjectId: str
 }
 
-origins = [
-    "http://localhost:3000",  # Allow requests from the frontend development server
-]
+# CORS configuration - supports both development and production
+cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:3000")
+origins = [origin.strip() for origin in cors_origins_env.split(",")]
 
 app.add_middleware(
     CORSMiddleware, 
-    allow_origins=origins, # works with ["*"], but not with origins,
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
