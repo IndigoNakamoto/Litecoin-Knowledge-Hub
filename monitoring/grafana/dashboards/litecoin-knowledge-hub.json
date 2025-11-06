@@ -534,7 +534,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(llm_tokens_total[5m])) by (model, token_type)",
+          "expr": "sum(increase(llm_tokens_total[5m])) by (model, token_type) / 300",
           "legendFormat": "{{model}} - {{token_type}}",
           "refId": "A"
         }
