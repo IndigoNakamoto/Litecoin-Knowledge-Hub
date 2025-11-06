@@ -15,8 +15,8 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({ onQuestionClick
   return (
     <div className="w-full max-w-4xl mx-auto px-4 py-8">
       <div className="text-center mb-6">
-        <h2 className="text-xl font-semibold text-foreground mb-2">Get started with Litecoin</h2>
-        <p className="text-md text-muted-foreground">Choose a question below or ask your own</p>
+        <h2 className="text-2xl font-semibold text-foreground mb-2">Get started with Litecoin</h2>
+        <p className="text-lg text-muted-foreground">Choose a question below or ask your own</p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {questions.map((question, index) => (
@@ -25,7 +25,7 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({ onQuestionClick
             onClick={() => onQuestionClick(question)}
             className="p-4 text-left bg-card border border-border rounded-lg hover:bg-accent hover:border-accent-foreground/20 transition-colors duration-200 group"
           >
-            <span className="text-md text-card-foreground group-hover:text-accent-foreground leading-relaxed">
+            <span className="text-lg text-card-foreground group-hover:text-accent-foreground leading-relaxed">
               {question}
             </span>
           </button>

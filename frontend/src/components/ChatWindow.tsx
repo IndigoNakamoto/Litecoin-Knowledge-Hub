@@ -1,22 +1,56 @@
-import { Card } from "@/components/ui/card";
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from "react";
 
 interface ChatWindowProps {
   children: React.ReactNode;
   shouldScrollToBottom?: boolean;
 }
 
-const ChatWindow: React.FC<ChatWindowProps> = ({ children, shouldScrollToBottom = false }) => {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [isUserScrolling, setIsUserScrolling] = useState(false);
-  const [lastScrollTop, setLastScrollTop] = useState(0);
+export interface ChatWindowRef {
+  scrollToElement: (element: HTMLElement | null) => void;
+  scrollToTop: () => void;
+}
 
-  // Intelligent auto-scroll logic
-  const scrollToBottom = useCallback(() => {
-    if (scrollRef.current && !isUserScrolling) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [isUserScrolling]);
+const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(
+  ({ children, shouldScrollToBottom = false }, ref) => {
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const [isUserScrolling, setIsUserScrolling] = useState(false);
+    const [lastScrollTop, setLastScrollTop] = useState(0);
+
+    // Expose scroll methods via ref
+    useImperativeHandle(ref, () => ({
+      scrollToElement: (element: HTMLElement | null) => {
+        if (element && scrollRef.current) {
+          const container = scrollRef.current;
+          
+          // Get bounding rectangles
+          const containerRect = container.getBoundingClientRect();
+          const elementRect = element.getBoundingClientRect();
+          
+          // Calculate the element's position relative to the container's scrollable content
+          // elementRect.top is relative to viewport, containerRect.top is container's position in viewport
+          // We need to add the current scrollTop to get the absolute position in the scrollable content
+          const elementPositionInScrollContent = elementRect.top - containerRect.top + container.scrollTop;
+          
+          // Target scroll position: element's position minus padding (16px)
+          const targetScroll = elementPositionInScrollContent - 16;
+          
+          // Use instant scroll for immediate positioning
+          container.scrollTop = Math.max(0, targetScroll);
+        }
+      },
+      scrollToTop: () => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = 0;
+        }
+      },
+    }));
+
+    // Intelligent auto-scroll logic
+    const scrollToBottom = useCallback(() => {
+      if (scrollRef.current && !isUserScrolling) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    }, [isUserScrolling]);
 
   // Handle scroll events to detect user interaction
   const handleScroll = useCallback(() => {
@@ -55,11 +89,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ children, shouldScrollToBottom 
     }
   }, [handleScroll]);
 
-  return (
-    <div ref={scrollRef} className="flex flex-col h-full m-4 p-16 overflow-y-auto">
-      {children}
-    </div>
-  );
-};
+    return (
+      <div ref={scrollRef} className="flex flex-col h-full m-4 p-16 overflow-y-auto">
+        {children}
+      </div>
+    );
+  }
+);
+
+ChatWindow.displayName = "ChatWindow";
 
 export default ChatWindow;

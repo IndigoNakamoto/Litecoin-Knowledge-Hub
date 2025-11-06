@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import ChatWindow from "@/components/ChatWindow";
+import ChatWindow, { ChatWindowRef } from "@/components/ChatWindow";
 import Message from "@/components/Message";
 import StreamingMessage from "@/components/StreamingMessage";
 import MessageLoader from "@/components/MessageLoader";
@@ -14,6 +14,7 @@ interface Message {
   sources?: { metadata?: { title?: string; source?: string } }[];
   status?: "thinking" | "streaming" | "complete" | "error";
   isStreamActive?: boolean;
+  id?: string;
 }
 
 export default function Home() {
@@ -21,9 +22,12 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState<Message | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const chatWindowRef = useRef<ChatWindowRef>(null);
+  const lastUserMessageIdRef = useRef<string | null>(null);
 
   const handleSendMessage = async (message: string) => {
-    const newUserMessage: Message = { role: "human", content: message };
+    const messageId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const newUserMessage: Message = { role: "human", content: message, id: messageId };
 
     // Prepare chat history for the backend - only include complete exchanges
     const chatHistoryForBackend = messages.map(msg => ({
@@ -32,6 +36,7 @@ export default function Home() {
     }));
 
     setMessages((prevMessages) => [...prevMessages, newUserMessage]);
+    lastUserMessageIdRef.current = messageId;
     setIsLoading(true);
 
     // Initialize streaming message
@@ -177,6 +182,29 @@ export default function Home() {
     }
   };
 
+  // Effect to scroll user message to top when it's added
+  useEffect(() => {
+    // Only scroll if we have a pending user message ID
+    if (lastUserMessageIdRef.current && chatWindowRef.current) {
+      // Use multiple requestAnimationFrame to ensure DOM is fully updated
+      const scrollToMessage = () => {
+        const messageElement = document.getElementById(lastUserMessageIdRef.current!);
+        if (messageElement && chatWindowRef.current) {
+          chatWindowRef.current.scrollToElement(messageElement);
+          // Clear the ref after scrolling to prevent re-scrolling
+          lastUserMessageIdRef.current = null;
+        }
+      };
+      
+      // Wait for React to render and DOM to update
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setTimeout(scrollToMessage, 10); // Small delay to ensure layout is complete
+        });
+      });
+    }
+  }, [messages]); // Trigger when messages array changes
+
   // Effect to move completed streaming message to messages array
   useEffect(() => {
     if (streamingMessage && streamingMessage.status === 'complete') {
@@ -204,10 +232,11 @@ export default function Home() {
             <SuggestedQuestions onQuestionClick={handleSendMessage} />
           </div>
         ) : (
-          <ChatWindow shouldScrollToBottom={true}>
+          <ChatWindow ref={chatWindowRef} shouldScrollToBottom={false}>
             {messages.map((msg, index) => (
               <Message
-                key={index}
+                key={msg.id || index}
+                messageId={msg.id}
                 role={msg.role === "human" ? "user" : "assistant"}
                 content={msg.content}
                 sources={msg.sources}

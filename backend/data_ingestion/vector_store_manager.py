@@ -2,6 +2,7 @@ import os
 import logging
 from typing import List, Dict, Any, Optional
 from pymongo import MongoClient
+import torch
 from langchain_core.documents import Document
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
@@ -10,9 +11,20 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+# Auto-detect Apple M1/M2/M3 GPU (Metal Performance Shaders)
+if torch.backends.mps.is_available():
+    device = "mps"
+    logger.info("Using Apple MPS (M1/M2/M3 GPU) for embeddings.")
+elif torch.cuda.is_available():
+    device = "cuda"
+    logger.info("Using NVIDIA CUDA (GPU) for embeddings.")
+else:
+    device = "cpu"
+    logger.info("GPU not available. Using CPU for embeddings.")
+
 # Default local embedding model - fast and efficient for semantic search
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-EMBEDDING_MODEL_KWARGS = {"device": "cpu"}  # Use CPU by default, can be changed to "cuda" if GPU available
+EMBEDDING_MODEL_KWARGS = {"device": device}
 ENCODE_KWARGS = {"normalize_embeddings": True}  # Normalize embeddings for better similarity search
 
 def get_local_embedding_model():

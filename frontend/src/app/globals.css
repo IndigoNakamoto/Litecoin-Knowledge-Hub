@@ -117,8 +117,118 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground text-lg;
+    font-feature-settings: "rlig" 1, "calt" 1;
   }
+}
+
+/* Enhanced prose and markdown styling */
+@layer components {
+  .prose {
+    @apply text-foreground;
+  }
+  
+  .prose code {
+    @apply bg-muted px-1.5 py-0.5 rounded text-base font-mono;
+    font-size: 0.95em;
+  }
+  
+  .prose pre {
+    @apply bg-muted border border-border rounded-lg p-4 overflow-x-auto my-4;
+    font-size: 1rem;
+    line-height: 1.7;
+  }
+  
+  .prose pre code {
+    @apply bg-transparent p-0 text-foreground;
+    font-size: inherit;
+  }
+  
+  .prose a {
+    @apply text-primary hover:text-primary/80 underline underline-offset-2 transition-colors;
+  }
+  
+  .prose strong {
+    @apply font-semibold text-foreground;
+  }
+  
+  .prose em {
+    @apply italic;
+  }
+  
+  .prose blockquote {
+    @apply border-l-4 border-primary/30 pl-4 italic my-4 text-muted-foreground;
+  }
+  
+  .prose ul, .prose ol {
+    @apply my-4 space-y-2;
+  }
+  
+  .prose ul {
+    @apply list-disc pl-6;
+  }
+  
+  .prose ol {
+    @apply list-decimal pl-6;
+  }
+  
+  .prose li {
+    @apply leading-relaxed;
+  }
+  
+  .prose li > p {
+    @apply my-2;
+  }
+  
+  .prose table {
+    @apply w-full border-collapse my-4;
+  }
+  
+  .prose thead {
+    @apply bg-muted;
+  }
+  
+  .prose th {
+    @apply border border-border px-4 py-2 text-left font-semibold;
+  }
+  
+  .prose td {
+    @apply border border-border px-4 py-2;
+  }
+  
+  .prose tr:nth-child(even) {
+    @apply bg-muted/50;
+  }
+  
+  .prose hr {
+    @apply border-border my-8;
+  }
+  
+  .prose img {
+    @apply rounded-lg my-4 max-w-full;
+  }
+  
+  .prose p {
+    @apply leading-8 text-lg;
+  }
+}
+
+/* Custom scrollbar for textarea */
+textarea::-webkit-scrollbar {
+  width: 6px;
+}
+
+textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+textarea::-webkit-scrollbar-thumb {
+  background-color: var(--muted);
+  border-radius: 3px;
+}
+
+textarea::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted-foreground);
 }
 
 @layer utilities {
