@@ -123,3 +123,29 @@ class PayloadWebhookDoc(BaseModel):
 
     class Config:
         extra = "allow" # Allow any other fields from Payload
+
+class UserQuestion(BaseModel):
+    """
+    Pydantic model for logging user questions for later analysis.
+    This will be used to categorize and group questions to understand user needs.
+    """
+    id: Optional[str] = Field(None, description="MongoDB document ID (assigned when retrieved from database).")
+    question: str = Field(..., description="The user's question/query.")
+    chat_history_length: int = Field(0, description="Number of previous messages in the conversation.")
+    endpoint_type: Literal["chat", "stream"] = Field(..., description="Which endpoint was used (chat or stream).")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="When the question was asked.")
+    # Fields for future LLM categorization/analysis
+    category: Optional[str] = Field(None, description="Category assigned by LLM analysis (to be populated later).")
+    tags: List[str] = Field(default_factory=list, description="Tags assigned by LLM analysis (to be populated later).")
+    analyzed: bool = Field(False, description="Whether this question has been analyzed by LLM yet.")
+    analyzed_at: Optional[datetime] = Field(None, description="When the question was analyzed.")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "question": "What is Litecoin?",
+                "chat_history_length": 0,
+                "endpoint_type": "chat",
+                "timestamp": "2024-01-15T10:30:00Z"
+            }
+        }

@@ -34,19 +34,22 @@ This focus on specialized, real-time, and accurate data is the core differentiat
 
 * **MVP Core: Content-Driven RAG Foundation**  
   * **Description:** The core of the MVP is to establish a robust, content-first RAG pipeline where a trusted knowledge base serves as the single source of truth. This is achieved by integrating **Payload CMS** as the professional-grade content management system. This system (**the tool**) is used to create and manage a **Curated Knowledge Base** (**the asset**), which will be initially populated with **Litecoin Basics & FAQ** content (**the outcome**). The entire system will then be deployed to production, making the chatbot publicly accessible.  
+  * **Status:** 📝 **Nearly Complete** - Payload CMS integration, monitoring, and question logging are complete. Content population and deployment remain.
   * **Primary Goals:**  
-    * **Foundation Editorial Control:** Implement Payload's role-based system where community contributors create drafts and the Foundation team controls publishing decisions.  
-    * **Flexible Content Structuring:** Leverage Payload's customizable content types (collections) to structure data for optimal RAG performance.  
-    * **Real-time Synchronization:** Establish afterChange hook-based synchronization between Payload CMS and the RAG pipeline for immediate content updates.  
-    * **Initial Launch Content:** Provide clear, concise answers to fundamental questions about Litecoin to cater to new users. Example Queries: "What is Litecoin?", "How is Litecoin different from Bitcoin?", "How do I get a Litecoin wallet?"  
-    * **Production Deployment:** Deploy the frontend (Next.js), backend (FastAPI), and Payload CMS applications to their respective hosted services, making the application stable and public.  
+    * ✅ **Foundation Editorial Control:** Implemented Payload's role-based system where community contributors create drafts and the Foundation team controls publishing decisions.  
+    * ✅ **Flexible Content Structuring:** Leveraged Payload's customizable content types (collections) to structure data for optimal RAG performance.  
+    * ✅ **Real-time Synchronization:** Established afterChange hook-based synchronization between Payload CMS and the RAG pipeline for immediate content updates.  
+    * ✅ **Monitoring Infrastructure:** Implemented comprehensive monitoring with Prometheus metrics, Grafana dashboards, health checks, and structured logging.  
+    * ✅ **Question Logging:** Implemented user question logging system for analytics and insights.  
+    * 📝 **Initial Launch Content:** In progress - Populating Payload CMS with comprehensive Litecoin knowledge base content.  
+    * 📝 **Production Deployment:** Planned - Deploy the frontend (Next.js), backend (FastAPI), and Payload CMS applications to their respective hosted services.  
   * **User Story:** A Foundation editor can review, approve, and publish community-contributed articles through Payload's admin panel. Once published, the content is automatically synchronized with the RAG pipeline, ensuring the chatbot immediately uses the most up-to-date, verified information without manual intervention.
 
 ### **Phase 2: User Experience & Accuracy Enhancements (Planned)**
 
 * **Trust & Transparency (Source Citations):** Implement in-line citations in AI responses, linking directly to retrieved source documents for verifiability.  
 * **Contextual Discovery (AI-Generated Follow-up Questions):** Enhance user engagement by generating 2-3 relevant, clickable follow-up questions after each chatbot response.  
-* **Upgraded Retrieval Engine (Hybrid Search & Re-ranking):** Enhance document retrieval accuracy by combining vector similarity with keyword search (hybrid search) and re-ranking retrieved documents for optimal relevance.  
+* **Upgraded Retrieval Engine (Hybrid Search & Re-ranking):** ⚠️ **EVALUATED BUT NOT IMPLEMENTED** - Advanced retrieval techniques (hybrid search combining vector similarity with BM25 keyword search, and cross-encoder re-ranking) were implemented and tested but found to degrade performance without significant accuracy improvements. The current simple vector similarity search provides optimal performance for this use case. This feature will not be pursued further.  
 * **User Feedback Loop:** Introduce a mechanism for users to provide direct feedback on AI answer quality, enabling continuous improvement and data collection.
 
 ### **Phase 3: Live Data & Developer Integrations (Planned)**
@@ -112,7 +115,7 @@ flowchart TD
     PAYLOAD_API -- "Returns Content" --> SYNC
     SYNC -- "Sends to Processor" --> PROC
     PROC -- "Parses & Chunks" --> CHUNK
-    CHUNK -- "Embeds (text-embedding-004) & Stores" --> VDB
+    CHUNK -- "Embeds (Local OSS: all-MiniLM-L6-v2) & Stores" --> VDB
 
     %% Flow 2: User Query & RAG
     U -- "Submits Query" --> FE
@@ -143,9 +146,10 @@ flowchart TD
   * Frontend: Next.js, Tailwind CSS  
   * Backend: Python, FastAPI  
   * Content Management: Payload CMS (self-hosted), MongoDB  
-  * Vector Database: MongoDB Atlas Vector Search  
+  * Vector Database: MongoDB Atlas Vector Search / FAISS  
   * Content Processing: JSON to structured data/Markdown, hierarchical chunking  
-  * Embedding: Google Text Embedding 004  
+  * Embedding: sentence-transformers/all-MiniLM-L6-v2 (local OSS model via HuggingFace)  
+  * LLM: Gemini Flash 2.0 Lite (for generation)  
   * Integration: Payload REST/GraphQL API, afterChange hooks  
   * Deployment: Vercel (frontend), TBD (backend), self-hosted (Payload)
 
@@ -161,9 +165,9 @@ flowchart TD
 * **Milestone 2:** Basic Project Scaffold (Next.js Frontend, FastAPI Backend) \- ✅ **Completed**  
 * **Milestone 3:** Core RAG Pipeline Implementation \- ✅ **Completed**  
 * **Milestone 4:** Backend & Knowledge Base Completion (Initial Articles) \- ✅ **Completed**  
-* **Milestone 5: Payload CMS Setup & Integration** \- 📝 **Planned**  
+* **Milestone 5: Payload CMS Setup & Integration** \- ✅ **Completed**  
   * **Focus:** Configure the self-hosted Payload CMS instance and integrate its API and webhooks with the backend RAG pipeline.  
-* **Milestone 6: MVP Content Population & Validation** \- 📝 **Planned**  
+* **Milestone 6: MVP Content Population & Validation** \- 📝 **In Progress**  
   * **Focus:** Populate Payload CMS with the complete "Litecoin Basics & FAQ" knowledge base and validate the end-to-end RAG pipeline.  
 * **Milestone 7: MVP Testing, Refinement & Deployment** \- 📝 **Planned**  
   * **Focus:** Conduct comprehensive testing, refine the user interface, and execute the initial production deployment.
@@ -174,7 +178,7 @@ flowchart TD
 
 * **Milestone 8: Implement Trust and Feedback Features** \- 📝 **Planned**  
 * **Milestone 9: Implement Contextual Discovery** \- 📝 **Planned**  
-* **Milestone 10: Upgrade Retrieval Engine** \- 📝 **Planned**
+* **Milestone 10: Upgrade Retrieval Engine** \- ⚠️ **CANCELLED** - Advanced retrieval techniques were evaluated but found to degrade performance. Current simple vector similarity search provides optimal performance.
 
 ### **Phase 3: Live Data & Developer Integrations (Post-MVP)**
 
@@ -194,6 +198,29 @@ flowchart TD
 
 ## **Log of Completed Major Milestones/Phases**
 
+* **Monitoring & Observability Infrastructure (Recent)**
+  * Implemented comprehensive Prometheus metrics system tracking HTTP requests, RAG pipeline performance, LLM costs, cache performance, and vector store health
+  * Set up Grafana dashboards with pre-configured panels for key metrics visualization
+  * Added health check endpoints (`/health`, `/health/live`, `/health/ready`) for service monitoring
+  * Implemented structured logging with JSON format support for production environments
+  * Integrated LangSmith for LLM observability and tracing (optional)
+  * Created monitoring middleware for automatic request/response metrics collection
+  * Added Docker Compose stack for easy monitoring infrastructure deployment
+* **Question Logging System (Recent)**
+  * Implemented user question logging to MongoDB for analytics and insights
+  * Created API endpoints (`/api/v1/questions`) for querying logged questions with pagination and filtering
+  * Added question statistics endpoint for usage analytics
+  * Integrated Prometheus metrics for tracking question volume by endpoint type
+  * Background logging ensures no performance impact on user queries
+* **Milestone 5: Payload CMS Setup & Integration** - Completed
+  * Configured self-hosted Payload CMS instance with MongoDB database
+  * Implemented Payload collections for knowledge base articles
+  * Configured Role-Based Access Controls (RBAC) for Foundation editors and community contributors
+  * Implemented Payload's `afterChange` hooks to trigger Content Sync Service upon publishing content
+  * Developed Content Sync Service to fetch and process content from Payload CMS API
+  * Adapted Embedding Processor to correctly parse, chunk, and prepare content from Payload for the vector store
+  * Conducted end-to-end tests confirming content published in Payload is successfully ingested into the RAG pipeline
+  * Updated project documentation to reflect the final Payload CMS integration architecture
 * **Milestone 1: Project Initialization & Documentation Setup** - Completed 6/5/2025
     * Initial `cline_docs` created and populated.
 * **Milestone 2: Basic Project Scaffold (Next.js Frontend, FastAPI Backend)** - Completed 6/5/2025
@@ -201,13 +228,13 @@ flowchart TD
     * Basic "Hello World" functionality confirmed for both.
 * **Milestone 3: Core RAG Pipeline Implementation** - Completed 6/6/2025
     * **Data Ingestion Framework:** Implemented and tested multi-source data loaders (Markdown, GitHub, Web).
-    * **Embedding:** Integrated Google Text Embedding 004.
+    * **Embedding:** Integrated local OSS embeddings using sentence-transformers/all-MiniLM-L6-v2 via HuggingFace.
     * **Vector Store:** Set up and integrated MongoDB Atlas Vector Search.
     * **Retrieval:** Implemented document retrieval based on similarity search.
     * **Generation:** Integrated Langchain with `ChatGoogleGenerativeAI` (`gemini-pro`) to generate answers from retrieved context.
     * **API:** `/api/v1/chat` endpoint created and functional, returning both the generated answer and source documents for transparency.
     * **Testing:** Standalone test script (`backend/test_rag_pipeline.py`) created to validate the end-to-end pipeline.
-    * **Enhancement (6/6/2025):** The RAG pipeline was significantly enhanced by implementing hierarchical chunking for Markdown, specific `task_type` usage for `text-embedding-004`, and an improved LLM prompt template.
+    * **Enhancement (6/6/2025):** The RAG pipeline was significantly enhanced by implementing hierarchical chunking for Markdown and an improved LLM prompt template.
     * **Enhancement (6/6/2025):** Implemented metadata filtering capabilities.
 * **Milestone 4: Backend & Knowledge Base Completion (MVP Feature 1: Litecoin Basics & FAQ)** - Completed 6/7/2025
     * **Data Source CRUD API:** Implemented a full suite of CRUD API endpoints (`/api/v1/sources`) for managing data sources.

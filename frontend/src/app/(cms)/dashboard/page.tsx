@@ -133,9 +133,14 @@ export default function DashboardPage() {
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Litecoin Knowledge Hub Dashboard</h1>
-        <Button asChild size="lg">
-          <Link href="/editor/new">Create New Article</Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button asChild variant="outline">
+            <Link href="/questions">View Questions Log</Link>
+          </Button>
+          <Button asChild size="lg">
+            <Link href="/editor/new">Create New Article</Link>
+          </Button>
+        </div>
       </div>
 
       <Card className="mb-6">

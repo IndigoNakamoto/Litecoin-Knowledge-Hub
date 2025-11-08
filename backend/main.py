@@ -8,36 +8,116 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field # Re-add BaseModel and Field
 from typing import List, Dict, Any, Tuple
 import asyncio
+from contextlib import asynccontextmanager
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Import the RAG chain constructor and data models
 from backend.rag_pipeline import RAGPipeline
-from backend.data_models import ChatRequest, ChatMessage
+from backend.data_models import ChatRequest, ChatMessage, UserQuestion
 from backend.api.v1.sources import router as sources_router
 from backend.api.v1.sync.payload import router as payload_sync_router
+from backend.api.v1.questions import router as questions_router
+from backend.dependencies import get_user_questions_collection
 from bson import ObjectId
 from fastapi.encoders import jsonable_encoder # Import jsonable_encoder
 import json
 import logging
 
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Import monitoring components
+from backend.monitoring import (
+    setup_logging,
+    setup_metrics,
+    MetricsMiddleware,
+    get_health_status,
+    get_liveness,
+    get_readiness,
+    generate_metrics_response,
+)
+from backend.monitoring.metrics import user_questions_total
+from backend.monitoring.llm_observability import setup_langsmith
+
+# Configure structured logging
+log_level = os.getenv("LOG_LEVEL", "INFO")
+json_logging = os.getenv("JSON_LOGGING", "false").lower() == "true"
+setup_logging(log_level=log_level, json_format=json_logging)
 logger = logging.getLogger(__name__)
 
-# Set uvicorn loggers to INFO to see detailed request/response info
-logging.getLogger("uvicorn.access").setLevel(logging.INFO)
-logging.getLogger("uvicorn.error").setLevel(logging.INFO)
+# Initialize metrics
+setup_metrics()
 
-app = FastAPI()
+# Setup LangSmith for LLM observability (optional)
+langsmith_enabled = setup_langsmith()
+
+async def update_question_metrics_from_db():
+    """Update question metrics from MongoDB."""
+    try:
+        from backend.monitoring.metrics import user_questions_count_from_db
+        collection = await get_user_questions_collection()
+        
+        # Get total count from MongoDB
+        total_count = await collection.count_documents({})
+        
+        # Get counts by endpoint type
+        chat_count = await collection.count_documents({"endpoint_type": "chat"})
+        stream_count = await collection.count_documents({"endpoint_type": "stream"})
+        
+        # Update Gauge metrics
+        user_questions_count_from_db.labels(endpoint_type="total").set(total_count)
+        user_questions_count_from_db.labels(endpoint_type="chat").set(chat_count)
+        user_questions_count_from_db.labels(endpoint_type="stream").set(stream_count)
+        
+    except Exception as e:
+        logger.error(f"Error updating question metrics from DB: {e}", exc_info=True)
+
+# Background task to periodically update metrics
+async def update_metrics_periodically():
+    """Periodically update metrics that need regular refreshing."""
+    from backend.monitoring.health import _health_checker
+    while True:
+        try:
+            # Update vector store metrics every 60 seconds
+            _health_checker.check_vector_store()
+            # Update question metrics from MongoDB every 60 seconds
+            await update_question_metrics_from_db()
+            await asyncio.sleep(60)
+        except Exception as e:
+            logger.error(f"Error updating metrics: {e}", exc_info=True)
+            await asyncio.sleep(60)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup and shutdown events."""
+    # Startup: Initialize question metrics from MongoDB
+    await update_question_metrics_from_db()
+    logger.info("Initialized question metrics from MongoDB")
+    
+    # Startup: Start background task for metrics updates
+    metrics_task = asyncio.create_task(update_metrics_periodically())
+    logger.info("Started background metrics update task")
+    yield
+    # Shutdown: Cancel the background task
+    metrics_task.cancel()
+    try:
+        await metrics_task
+    except asyncio.CancelledError:
+        logger.info("Stopped background metrics update task")
+
+app = FastAPI(
+    title="Litecoin Knowledge Hub API",
+    description="AI-powered conversational tool for Litecoin information",
+    version="1.0.0",
+    lifespan=lifespan,
+)
 
 # Add custom JSON encoder for ObjectId
 app.json_encoders = {
@@ -47,6 +127,9 @@ app.json_encoders = {
 # CORS configuration - supports both development and production
 cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:3000")
 origins = [origin.strip() for origin in cors_origins_env.split(",")]
+
+# Add monitoring middleware (before CORS to capture all requests)
+app.add_middleware(MetricsMiddleware)
 
 app.add_middleware(
     CORSMiddleware, 
@@ -59,6 +142,7 @@ app.add_middleware(
 # Include API routers
 app.include_router(sources_router, prefix="/api/v1/sources", tags=["Data Sources"])
 app.include_router(payload_sync_router, prefix="/api/v1/sync", tags=["Payload Sync"])
+app.include_router(questions_router, prefix="/api/v1/questions", tags=["User Questions"])
 
 # Initialize RAGPipeline globally or as a dependency
 # For simplicity, initializing globally for now. Consider dependency injection for better testability.
@@ -74,7 +158,38 @@ class ChatResponse(BaseModel):
 
 @app.get("/")
 def read_root():
-    return {"Hello": "World"}
+    return {
+        "name": "Litecoin Knowledge Hub API",
+        "version": "1.0.0",
+        "status": "operational",
+        "langsmith_enabled": langsmith_enabled,
+    }
+
+@app.get("/metrics")
+async def metrics_endpoint(format: str = "prometheus"):
+    """
+    Prometheus metrics endpoint.
+    
+    Args:
+        format: Output format - "prometheus" or "openmetrics"
+    """
+    metrics_bytes, content_type = generate_metrics_response(format=format)
+    return Response(content=metrics_bytes, media_type=content_type)
+
+@app.get("/health")
+async def health_endpoint():
+    """Comprehensive health check endpoint."""
+    return get_health_status()
+
+@app.get("/health/live")
+async def liveness_endpoint():
+    """Kubernetes liveness probe endpoint."""
+    return get_liveness()
+
+@app.get("/health/ready")
+async def readiness_endpoint():
+    """Kubernetes readiness probe endpoint."""
+    return get_readiness()
 
 @app.options("/api/v1/chat")
 async def chat_options():
@@ -118,13 +233,43 @@ async def clean_draft_documents():
         logger.error(f"Error cleaning draft documents: {e}")
         return {"status": "error", "message": str(e)}
 
+async def log_user_question(question: str, chat_history_length: int, endpoint_type: str):
+    """
+    Helper function to log user questions to MongoDB for later analysis.
+    This runs asynchronously and won't block the main request.
+    """
+    try:
+        collection = await get_user_questions_collection()
+        user_question = UserQuestion(
+            question=question,
+            chat_history_length=chat_history_length,
+            endpoint_type=endpoint_type
+        )
+        await collection.insert_one(user_question.model_dump())
+        
+        # Increment Prometheus metric
+        user_questions_total.labels(endpoint_type=endpoint_type).inc()
+        
+        logger.info(f"Logged user question: {question[:50]}...")
+    except Exception as e:
+        # Log error but don't fail the request
+        logger.error(f"Failed to log user question: {e}", exc_info=True)
+
 @app.post("/api/v1/chat", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest):
+async def chat_endpoint(request: ChatRequest, background_tasks: BackgroundTasks):
     """
     Endpoint to handle chat queries with conversational history.
     Processes the query through the RAG pipeline to get a generated response
     and the source documents used, taking into account previous messages.
     """
+    # Log the user question in the background
+    background_tasks.add_task(
+        log_user_question,
+        question=request.query,
+        chat_history_length=len(request.chat_history),
+        endpoint_type="chat"
+    )
+    
     # Convert ChatMessage list to the (human_message, ai_message) tuple format expected by RAGPipeline
     # The frontend now sends only complete exchanges, so we can simply pair consecutive human-AI messages
 
@@ -159,11 +304,18 @@ async def chat_endpoint(request: ChatRequest):
     )
 
 @app.post("/api/v1/chat/stream")
-async def chat_stream_endpoint(request: ChatRequest):
+async def chat_stream_endpoint(request: ChatRequest, background_tasks: BackgroundTasks):
     """
     Streaming endpoint for chat queries with real-time response delivery.
     Returns Server-Sent Events with incremental chunks of the response.
     """
+    # Log the user question in the background
+    background_tasks.add_task(
+        log_user_question,
+        question=request.query,
+        chat_history_length=len(request.chat_history),
+        endpoint_type="stream"
+    )
 
     # Convert ChatMessage list to the (human_message, ai_message) tuple format expected by RAGPipeline
     paired_chat_history: List[Tuple[str, str]] = []

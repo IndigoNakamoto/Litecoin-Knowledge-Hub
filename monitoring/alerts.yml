@@ -1,0 +1,150 @@
+# Prometheus Alerting Rules for Litecoin Knowledge Hub
+
+groups:
+  - name: application_alerts
+    interval: 30s
+    rules:
+      # High Error Rate Alert
+      - alert: HighErrorRate
+        expr: |
+          rate(http_requests_total{status_code=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: backend
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for the last 5 minutes"
+
+      # Slow Response Times Alert
+      - alert: SlowResponseTimes
+        expr: |
+          histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: backend
+        annotations:
+          summary: "Slow response times detected"
+          description: "P95 response time is {{ $value }}s (threshold: 5s)"
+
+      # Service Unhealthy Alert
+      - alert: ServiceUnhealthy
+        expr: |
+          application_health{service="backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: backend
+        annotations:
+          summary: "Backend service is unhealthy"
+          description: "Health check endpoint indicates service is down"
+
+  - name: rag_pipeline_alerts
+    interval: 30s
+    rules:
+      # Low Cache Hit Rate Alert
+      - alert: LowCacheHitRate
+        expr: |
+          (
+            rate(rag_cache_hits_total[5m]) /
+            (rate(rag_cache_hits_total[5m]) + rate(rag_cache_misses_total[5m]))
+          ) < 0.3
+        for: 10m
+        labels:
+          severity: warning
+          component: rag_pipeline
+        annotations:
+          summary: "Low cache hit rate detected"
+          description: "Cache hit rate is {{ $value | humanizePercentage }} (threshold: 30%)"
+
+      # Slow RAG Queries Alert
+      - alert: SlowRAGQueries
+        expr: |
+          histogram_quantile(0.95, rate(rag_query_duration_seconds_bucket[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: rag_pipeline
+        annotations:
+          summary: "Slow RAG queries detected"
+          description: "P95 RAG query duration is {{ $value }}s (threshold: 10s)"
+
+      # Vector Store Unhealthy Alert
+      - alert: VectorStoreUnhealthy
+        expr: |
+          vector_store_health == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: vector_store
+        annotations:
+          summary: "Vector store is unhealthy"
+          description: "Vector store health check failed"
+
+  - name: llm_cost_alerts
+    interval: 1m
+    rules:
+      # High LLM Cost Alert
+      - alert: HighLLMCost
+        expr: |
+          rate(llm_cost_usd_total[1h]) * 3600 > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: llm
+        annotations:
+          summary: "High LLM cost detected"
+          description: "Estimated hourly LLM cost is ${{ $value }} (threshold: $10/hour)"
+
+      # LLM Request Failures Alert
+      - alert: LLMRequestFailures
+        expr: |
+          rate(llm_requests_total{status="error"}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          component: llm
+        annotations:
+          summary: "High LLM request failure rate"
+          description: "LLM error rate is {{ $value }} requests/second"
+
+      # Slow LLM Responses Alert
+      - alert: SlowLLMResponses
+        expr: |
+          histogram_quantile(0.95, rate(llm_request_duration_seconds_bucket[5m])) > 30
+        for: 5m
+        labels:
+          severity: warning
+          component: llm
+        annotations:
+          summary: "Slow LLM responses detected"
+          description: "P95 LLM response time is {{ $value }}s (threshold: 30s)"
+
+  - name: infrastructure_alerts
+    interval: 30s
+    rules:
+      # High Request Rate Alert
+      - alert: HighRequestRate
+        expr: |
+          rate(http_requests_total[5m]) > 100
+        for: 5m
+        labels:
+          severity: info
+          component: backend
+        annotations:
+          summary: "High request rate detected"
+          description: "Request rate is {{ $value }} requests/second"
+
+      # Webhook Processing Failures Alert
+      - alert: WebhookProcessingFailures
+        expr: |
+          rate(webhook_processing_total{status="error"}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: webhook
+        annotations:
+          summary: "Webhook processing failures detected"
+          description: "Webhook error rate is {{ $value }} failures/second"
+

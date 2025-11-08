@@ -9,6 +9,16 @@ from backend.data_models import PayloadWebhookDoc
 from backend.data_ingestion.embedding_processor import process_payload_documents
 from backend.data_ingestion.vector_store_manager import VectorStoreManager
 
+# Import monitoring metrics
+try:
+    from backend.monitoring.metrics import (
+        webhook_processing_total,
+        webhook_processing_duration_seconds,
+    )
+    MONITORING_ENABLED = True
+except ImportError:
+    MONITORING_ENABLED = False
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
@@ -52,10 +62,16 @@ def normalize_relationship_fields(doc_data: Dict[str, Any]) -> Dict[str, Any]:
 
     return normalized
 
-def delete_and_refresh_vector_store(payload_id):
+def delete_and_refresh_vector_store(payload_id, operation="delete"):
     """
     Background task to delete documents by payload_id and refresh the RAG pipeline.
+    
+    Args:
+        payload_id: The Payload CMS document ID
+        operation: The operation type ("delete" or "unpublish")
     """
+    start_time = datetime.utcnow()
+    
     try:
         logger.info(f"🗑️ [Delete Task: {payload_id}] Starting deletion and refresh...")
 
@@ -76,14 +92,44 @@ def delete_and_refresh_vector_store(payload_id):
         except Exception as refresh_error:
             logger.warning(f"⚠️ [Delete Task: {payload_id}] Failed to refresh RAG pipeline: {refresh_error}")
 
+        end_time = datetime.utcnow()
+        duration = (end_time - start_time).total_seconds()
         logger.info(f"🎉 [Delete Task: {payload_id}] Deletion and refresh completed")
+        
+        if MONITORING_ENABLED:
+            webhook_processing_duration_seconds.labels(
+                source="payload_cms",
+                operation=operation
+            ).observe(duration)
+            webhook_processing_total.labels(
+                source="payload_cms",
+                operation=operation,
+                status="success"
+            ).inc()
 
     except Exception as e:
+        end_time = datetime.utcnow()
+        duration = (end_time - start_time).total_seconds()
         logger.error(f"💥 [Delete Task: {payload_id}] Deletion and refresh failed: {e}", exc_info=True)
+        
+        if MONITORING_ENABLED:
+            webhook_processing_duration_seconds.labels(
+                source="payload_cms",
+                operation=operation
+            ).observe(duration)
+            webhook_processing_total.labels(
+                source="payload_cms",
+                operation=operation,
+                status="error"
+            ).inc()
 
-def process_and_embed_document(payload_doc):
+def process_and_embed_document(payload_doc, operation="create"):
     """
     Background task to process and embed a single document from Payload.
+    
+    Args:
+        payload_doc: The Payload CMS document
+        operation: The operation type ("create" or "update")
     """
     payload_id = payload_doc.id
     start_time = datetime.utcnow()
@@ -134,11 +180,33 @@ def process_and_embed_document(payload_doc):
         end_time = datetime.utcnow()
         duration = (end_time - start_time).total_seconds()
         logger.info(f"🎉 [Task ID: {payload_id}] Background processing completed successfully in {duration:.2f} seconds")
+        
+        if MONITORING_ENABLED:
+            webhook_processing_duration_seconds.labels(
+                source="payload_cms",
+                operation=operation
+            ).observe(duration)
+            webhook_processing_total.labels(
+                source="payload_cms",
+                operation=operation,
+                status="success"
+            ).inc()
 
     except Exception as e:
         end_time = datetime.utcnow()
         duration = (end_time - start_time).total_seconds()
         logger.error(f"💥 [Task ID: {payload_id}] Background processing failed after {duration:.2f} seconds: {e}", exc_info=True)
+        
+        if MONITORING_ENABLED:
+            webhook_processing_duration_seconds.labels(
+                source="payload_cms",
+                operation=operation
+            ).observe(duration)
+            webhook_processing_total.labels(
+                source="payload_cms",
+                operation=operation,
+                status="error"
+            ).inc()
 
 
 @router.post("/payload")
@@ -171,7 +239,8 @@ async def receive_payload_webhook(request: Request, background_tasks: Background
         # Handle delete operations or non-published documents
         if operation == 'delete' or payload_doc.status != 'published':
             # Delete any existing chunks for this document and refresh RAG pipeline
-            background_tasks.add_task(delete_and_refresh_vector_store, payload_doc.id)
+            webhook_operation = 'delete' if operation == 'delete' else 'unpublish'
+            background_tasks.add_task(delete_and_refresh_vector_store, payload_doc.id, webhook_operation)
             if operation == 'delete':
                 msg = f"🗑️ DELETE operation: Document ID '{payload_doc.id}' deleted from CMS. Removing embeddings from FAISS and refreshing RAG pipeline."
                 logger.info(msg)
@@ -182,7 +251,8 @@ async def receive_payload_webhook(request: Request, background_tasks: Background
         else:
             # Document is published and not deleted, process it
             # Run the processing in the background to avoid blocking the webhook response.
-            background_tasks.add_task(process_and_embed_document, payload_doc)
+            webhook_operation = 'create' if operation == 'create' else 'update'
+            background_tasks.add_task(process_and_embed_document, payload_doc, webhook_operation)
             msg = f"✅ Processing triggered for published document ID: {payload_doc.id}"
             logger.info(msg)
             return {"status": "processing_triggered", "message": msg, "document_id": payload_doc.id}

@@ -6,7 +6,9 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-MONGO_DETAILS = os.getenv("MONGO_DETAILS")
+# Support both MONGO_DETAILS and MONGO_URI for flexibility
+# MONGO_DETAILS is preferred, but fall back to MONGO_URI if not set
+MONGO_DETAILS = os.getenv("MONGO_DETAILS") or os.getenv("MONGO_URI")
 MONGO_DATABASE_NAME = os.getenv("MONGO_DATABASE_NAME", "litecoin_rag_db") # Default DB name
 CMS_ARTICLES_COLLECTION_NAME = os.getenv("CMS_ARTICLES_COLLECTION_NAME", "cms_articles") # Default collection
 
@@ -19,7 +21,7 @@ async def get_mongo_client() -> AsyncIOMotorClient:
     global mongo_client
     if mongo_client is None:
         if not MONGO_DETAILS:
-            raise ConnectionError("MONGO_DETAILS environment variable not set.")
+            raise ConnectionError("MONGO_DETAILS or MONGO_URI environment variable must be set.")
         try:
             print(f"Attempting to connect to MongoDB at: {MONGO_DETAILS}")
             mongo_client = AsyncIOMotorClient(MONGO_DETAILS)
@@ -56,6 +58,26 @@ async def get_cms_db() -> AsyncIOMotorCollection:
         # Catch any other unexpected errors during DB access
         print(f"Error accessing CMS DB collection: {e}")
         raise ConnectionError(f"Error accessing CMS DB collection: {e}")
+
+USER_QUESTIONS_COLLECTION_NAME = os.getenv("USER_QUESTIONS_COLLECTION_NAME", "user_questions") # Default collection
+
+async def get_user_questions_collection() -> AsyncIOMotorCollection:
+    """
+    Dependency function to get the MongoDB collection for logging user questions.
+    """
+    try:
+        client = await get_mongo_client()
+        if client is None:
+            raise ConnectionError("MongoDB client is not available.")
+        
+        database = client[MONGO_DATABASE_NAME]
+        user_questions_collection = database[USER_QUESTIONS_COLLECTION_NAME]
+        return user_questions_collection
+    except ConnectionError as e:
+        raise e
+    except Exception as e:
+        print(f"Error accessing user questions collection: {e}")
+        raise ConnectionError(f"Error accessing user questions collection: {e}")
 
 # Example of how to close the client on app shutdown (if used with app events)
 # async def close_mongo_connection():
