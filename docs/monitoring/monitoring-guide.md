@@ -231,6 +231,11 @@ rate(rag_cache_hits_total[5m]) / (rate(rag_cache_hits_total[5m]) + rate(rag_cach
 rate(llm_cost_usd_total[1h]) * 3600
 ```
 
+**Running Total Gemini Cost**:
+```promql
+sum(llm_cost_usd_total{model=~"gemini.*"})
+```
+
 ## Grafana Dashboards
 
 ### Pre-configured Dashboard
@@ -251,6 +256,7 @@ A complete Grafana dashboard is included at `monitoring/grafana/dashboards/litec
 3. **LLM Observability**
    - Token usage (input/output)
    - Cost tracking
+   - Running total Gemini cost
    - Request latency
 
 4. **Infrastructure Health**

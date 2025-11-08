@@ -49,6 +49,11 @@ rate(rag_cache_hits_total[5m]) / (rate(rag_cache_hits_total[5m]) + rate(rag_cach
 rate(llm_cost_usd_total[1h]) * 3600
 ```
 
+### Running Total Gemini Cost
+```promql
+sum(llm_cost_usd_total{model=~"gemini.*"})
+```
+
 ### Vector Store Document Count
 ```promql
 vector_store_documents_total
