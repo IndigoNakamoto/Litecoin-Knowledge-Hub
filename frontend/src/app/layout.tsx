@@ -39,7 +39,7 @@ export default function RootLayout({
       >
         <AuthProvider>
           <Navigation />
-          <div className="pt-24">{children}</div>
+          <div className="">{children}</div>
         </AuthProvider>
       </body>
     </html>

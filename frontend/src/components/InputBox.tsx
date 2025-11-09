@@ -38,9 +38,9 @@ const InputBox: React.FC<InputBoxProps> = ({ onSendMessage, isLoading }) => {
   }, [input]);
 
   return (
-    <div className="border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <div className="sticky bottom-0 inset-x-0 z-10 ">
       <div className="mx-auto max-w-4xl px-4 py-4">
-        <div className="relative flex items-end gap-3 rounded-2xl border border-border bg-background shadow-lg shadow-black/5 dark:shadow-black/20 transition-all focus-within:border-primary/50 focus-within:shadow-xl focus-within:shadow-primary/5">
+        <div className="relative flex items-end gap-3 rounded-2xl border border-border bg-card text-foreground shadow-lg shadow-black/20 transition-all focus-within:border-primary/60 focus-within:shadow-xl focus-within:shadow-primary/10">
           <textarea
             ref={textareaRef}
             placeholder="Ask anything about Litecoin..."

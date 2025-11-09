@@ -400,7 +400,7 @@ const Navigation = () => {
                     marginRight: `${scaledMargin + 1}px`,
                   }}
                 >
-                  <Link href="/projects">Projects</Link>
+                  <a href="https://litecoin.com/projects">Projects</a>
                 </li>
                 <li
                   className="text-md mb-[.95rem] ml-[.6rem] mt-[.85rem] font-[500]"
