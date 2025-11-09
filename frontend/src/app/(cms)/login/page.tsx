@@ -54,12 +54,12 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100">
-      <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md">
-        <h1 className="text-2xl font-bold text-center">CMS Login</h1>
+    <div className="flex items-center justify-center min-h-screen bg-background">
+      <div className="w-full max-w-md p-8 space-y-6 rounded-lg border border-border bg-card shadow-md">
+        <h1 className="text-2xl font-bold text-center text-foreground">CMS Login</h1>
         
         {error && (
-          <div className="p-3 text-sm text-red-600 bg-red-100 border border-red-300 rounded">
+          <div className="rounded border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
             {error}
           </div>
         )}

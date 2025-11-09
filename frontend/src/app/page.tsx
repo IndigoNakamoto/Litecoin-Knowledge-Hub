@@ -234,7 +234,7 @@ export default function Home() {
 
   return (
     <div className="flex flex-col h-screen max-h-screen bg-background">
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1">
         {messages.length === 0 && !streamingMessage && !isLoading ? (
           <div className="flex items-center justify-center h-full">
             <SuggestedQuestions onQuestionClick={handleSendMessage} />

@@ -6,7 +6,14 @@ module.exports = {
     './src/app/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
-    extend: {},
+    extend: {
+      fontFamily: {
+        'space-grotesk': ['var(--font-space-grotesk)', 'sans-serif'],
+      },
+      screens: {
+        short: { raw: '(max-height: 769px)' },
+      },
+    },
   },
   plugins: [
     // eslint-disable-next-line @typescript-eslint/no-require-imports
