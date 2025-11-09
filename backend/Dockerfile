@@ -13,11 +13,14 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
+# Copy application code into /app/backend (preserving package layout)
+COPY . /app/backend
 
-# Create directory for FAISS index (if needed for local dev)
-RUN mkdir -p /app/faiss_index
+# Ensure FAISS directory exists
+RUN mkdir -p /app/backend/faiss_index
+
+# Make backend modules importable from anywhere
+ENV PYTHONPATH=/app/backend:/app:${PYTHONPATH}
 
 # Expose port
 EXPOSE 8000
@@ -27,5 +30,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/ || exit 1
 
 # Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
 

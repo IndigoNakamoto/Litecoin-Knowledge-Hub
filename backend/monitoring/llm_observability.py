@@ -149,6 +149,13 @@ def track_llm_metrics(
                 model=model,
                 operation=operation,
             ).inc(cost_usd)
+            try:
+                from .cost_tracker import record_llm_cost
+            except ImportError:
+                record_llm_cost = None
+
+            if record_llm_cost:
+                record_llm_cost(model, operation, cost_usd)
         
         # Record duration
         if duration_seconds:

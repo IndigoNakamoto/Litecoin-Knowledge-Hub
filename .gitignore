@@ -117,3 +117,4 @@ Temporary Items
 backend/.env
 backend/faiss_index/
 faiss_index/
+backend/monitoring/data/llm_cost_totals.json

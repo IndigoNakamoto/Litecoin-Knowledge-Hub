@@ -1,6 +1,7 @@
 import os
 import asyncio
 import time
+import logging
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
@@ -10,6 +11,17 @@ from langchain_core.documents import Document
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from data_ingestion.vector_store_manager import VectorStoreManager
 from cache_utils import query_cache
+# --- Environment Variable Checks ---
+google_api_key = os.getenv("GOOGLE_API_KEY")
+if not google_api_key:
+    raise ValueError("GOOGLE_API_KEY environment variable not set!")
+
+MONGO_URI = os.getenv("MONGO_URI")
+if not MONGO_URI:
+    raise ValueError("MONGO_URI environment variable not set!")
+
+# --- Logging ---
+logger = logging.getLogger(__name__)
 
 # Import monitoring metrics
 try:
@@ -193,6 +205,40 @@ class RAGPipeline:
         print(f"⚠️ Chat history truncated from {len(chat_history)} to {len(truncated)} pairs (max: {MAX_CHAT_HISTORY_PAIRS})")
         return truncated
 
+    def _build_prompt_text(self, query_text: str, context_text: str) -> str:
+        """Reconstruct the prompt text fed to the LLM for token accounting."""
+        return RAG_PROMPT_TEMPLATE.format(context=context_text, input=query_text)
+
+    def _estimate_token_usage(self, prompt_text: str, answer_text: str) -> Tuple[int, int]:
+        """
+        Estimate (input_tokens, output_tokens) for an LLM call.
+
+        Uses the Gemini tokenizer via ChatGoogleGenerativeAI.get_num_tokens when
+        available, with a word-count based fallback to ensure metrics are always
+        recorded.
+        """
+        prompt_text = prompt_text or ""
+        answer_text = answer_text or ""
+
+        # Fallback approximations emulate prior behaviour but on full prompt text.
+        fallback_input_tokens = max(int(len(prompt_text.split()) * 1.3), 0)
+        fallback_output_tokens = max(int(len(answer_text.split()) * 1.3), 0)
+
+        input_tokens = fallback_input_tokens
+        output_tokens = fallback_output_tokens
+
+        if hasattr(self.llm, "get_num_tokens"):
+            try:
+                input_tokens = max(int(self.llm.get_num_tokens(prompt_text)), 0)
+            except Exception as exc:
+                logger.debug("Failed to count input tokens via Gemini: %s", exc, exc_info=True)
+            try:
+                output_tokens = max(int(self.llm.get_num_tokens(answer_text)), 0)
+            except Exception as exc:
+                logger.debug("Failed to count output tokens via Gemini: %s", exc, exc_info=True)
+
+        return input_tokens, output_tokens
+
     def refresh_vector_store(self):
         """
         Refreshes the vector store by reloading from disk and recreating the RAG chain.
@@ -269,11 +315,12 @@ class RAGPipeline:
             
             answer = result.get("answer", "Error: Could not generate answer.")
             # Get source documents from the chain result
-            sources = result.get("context", [])
+            context_docs = result.get("context", [])
+            context_text = format_docs(context_docs)
 
             # Filter out draft/unpublished documents from sources
             published_sources = [
-                doc for doc in sources
+                doc for doc in context_docs
                 if doc.metadata.get("status") == "published"
             ]
 
@@ -287,21 +334,22 @@ class RAGPipeline:
                     cache_hit="false"
                 ).observe(total_duration)
                 
-                # Estimate and track LLM costs (approximate)
-                # Note: Actual token counts would require LLM response metadata
-                # This is a placeholder - LangSmith integration provides better tracking
-                estimated_input_tokens = len(query_text.split()) * 1.3  # Rough estimate
-                estimated_output_tokens = len(answer.split()) * 1.3
+                # Estimate and track LLM costs using Gemini tokenizer where possible
+                prompt_text = self._build_prompt_text(query_text, context_text)
+                input_tokens, output_tokens = self._estimate_token_usage(
+                    prompt_text,
+                    answer,
+                )
                 estimated_cost = estimate_gemini_cost(
-                    int(estimated_input_tokens),
-                    int(estimated_output_tokens),
-                    LLM_MODEL_NAME
+                    input_tokens,
+                    output_tokens,
+                    LLM_MODEL_NAME,
                 )
                 track_llm_metrics(
                     model=LLM_MODEL_NAME,
                     operation="generate",
-                    input_tokens=int(estimated_input_tokens),
-                    output_tokens=int(estimated_output_tokens),
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
                     cost_usd=estimated_cost,
                     duration_seconds=total_duration,
                     status="success",
@@ -379,7 +427,6 @@ class RAGPipeline:
                 search_kwargs={"k": 10}
             )
             context_docs = retriever.get_relevant_documents(query_text)
-            
             retrieval_duration = time.time() - retrieval_start
 
             # Format context for LLM
@@ -413,19 +460,22 @@ class RAGPipeline:
                     cache_hit="false"
                 ).observe(total_duration)
                 
-                # Estimate and track LLM costs
-                estimated_input_tokens = len(query_text.split()) * 1.3
-                estimated_output_tokens = len(answer.split()) * 1.3
+                # Estimate and track LLM costs using Gemini tokenizer when possible
+                prompt_text = self._build_prompt_text(query_text, context_text)
+                input_tokens, output_tokens = self._estimate_token_usage(
+                    prompt_text,
+                    answer,
+                )
                 estimated_cost = estimate_gemini_cost(
-                    int(estimated_input_tokens),
-                    int(estimated_output_tokens),
-                    LLM_MODEL_NAME
+                    input_tokens,
+                    output_tokens,
+                    LLM_MODEL_NAME,
                 )
                 track_llm_metrics(
                     model=LLM_MODEL_NAME,
                     operation="generate",
-                    input_tokens=int(estimated_input_tokens),
-                    output_tokens=int(estimated_output_tokens),
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
                     cost_usd=estimated_cost,
                     duration_seconds=llm_duration,
                     status="success",
@@ -522,11 +572,12 @@ class RAGPipeline:
 
             answer = result.get("answer", "Error: Could not generate answer.")
             # Get source documents from the chain result
-            sources = result.get("context", [])
+            context_docs = result.get("context", [])
+            context_text = format_docs(context_docs)
 
             # Filter out draft/unpublished documents from sources
             published_sources = [
-                doc for doc in sources
+                doc for doc in context_docs
                 if doc.metadata.get("status") == "published"
             ]
 
@@ -541,19 +592,22 @@ class RAGPipeline:
                     cache_hit="false"
                 ).observe(total_duration)
                 
-                # Estimate and track LLM costs
-                estimated_input_tokens = len(query_text.split()) * 1.3
-                estimated_output_tokens = len(answer.split()) * 1.3
+                # Estimate and track LLM costs using Gemini tokenizer when possible
+                prompt_text = self._build_prompt_text(query_text, context_text)
+                input_tokens, output_tokens = self._estimate_token_usage(
+                    prompt_text,
+                    answer,
+                )
                 estimated_cost = estimate_gemini_cost(
-                    int(estimated_input_tokens),
-                    int(estimated_output_tokens),
-                    LLM_MODEL_NAME
+                    input_tokens,
+                    output_tokens,
+                    LLM_MODEL_NAME,
                 )
                 track_llm_metrics(
                     model=LLM_MODEL_NAME,
                     operation="generate",
-                    input_tokens=int(estimated_input_tokens),
-                    output_tokens=int(estimated_output_tokens),
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
                     cost_usd=estimated_cost,
                     duration_seconds=total_duration,
                     status="success",

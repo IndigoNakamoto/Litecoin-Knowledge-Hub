@@ -161,8 +161,14 @@ user_questions_count_from_db = Gauge(
 
 def setup_metrics():
     """Initialize metrics registry. Called at application startup."""
-    # Reset any existing metrics (useful for testing)
-    pass
+    # Seed counters that require persisted state (e.g., lifetime LLM costs).
+    try:
+        from .cost_tracker import preload_prometheus_counters
+    except ImportError:
+        preload_prometheus_counters = None
+
+    if preload_prometheus_counters:
+        preload_prometheus_counters()
 
 
 def get_metrics_registry():

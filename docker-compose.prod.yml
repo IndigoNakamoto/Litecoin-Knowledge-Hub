@@ -20,6 +20,8 @@ services:
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
     env_file:
       - ./backend/.env
+    volumes:
+      - ./backend/monitoring/data:/app/backend/monitoring/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
