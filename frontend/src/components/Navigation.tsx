@@ -1,10 +1,6 @@
 'use client';
 
-import siteMetadata from '@/data/siteMetadata';
-
-import HorizontalSocialIcons from '@/components/HorizontalSocialIcons';
-import Link from 'next/link';
-import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
+import { useEffect, useState } from 'react';
 const LitecoinLogo = ({ width, height }: { width: number; height: number }) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -89,31 +85,9 @@ const LitecoinLogo = ({ width, height }: { width: number; height: number }) => (
     />
   </svg>
 );
-
-type DropdownKey = 'useLitecoin' | 'theFoundation' | 'learn';
-
-type DropdownState = Record<DropdownKey, boolean>;
-
-const dropdownKeys: DropdownKey[] = ['useLitecoin', 'theFoundation', 'learn'];
-
 const Navigation = () => {
   const [scrollPosition, setScrollPosition] = useState(0);
-  const [dropdownOpen, setDropdownOpen] = useState<DropdownState>({
-    useLitecoin: false,
-    theFoundation: false,
-    learn: false,
-  });
-  const [mobileDropdownOpen, setMobileDropdownOpen] = useState<DropdownState>({
-    useLitecoin: false,
-    theFoundation: false,
-    learn: false,
-  });
   const [isMobile, setIsMobile] = useState(false);
-  const [navShow, setNavShow] = useState(false);
-
-  const useLitecoinRef = useRef<HTMLLIElement | null>(null);
-  const theFoundationRef = useRef<HTMLLIElement | null>(null);
-  const learnRef = useRef<HTMLLIElement | null>(null);
 
   useEffect(() => {
     const handleResize = () => {
@@ -134,57 +108,6 @@ const Navigation = () => {
     };
   }, []);
 
-  const toggleDropdown = (menu: DropdownKey) => {
-    setDropdownOpen((prev) => {
-      const nextState: DropdownState = {
-        useLitecoin: false,
-        theFoundation: false,
-        learn: false,
-      };
-      nextState[menu] = !prev[menu];
-      return nextState;
-    });
-  };
-
-  const toggleMobileDropdown = (menu: DropdownKey) => {
-    setMobileDropdownOpen((prevState) => ({
-      ...prevState,
-      [menu]: !prevState[menu],
-    }));
-  };
-
-  const handleClickOutside = (event: MouseEvent) => {
-  const targets: Array<[RefObject<HTMLLIElement>, DropdownKey]> = [
-      [useLitecoinRef, 'useLitecoin'],
-      [theFoundationRef, 'theFoundation'],
-      [learnRef, 'learn'],
-    ];
-
-    targets.forEach(([ref, key]) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) {
-        setDropdownOpen((prev) => ({ ...prev, [key]: false }));
-      }
-    });
-  };
-
-  useEffect(() => {
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
-
-  const onToggleNav = () => {
-    setNavShow((status) => {
-      if (status) {
-        document.body.style.overflow = 'auto';
-      } else {
-        document.body.style.overflow = 'hidden';
-      }
-      return !status;
-    });
-  };
-
   const maxScrollHeight = 225;
   const minHeight = 80;
   const initialHeight = 80;
@@ -203,462 +126,36 @@ const Navigation = () => {
       (scrollPosition / maxScrollHeight) * (baseLogoSize - minLogoSize),
     minLogoSize,
   );
-  const baseFontSize = 16;
-  const scaledFontSize = Math.max(
-    baseFontSize - (scrollPosition / maxScrollHeight) * 2,
-    14.25,
-  );
-  const baseMargin = 14;
-  const scaledMargin = Math.max(
-    baseMargin - (scrollPosition / maxScrollHeight) * 4,
-    12,
-  );
 
-  const interpolateColor = (startColor: string, endColor: string, factor: number) => {
-    const startComponents = startColor.slice(1).match(/.{2}/g) ?? [];
-    const endComponents = endColor.slice(1).match(/.{2}/g) ?? [];
-
-    const result = startComponents.map((hex, index) => {
-      const startValue = parseInt(hex, 16);
-      const endValue = parseInt(endComponents[index] ?? hex, 16);
-      const interpolated = Math.round(startValue * (1 - factor) + endValue * factor);
-      return interpolated.toString(16).padStart(2, '0');
-    });
-
-    return `#${result.join('')}`;
-  };
-
-  const fontColor = interpolateColor('#222222', '#C6D3D6', bgOpacity);
-  const dropdownBgColor = interpolateColor('#c6d3d6', '#222222', bgOpacity);
-  const dropdownTextColor = interpolateColor('#222222', '#C6D3D6', bgOpacity);
-  const hamburgerColor = interpolateColor('#222222', '#ffffff', bgOpacity);
-  const mobileMenuTextColor = interpolateColor('#222222', '#C5D3D6', bgOpacity);
-  const socialIconTextColor = interpolateColor('#222222', '#ffffff', bgOpacity);
   const logoColor = bgOpacity < 0.5 ? '#000000' : '#ffffff';
 
-  const dropdownRefs: Record<DropdownKey, RefObject<HTMLLIElement>> = {
-    useLitecoin: useLitecoinRef,
-    theFoundation: theFoundationRef,
-    learn: learnRef,
-  };
-
   return (
-    <>
-      <header
-        style={{
-          backgroundColor: `rgba(34, 34, 34, ${bgOpacity})`,
-          height: `${headerHeight}px`,
-          fontFamily:
-            'system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif',
-        }}
-        className="fixed left-0 right-0 top-0 z-20 flex items-center justify-between"
-      >
-        <div className="mx-auto flex h-full w-[1300px] max-w-[90%] items-center justify-between">
-          <div className="relative flex h-full items-center pb-1">
-            <a href="https://litecoin.com" aria-label={siteMetadata.headerTitle}>
-              <div
-                className={`relative ${isMobile ? 'ml-2' : 'ml-1'}  mt-[3px]`}
-                style={{
-                  height: `${logoSize}px`,
-                  width: `${logoSize}px`,
-                  transform: 'translateY(-0.5px)',
-                  color: logoColor,
-                  transition: 'color 0.3s ease-in-out',
-                }}
-              >
-                <LitecoinLogo width={logoSize} height={logoSize} />
-              </div>
-            </a>
+    <header
+      style={{
+        backgroundColor: `rgba(34, 34, 34, ${bgOpacity})`,
+        height: `${headerHeight}px`,
+        fontFamily:
+          'system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif',
+      }}
+      className="fixed left-0 right-0 top-0 z-20 flex items-center"
+    >
+      <div className="mx-auto flex h-full w-[1300px] max-w-[90%] items-center">
+        <div className="relative flex h-full items-center pb-1">
+          <div
+            className={`relative ${isMobile ? 'ml-2' : 'ml-1'} mt-[3px]`}
+            style={{
+              height: `${logoSize}px`,
+              width: `${logoSize}px`,
+              transform: 'translateY(-0.5px)',
+              color: logoColor,
+              transition: 'color 0.3s ease-in-out',
+            }}
+          >
+            <LitecoinLogo width={logoSize} height={logoSize} />
           </div>
-          <nav>
-            {isMobile ? (
-              <div
-                className={`nav-toggle mt-[-10px] ${navShow ? 'open' : ''}`}
-                onClick={onToggleNav}
-                onKeyPress={onToggleNav}
-                aria-label="menu"
-                role="button"
-                tabIndex={0}
-              >
-                <span className="bar" style={{ backgroundColor: hamburgerColor }}></span>
-                <span className="bar" style={{ backgroundColor: hamburgerColor }}></span>
-                <span className="bar" style={{ backgroundColor: hamburgerColor }}></span>
-              </div>
-            ) : (
-              <ul className="flex flex-row">
-                {dropdownKeys.map((key) => (
-                  <li
-                    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
-                    key={key}
-                    className={`relative flex items-center !font-[500] ${
-                      key === 'useLitecoin'
-                        ? '!-mr-[0.2rem] !-mt-[.17rem]'
-                        : key === 'theFoundation'
-                          ? '!-mt-[0.1rem] !ml-[-.1rem]'
-                          : '!-mr-[.36rem] !-mt-[.17rem]'
-                    }`}
-                    ref={dropdownRefs[key]}
-                  >
-                    <button
-                      className="flex items-center tracking-[-0.01em]"
-                      onClick={() => toggleDropdown(key)}
-                      aria-expanded={dropdownOpen[key]}
-                      aria-haspopup="true"
-                      style={{ color: fontColor, fontSize: '1rem' }}
-                      type="button"
-                    >
-                      {key === 'useLitecoin'
-                        ? 'Use Litecoin'
-                        : key === 'theFoundation'
-                          ? 'The Foundation'
-                          : 'Learn'}
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        className={`ml-2 h-4 w-4${dropdownOpen[key] ? ' rotate-180' : ''}`}
-                        style={{
-                          transformOrigin: 'center',
-                          transform: `translateX(-2px) ${dropdownOpen[key] ? 'rotate(180deg)' : ''}`,
-                        }}
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={3.25}
-                          d="M19 9l-7 7-7-7"
-                        />
-                      </svg>
-                    </button>
-                    <ul
-                      className={`w-[var(--dropdown-width, 180px)] absolute left-0 top-full mt-3 rounded-2xl ${
-                        dropdownOpen[key] ? 'dropdown-enter-active' : 'dropdown-exit-active'
-                      }`}
-                      style={
-                        {
-                          backgroundColor: dropdownBgColor,
-                          color: dropdownTextColor,
-                          fontSize: `${scaledFontSize}px`,
-                          visibility: dropdownOpen[key] ? 'visible' : 'hidden',
-                          '--dropdown-width':
-                            key === 'useLitecoin' ? '113.63px' : key === 'learn' ? '165px' : '140px',
-                        } as CSSProperties & { [customProperty: string]: string }
-                      }
-                    >
-                      {key === 'useLitecoin' && (
-                        <>
-                          <li className="ml-2 mt-2 p-2 pl-4 text-left">
-                            <a href="https://litecoin.com/buy">Buy</a>
-                          </li>
-                          <li className="ml-2 p-2 pl-4 text-left">
-                            <a href="https://litecoin.com/spend">Spend</a>
-                          </li>
-                          <li className="ml-2 p-2 pl-4 text-left">
-                            <a href="https://litecoin.com/store">Store</a>
-                          </li>
-                          <li className="mb-2 ml-2 p-2 pl-4 text-left">
-                            <a href="https://litecoin.com/for-business">Business</a>
-                          </li>
-                        </>
-                      )}
-                      {key === 'learn' && (
-                        <>
-                          <li className="ml-2 mt-2 p-2 pl-4 text-left">
-                            <a href="https://litecoin.com/learningcenter">Learning Center</a>
-                          </li>
-                          <li className="mb-2 ml-2 p-2 pl-4 text-left">
-                            <a href="https://litecoin.com/resources">Resources</a>
-                          </li>
-                        </>
-                      )}
-                      {key === 'theFoundation' && (
-                        <>
-                          <li className="ml-2 mt-2 p-2 pl-4 text-left">
-                            <a href="https://litecoin.com/litecoin-foundation">About</a>
-                          </li>
-                          <li className="ml-2 p-2 pl-4 text-left">
-                            <a href="https://litecoin.com/donate">Donate</a>
-                          </li>
-                          <li className="ml-2 p-2 pl-4 text-left">
-                            <a href="https://litecoin.com/litecoin-foundation#contact">Contact</a>
-                          </li>
-                          <li className="mb-2 ml-2 p-2 pl-4 text-left">
-                            <a href="https://litecoin.com/financials">Financials</a>
-                          </li>
-                        </>
-                      )}
-                    </ul>
-                  </li>
-                ))}
-                <li
-                  className="text-md mb-[.95rem] ml-[1rem] mt-[.85rem] font-[500]"
-                  style={{
-                    color: fontColor,
-                    letterSpacing: '-0.2px',
-                    fontSize: `${scaledFontSize}px`,
-                    marginRight: `${scaledMargin + 1}px`,
-                  }}
-                >
-                  <a href="https://litecoin.com/projects">Projects</a>
-                </li>
-                <li
-                  className="text-md mb-[.95rem] ml-[.6rem] mt-[.85rem] font-[500]"
-                  style={{
-                    color: fontColor,
-                    letterSpacing: '-0.2px',
-                    fontSize: `${scaledFontSize}px`,
-                    marginRight: `${scaledMargin + 1}px`,
-                  }}
-                >
-                  <a href="https://litecoin.com/news">News</a>
-                </li>
-                <li
-                  className="text-md mb-[.95rem] ml-[.8rem] mt-[.85rem] font-[500]"
-                  style={{
-                    color: fontColor,
-                    letterSpacing: '-0.2px',
-                    fontSize: `${scaledFontSize}px`,
-                    marginRight: `${scaledMargin + 0.5}px`,
-                  }}
-                >
-                  <a href="https://litecoin.com/events">Events</a>
-                </li>
-                <li
-                  className="text-md mb-[.95rem] ml-[.8rem] mt-[.85rem] font-[500]"
-                  style={{
-                    color: fontColor,
-                    letterSpacing: '-0.2px',
-                    fontSize: `${scaledFontSize}px`,
-                    marginRight: `${scaledMargin + 0.8}px`,
-                  }}
-                >
-                  <a href="https://shop.litecoin.com">Shop</a>
-                </li>
-                <li
-                  className="text-md mb-[.95rem] ml-[.8rem] mt-[.85rem] font-[500]"
-                  style={{
-                    color: fontColor,
-                    letterSpacing: '-0.2px',
-                    fontSize: `${scaledFontSize}px`,
-                    marginRight: `${scaledMargin + 1}px`,
-                  }}
-                >
-                  <a href="https://litecoinspace.org/" target="_blank" rel="noreferrer">
-                    Explorer
-                  </a>
-                </li>
-              </ul>
-            )}
-          </nav>
-        </div>
-      </header>
-
-      <div
-        className={`fixed bottom-0 right-0 top-0 z-10 min-w-full transform pt-20 duration-300 ease-in md:clear-left ${
-          navShow ? 'translate-x-0' : 'translate-x-[105%]'
-        }`}
-        style={{
-          backgroundColor: interpolateColor('#C5D3D6', '#222222', bgOpacity),
-        }}
-      >
-        <div className="flex flex-col gap-x-6">
-          <nav className="mt-10 h-full">
-            {[
-              { title: 'Use Litecoin', dropdown: true },
-              { title: 'Learn', dropdown: true },
-              { title: 'Projects', link: 'https://litecoin.com/projects' },
-              { title: 'The Foundation', dropdown: true },
-              { title: 'News', link: 'https://litecoin.com/news' },
-              { title: 'Events', link: 'https://litecoin.com/events' },
-              { title: 'Shop', link: 'https://shop.litecoin.com' },
-              { title: 'Explorer', link: 'https://litecoinspace.org/' },
-            ].map((item) => {
-              const itemKey = item.title.replace(' ', '').toLowerCase() as DropdownKey | string;
-              const dropdownKey = dropdownKeys.find(
-                (key) => key.toLowerCase() === itemKey,
-              ) as DropdownKey | undefined;
-
-              return (
-                <div key={item.title} className="px-10 py-2 short:py-0.5">
-                  {item.dropdown && dropdownKey ? (
-                    <>
-                      <button
-                        onClick={() => toggleMobileDropdown(dropdownKey)}
-                        className="m-0 flex w-full items-center justify-between pl-0 pr-0 text-left font-space-grotesk text-[2.1rem] font-semibold"
-                        style={{ color: mobileMenuTextColor }}
-                        aria-expanded={mobileDropdownOpen[dropdownKey]}
-                        aria-haspopup="true"
-                        type="button"
-                      >
-                        {item.title}
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-10 w-10 transition-transform duration-200"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          style={{
-                            transform: `translateY(-0.5px) ${
-                              mobileDropdownOpen[dropdownKey] ? 'rotate(180deg)' : ''
-                            }`,
-                          }}
-                        >
-                          <path
-                            strokeLinecap="butt"
-                            strokeLinejoin="miter"
-                            strokeWidth={2.5}
-                            d="M19 9l-6.75 6.75-6.75-6.75"
-                          />
-                        </svg>
-                      </button>
-                      {mobileDropdownOpen[dropdownKey] ? (
-                        <ul
-                          className="pl-6 font-space-grotesk text-[2.1rem] font-semibold"
-                          style={{ color: mobileMenuTextColor }}
-                        >
-                          {dropdownKey === 'useLitecoin' && (
-                            <>
-                              <li className="py-1">
-                                <a href="https://litecoin.com/buy">Buy</a>
-                              </li>
-                              <li className="py-1">
-                                <a href="https://litecoin.com/spend">Spend</a>
-                              </li>
-                              <li className="py-1">
-                                <a href="https://litecoin.com/store">Store</a>
-                              </li>
-                              <li className="py-1">
-                                <a href="https://litecoin.com/for-business">Business</a>
-                              </li>
-                            </>
-                          )}
-                          {dropdownKey === 'theFoundation' && (
-                            <>
-                              <li className="py-1">
-                                <a href="https://litecoin.com/litecoin-foundation">About</a>
-                              </li>
-                              <li className="py-1">
-                                <a href="https://litecoin.com/litecoin-foundation#contact">
-                                  Contact
-                                </a>
-                              </li>
-                              <li className="py-1">
-                                <a href="https://litecoin.com/donate">Donate</a>
-                              </li>
-                              <li className="py-1">
-                                <a href="https://litecoin.com/financials">Financials</a>
-                              </li>
-                            </>
-                          )}
-                          {dropdownKey === 'learn' && (
-                            <>
-                              <li className="py-1">
-                                <a href="https://litecoin.com/what-is-litecoin">What Is Litecoin</a>
-                              </li>
-                              <li className="py-1">
-                                <a href="https://litecoin.com/resources">Resources</a>
-                              </li>
-                            </>
-                          )}
-                        </ul>
-                      ) : null}
-                    </>
-                  ) : (
-                    <a
-                      href={item.link}
-                      className="flex w-full items-center justify-between text-left font-space-grotesk text-[2.1rem] font-semibold"
-                      style={{ color: mobileMenuTextColor }}
-                    >
-                      {item.title}
-                    </a>
-                  )}
-                </div>
-              );
-            })}
-          </nav>
-          <HorizontalSocialIcons mobileMenuTextColor={socialIconTextColor} />
         </div>
       </div>
-      <style jsx>{`
-        :root {
-          --menu-item-margin: ${scaledMargin - 1.9}px;
-          --dropdown-width: 180px;
-        }
-
-        .nav-toggle {
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
-          height: 28px;
-          width: 45px;
-        }
-
-        .nav-toggle .bar {
-          height: 4px;
-          width: 100%;
-          background-color: ${hamburgerColor};
-          transition: transform 300ms ease-in-out, width 300ms ease-in-out;
-        }
-
-        .nav-toggle:not(.open) .bar {
-          transition: none;
-        }
-
-        .nav-toggle:hover {
-          cursor: pointer;
-        }
-
-        .nav-toggle.open .bar:nth-of-type(1) {
-          transform: rotate(45deg) translateY(-4px);
-          transform-origin: top left;
-          width: 44px;
-        }
-
-        .nav-toggle.open .bar:nth-of-type(2) {
-          transform-origin: center;
-          width: 0;
-        }
-
-        .nav-toggle.open .bar:nth-of-type(3) {
-          transform: rotate(-45deg) translateY(4px);
-          transform-origin: bottom left;
-          width: 44px;
-        }
-
-        .dropdown-enter-active,
-        .dropdown-exit-active {
-          transition: opacity 200ms ease-in-out, visibility 200ms ease-in-out;
-        }
-
-        .dropdown-enter-active {
-          opacity: 1;
-          visibility: visible;
-        }
-
-        .dropdown-exit-active {
-          opacity: 0;
-          visibility: hidden;
-        }
-
-        svg {
-          transition: transform 0ms ease-in-out;
-        }
-
-        ul > li > ul {
-          top: 100%;
-          left: 0;
-          width: var(--dropdown-width);
-        }
-
-        ul.flex > li {
-          margin-right: var(--menu-item-margin);
-        }
-
-        @media (max-width: 991px) {
-        }
-      `}</style>
-    </>
+    </header>
   );
 };
 
