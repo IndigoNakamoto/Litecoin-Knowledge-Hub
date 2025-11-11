@@ -21,6 +21,96 @@ import type { User } from '../payload-types' // It's good practice to import you
 import StatusBadge from '../components/StatusBadge'
 import CategorySelector from '../components/CategorySelector'
 
+type AccessResult = boolean | Record<string, unknown>
+
+const userHasRole = (user: User | null | undefined, roles: string[]): boolean =>
+  Boolean(user?.roles?.some((role) => roles.includes(role)))
+
+const articleCreateAccess = ({ req }: { req: { user?: User } }): AccessResult => {
+  const user = req.user as User | undefined
+  if (!user) return false
+  return userHasRole(user, ['admin', 'publisher', 'contributor'])
+}
+
+const articleReadAccess = ({ req }: { req: { user?: User } }): AccessResult => {
+  const user = req.user as User | undefined
+  if (!user) {
+    return {
+      status: {
+        equals: 'published',
+      },
+    }
+  }
+
+  if (userHasRole(user, ['admin', 'publisher'])) {
+    return true
+  }
+
+  return {
+    or: [
+      {
+        status: {
+          equals: 'published',
+        },
+      },
+      {
+        author: {
+          equals: user.id,
+        },
+      },
+    ],
+  }
+}
+
+const articleUpdateAccess = async ({ req, id }: { req: { user?: User; payload: any }; id?: string }): Promise<AccessResult> => {
+  const user = req.user as User | undefined
+  if (!user) return false
+
+  if (userHasRole(user, ['admin', 'publisher', 'verified-translator'])) {
+    return true
+  }
+
+  if (userHasRole(user, ['contributor'])) {
+    if (id) {
+      const doc = await req.payload.findByID({
+        collection: 'articles',
+        id,
+        depth: 0,
+      })
+
+      if (doc) {
+        const authorId = typeof doc.author === 'string' ? doc.author : doc.author
+        return authorId === user.id && doc.status === 'draft'
+      }
+
+      return false
+    }
+
+    return {
+      and: [
+        {
+          author: {
+            equals: user.id,
+          },
+        },
+        {
+          status: {
+            equals: 'draft',
+          },
+        },
+      ],
+    }
+  }
+
+  return false
+}
+
+const articleDeleteAccess = ({ req }: { req: { user?: User } }): AccessResult => {
+  const user = req.user as User | undefined
+  if (!user) return false
+  return userHasRole(user, ['admin'])
+}
+
 export const Article: CollectionConfig = {
   slug: 'articles',
   admin: {
@@ -28,89 +118,10 @@ export const Article: CollectionConfig = {
     defaultColumns: ['title', 'status', 'updatedAt', 'category', 'author' ],
   },
   access: {
-    create: ({ req: { user } }: any) => {
-      if (!user) return false
-      const roles = user.roles || []
-      return roles.includes('admin') || roles.includes('publisher') || roles.includes('contributor')
-    },
-    read: ({ req: { user } }: any) => {
-      if (!user) {
-        return {
-          status: {
-            equals: 'published',
-          },
-        }
-      }
-      if (user.roles?.includes('admin') || user.roles?.includes('publisher')) {
-        return true
-      }
-
-      const where = {
-        or: [
-          {
-            status: {
-              equals: 'published',
-            },
-          },
-          {
-            author: {
-              equals: user.id,
-            },
-          },
-        ],
-      }
-      return where
-    },
-    update: async ({ req, id }: any) => {
-      const { user } = req
-      if (!user) return false
-      const loggedInUser = user as User
-
-      if (
-        loggedInUser.roles?.includes('admin') ||
-        loggedInUser.roles?.includes('publisher') ||
-        loggedInUser.roles?.includes('verified-translator')
-      ) {
-        return true
-      }
-
-
-      if (loggedInUser.roles?.includes('contributor')) {
-        if (id) {
-          const doc = await req.payload.findByID({
-            collection: 'articles',
-            id,
-            depth: 0,
-          })
-          if (doc) {
-            const authorId = typeof doc.author === 'string' ? doc.author : doc.author
-            return authorId === loggedInUser.id && doc.status === 'draft'
-          }
-          return false
-        }
-        const where = {
-          and: [
-            {
-              author: {
-                equals: loggedInUser.id,
-              },
-            },
-            {
-              status: {
-                equals: 'draft',
-              },
-            },
-          ],
-        }
-        return where
-      }
-
-      return false
-    },
-    delete: ({ req: { user } }: any) => {
-      if (!user) return false
-      return user.roles.includes('admin')
-    },
+    create: articleCreateAccess as any,
+    read: articleReadAccess as any,
+    update: articleUpdateAccess as any,
+    delete: articleDeleteAccess as any,
   },
   fields: [
     {
@@ -145,7 +156,7 @@ export const Article: CollectionConfig = {
         position: 'sidebar',
         description: 'Select categories that best describe your article content',
         components: {
-          Field: CategorySelector,
+          Field: CategorySelector as any,
         },
       },
     },
@@ -217,7 +228,7 @@ export const Article: CollectionConfig = {
       admin: {
         position: 'sidebar',
         components: {
-          Cell: StatusBadge,
+          Cell: StatusBadge as any,
         },
       },
       access: {

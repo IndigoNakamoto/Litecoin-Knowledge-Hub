@@ -1,6 +1,4 @@
-import { CollectionConfig } from 'payload/types'
-import { AfterChangeHook } from 'payload/dist/collections/config/types'
-import { User } from '../payload-types'
+import { CollectionConfig } from 'payload'
 
 export const KnowledgeBase: CollectionConfig = {
   slug: 'knowledge-base',
@@ -8,13 +6,15 @@ export const KnowledgeBase: CollectionConfig = {
     useAsTitle: 'title',
   },
   access: {
-    create: ({ req: { user } }: { req: { user: User } }) => {
+    create: ({ req }: any) => {
+      const user = req.user
       if (user) {
         return ['admin', 'editor', 'contributor'].includes(user.role)
       }
       return false
     },
-    read: ({ req: { user } }: { req: { user: User } }) => {
+    read: ({ req }: any) => {
+      const user = req.user
       if (user && ['admin', 'editor'].includes(user.role)) {
         return true
       }
@@ -24,13 +24,15 @@ export const KnowledgeBase: CollectionConfig = {
         },
       };
     },
-    update: ({ req: { user } }: { req: { user: User } }) => {
+    update: ({ req }: any) => {
+      const user = req.user
       if (user) {
         return ['admin', 'editor'].includes(user.role)
       }
       return false
     },
-    delete: ({ req: { user } }: { req: { user: User } }) => {
+    delete: ({ req }: any) => {
+      const user = req.user
       if (user) {
         return ['admin', 'editor'].includes(user.role)
       }
@@ -53,7 +55,7 @@ export const KnowledgeBase: CollectionConfig = {
       },
       hooks: {
         beforeValidate: [
-          ({ value }: { value: string }) => {
+          ({ value }: any) => {
             if (value) {
               return value.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, '')
             }
@@ -91,7 +93,7 @@ export const KnowledgeBase: CollectionConfig = {
   ],
   hooks: {
     afterChange: [
-      ({ doc, req, operation }: { doc: any, req: any, operation: any }) => {
+      ({ doc, operation }: any) => {
         if (operation === 'update' && doc.status === 'published') {
           console.log(`Article "${doc.title}" has been published.`);
           // Here you would trigger the Content Sync Service

@@ -300,7 +300,7 @@ const CategoryListView: React.FC = () => {
                         color: 'var(--theme-text-muted)',
                         fontStyle: 'italic'
                       }}>
-                        No subcategories yet. Click "Add Subcategory" to create one.
+                        No subcategories yet. Click &quot;Add Subcategory&quot; to create one.
                       </div>
                     ) : (
                       subCategories.map((subCategory) => (

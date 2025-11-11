@@ -188,7 +188,8 @@ export default function DashboardPage() {
             </CardTitle>
             {searchQuery && (
               <CardDescription>
-                Showing results for: "{searchQuery}"
+                Showing results for:&nbsp;
+                <span className="font-medium">&ldquo;{searchQuery}&rdquo;</span>
               </CardDescription>
             )}
           </CardHeader>

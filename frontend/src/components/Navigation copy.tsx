@@ -3,7 +3,6 @@
 import siteMetadata from '@/data/siteMetadata';
 
 import HorizontalSocialIcons from '@/components/HorizontalSocialIcons';
-import Link from 'next/link';
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
 const LitecoinLogo = ({ width, height }: { width: number; height: number }) => (
   <svg
@@ -154,7 +153,7 @@ const Navigation = () => {
   };
 
   const handleClickOutside = (event: MouseEvent) => {
-  const targets: Array<[RefObject<HTMLLIElement>, DropdownKey]> = [
+  const targets: Array<[RefObject<HTMLLIElement | null>, DropdownKey]> = [
       [useLitecoinRef, 'useLitecoin'],
       [theFoundationRef, 'theFoundation'],
       [learnRef, 'learn'],
@@ -236,7 +235,7 @@ const Navigation = () => {
   const socialIconTextColor = interpolateColor('#222222', '#ffffff', bgOpacity);
   const logoColor = bgOpacity < 0.5 ? '#000000' : '#ffffff';
 
-  const dropdownRefs: Record<DropdownKey, RefObject<HTMLLIElement>> = {
+  const dropdownRefs: Record<DropdownKey, RefObject<HTMLLIElement | null>> = {
     useLitecoin: useLitecoinRef,
     theFoundation: theFoundationRef,
     learn: learnRef,
@@ -288,7 +287,6 @@ const Navigation = () => {
               <ul className="flex flex-row">
                 {dropdownKeys.map((key) => (
                   <li
-                    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
                     key={key}
                     className={`relative flex items-center !font-[500] ${
                       key === 'useLitecoin'

@@ -58,6 +58,9 @@ LLM_MODEL_NAME = "gemini-2.0-flash-lite"  # Google Flash 2.0 experimental. If "g
 # Maximum number of chat history pairs (human-AI exchanges) to include in context
 # This prevents token overflow and keeps context manageable. Default: 10 pairs (20 messages)
 MAX_CHAT_HISTORY_PAIRS = int(os.getenv("MAX_CHAT_HISTORY_PAIRS", "4"))
+NO_KB_MATCH_RESPONSE = (
+    "I couldn’t find any relevant content in our knowledge base yet. "
+)
 
 # --- RAG Prompt Templates ---
 # 1. History-aware question rephrasing prompt
@@ -324,6 +327,18 @@ class RAGPipeline:
                 if doc.metadata.get("status") == "published"
             ]
 
+            # Track metrics or short-circuit when no published sources found
+            if not published_sources:
+                if MONITORING_ENABLED:
+                    rag_retrieval_duration_seconds.observe(retrieval_duration)
+                    rag_documents_retrieved_total.observe(0)
+                    total_duration = time.time() - start_time
+                    rag_query_duration_seconds.labels(
+                        query_type="sync",
+                        cache_hit="false"
+                    ).observe(total_duration)
+                return NO_KB_MATCH_RESPONSE, []
+
             # Track metrics
             if MONITORING_ENABLED:
                 rag_retrieval_duration_seconds.observe(retrieval_duration)
@@ -432,6 +447,23 @@ class RAGPipeline:
             # Format context for LLM
             context_text = format_docs(context_docs)
 
+            # Filter out draft/unpublished documents from sources
+            published_sources = [
+                doc for doc in context_docs
+                if doc.metadata.get("status") == "published"
+            ]
+
+            if not published_sources:
+                if MONITORING_ENABLED:
+                    rag_retrieval_duration_seconds.observe(retrieval_duration)
+                    rag_documents_retrieved_total.observe(0)
+                    total_duration = time.time() - start_time
+                    rag_query_duration_seconds.labels(
+                        query_type="async",
+                        cache_hit="false"
+                    ).observe(total_duration)
+                return NO_KB_MATCH_RESPONSE, []
+
             # Generate answer using LLM with retrieved context
             llm_start = time.time()
             chain = rag_prompt | self.llm | StrOutputParser()
@@ -443,12 +475,6 @@ class RAGPipeline:
 
             # Use retrieved docs as sources
             sources = context_docs
-
-            # Filter out draft/unpublished documents from sources
-            published_sources = [
-                doc for doc in sources
-                if doc.metadata.get("status") == "published"
-            ]
 
             # Track metrics
             if MONITORING_ENABLED:
@@ -580,6 +606,21 @@ class RAGPipeline:
                 doc for doc in context_docs
                 if doc.metadata.get("status") == "published"
             ]
+
+            if not published_sources:
+                if MONITORING_ENABLED:
+                    rag_retrieval_duration_seconds.observe(retrieval_duration)
+                    rag_documents_retrieved_total.observe(0)
+                    total_duration = time.time() - start_time
+                    rag_query_duration_seconds.labels(
+                        query_type="stream",
+                        cache_hit="false"
+                    ).observe(total_duration)
+                # Inform client that no sources were available
+                yield {"type": "sources", "sources": []}
+                yield {"type": "chunk", "content": NO_KB_MATCH_RESPONSE}
+                yield {"type": "complete", "from_cache": False, "no_kb_results": True}
+                return
 
             total_duration = time.time() - start_time
 

@@ -128,7 +128,7 @@
       },
       "targets": [
         {
-          "expr": "rate(http_requests_total{status_code=~\"5..\"}[5m]) / rate(http_requests_total[5m])",
+          "expr": "(sum(rate(http_requests_total{status_code=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(http_requests_total[5m])) , 1)",
           "legendFormat": "Error Rate",
           "refId": "A"
         }
@@ -330,7 +330,7 @@
       },
       "targets": [
         {
-          "expr": "(sum(rate(rag_cache_hits_total[5m])) / (sum(rate(rag_cache_hits_total[5m])) + sum(rate(rag_cache_misses_total[5m])))) or (sum(rag_cache_hits_total) / (sum(rag_cache_hits_total) + sum(rag_cache_misses_total)))",
+          "expr": "((sum(rate(rag_cache_hits_total[5m])) or vector(0)) / clamp_min(((sum(rate(rag_cache_hits_total[5m])) or vector(0)) + (sum(rate(rag_cache_misses_total[5m])) or vector(0))), 1))",
           "legendFormat": "Cache Hit Rate",
           "refId": "A"
         }

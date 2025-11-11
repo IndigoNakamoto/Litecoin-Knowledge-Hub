@@ -26,9 +26,33 @@ class QueryCache:
         """Generate a unique cache key for the query and conversation context."""
         # Include recent conversation context in the key
         recent_history = chat_history[-3:] if len(chat_history) > 3 else chat_history  # Last 3 exchanges
+        normalized_query = query.strip().lower()
+
+        # Only include recent user messages that add new context and differ from the current query
+        history_entries = []
+        for exchange in recent_history:
+            if not isinstance(exchange, (tuple, list)) or len(exchange) == 0:
+                continue
+
+            human_message = exchange[0] if len(exchange) > 0 else ""
+            if not isinstance(human_message, str):
+                continue
+
+            normalized_message = human_message.strip().lower()
+            if normalized_message and normalized_message != normalized_query:
+                history_entries.append(normalized_message)
+
+        # Preserve order but remove duplicates to avoid unnecessary cache fragmentation
+        seen = set()
+        deduped_history = []
+        for msg in history_entries:
+            if msg not in seen:
+                deduped_history.append(msg)
+                seen.add(msg)
+
         key_data = {
-            "query": query.strip().lower(),
-            "history": recent_history
+            "query": normalized_query,
+            "history": deduped_history,
         }
         key_str = json.dumps(key_data, sort_keys=True)
         return hashlib.md5(key_str.encode()).hexdigest()
