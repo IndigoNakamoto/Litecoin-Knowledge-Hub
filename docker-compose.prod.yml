@@ -38,7 +38,7 @@ services:
       - MONGO_DATABASE_NAME=${MONGO_DATABASE_NAME:-litecoin_rag_db}
       - CMS_ARTICLES_COLLECTION_NAME=${CMS_ARTICLES_COLLECTION_NAME:-cms_articles}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-004}
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
+      - CORS_ORIGINS=${CORS_ORIGINS:-https://chat.lite.space,http://localhost:3000}
     env_file:
       - ./backend/.env
     depends_on:
@@ -54,27 +54,6 @@ services:
       retries: 3
       start_period: 40s
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: litecoin-frontend
-    ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8000}
-      - NODE_ENV=production
-    depends_on:
-      backend:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
   payload_cms:
     build:
       context: ./payload_cms
@@ -85,7 +64,8 @@ services:
     environment:
       - DATABASE_URI=mongodb://mongodb:27017/payload_cms
       - PAYLOAD_SECRET=${PAYLOAD_SECRET:-development-secret}
-      - PAYLOAD_PUBLIC_SERVER_URL=${PAYLOAD_PUBLIC_SERVER_URL:-http://localhost:3001}
+      - PAYLOAD_PUBLIC_SERVER_URL=${PAYLOAD_PUBLIC_SERVER_URL:-https://cms.lite.space}
+      - FRONTEND_URL=${FRONTEND_URL:-https://chat.lite.space}
       - BACKEND_URL=${BACKEND_URL:-http://litecoin-backend:8000}
       - NODE_ENV=production
     env_file:
@@ -98,6 +78,31 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL:-https://api.lite.space}
+        - NEXT_PUBLIC_PAYLOAD_URL=${NEXT_PUBLIC_PAYLOAD_URL:-https://cms.lite.space}
+    container_name: litecoin-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL:-https://api.lite.space}
+      - NEXT_PUBLIC_PAYLOAD_URL=${NEXT_PUBLIC_PAYLOAD_URL:-https://cms.lite.space}
+      - NODE_ENV=production
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "const rawHost = process.env.HOST || process.env.HOSTNAME || '127.0.0.1'; const host = ['0.0.0.0', '::', '::0', '::ffff:0:0'].includes(rawHost) ? '127.0.0.1' : rawHost; require('http').get(`http://${host}:3000`, (r) => {process.exit(r.statusCode === 200 ? 0 : 1)}).on('error', () => process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -141,6 +146,19 @@ services:
     depends_on:
       prometheus:
         condition: service_started
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: litecoin-cloudflared
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      backend:
+        condition: service_healthy
+      payload_cms:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   prometheus_data:

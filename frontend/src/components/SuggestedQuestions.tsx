@@ -38,7 +38,7 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({ onQuestionClick
         setError(null);
 
         // Get Payload CMS URL from environment variable, default to localhost:3001 for development
-        const payloadUrl = process.env.NEXT_PUBLIC_PAYLOAD_URL || "http://localhost:3001";
+        const payloadUrl = process.env.NEXT_PUBLIC_PAYLOAD_URL || "https://cms.lite.space";
         
         // Build query parameters - Payload uses JSON-based where clauses
         const queryParams = new URLSearchParams({

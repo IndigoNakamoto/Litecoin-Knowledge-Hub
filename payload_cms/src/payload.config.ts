@@ -19,6 +19,7 @@ const dirname = path.dirname(filename)
 export default buildConfig({
   admin: {
     user: Users.slug,
+    autoLogin: false, // Disable auto-login for security
     importMap: {
       baseDir: path.resolve(dirname),
     },
@@ -26,11 +27,15 @@ export default buildConfig({
   collections: [Users, Media, Article, Category, SuggestedQuestions],
   cors: [
     process.env.FRONTEND_URL || 'http://localhost:3000',
+    'https://cms.lite.space',
+    'https://chat.lite.space',
     'http://localhost:3000',
     'http://localhost:3001',
   ],
   csrf: [
     process.env.FRONTEND_URL || 'http://localhost:3000',
+    'https://cms.lite.space',
+    'https://chat.lite.space',
     'http://localhost:3000',
     'http://localhost:3001',
   ],
@@ -38,6 +43,7 @@ export default buildConfig({
     features: ({ defaultFeatures }) => [...defaultFeatures],
   }),
   secret: process.env.PAYLOAD_SECRET || '',
+  cookiePrefix: 'payload',
   typescript: {
     outputFile: path.resolve(dirname, 'payload-types.ts'),
   },

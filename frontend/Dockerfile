@@ -15,6 +15,12 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# Build arguments for Next.js public environment variables
+ARG NEXT_PUBLIC_BACKEND_URL
+ARG NEXT_PUBLIC_PAYLOAD_URL
+ENV NEXT_PUBLIC_BACKEND_URL=$NEXT_PUBLIC_BACKEND_URL
+ENV NEXT_PUBLIC_PAYLOAD_URL=$NEXT_PUBLIC_PAYLOAD_URL
+
 # Build the application
 RUN npm run build
 

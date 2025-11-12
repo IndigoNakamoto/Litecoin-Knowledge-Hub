@@ -292,7 +292,7 @@ For local development, the backend uses FAISS vector store instead of MongoDB At
    **Environment Setup:**
    ```env
    # MongoDB connection (use same as backend for local development)
-   MONGODB_URI="mongodb://localhost:27017/payload_cms"
+   MONGO_URI="mongodb://localhost:27017/payload_cms"
 
    # Payload configuration
    PAYLOAD_SECRET="your-secret-key-here"
@@ -303,7 +303,7 @@ For local development, the backend uses FAISS vector store instead of MongoDB At
    ```bash
    cd payload_cms
    cp .env.example .env
-   # Update MONGODB_URI in .env to: mongodb://127.0.0.1/payload_cms
+   # Update MONGO_URI in .env to: mongodb://127.0.0.1/payload_cms
    docker-compose up
    \# Payload CMS available at <http://localhost:3001>
    ```

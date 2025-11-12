@@ -4,25 +4,37 @@ export const Users: CollectionConfig = {
   slug: 'users',
   admin: {
     useAsTitle: 'email',
-    hidden: ({ user }) => !user || !user.roles.includes('admin'),
+    hidden: ({ user }) => !user || !user.roles?.includes('admin'),
   },
   auth: true,
   access: {
-    create: ({ req: { user } }) => {
-      if (!user) return false
-      return user.roles?.includes('admin')
+    create: ({ req }) => {
+      const user = req.user
+      if (!user) {
+        console.log('[Users access] No user found in request')
+        return false
+      }
+      // Ensure roles is an array and check for admin role
+      const roles = Array.isArray(user.roles) ? user.roles : []
+      const hasAdmin = roles.includes('admin')
+      console.log('[Users access] Create check - User:', user.email, 'Roles:', JSON.stringify(roles), 'Has admin:', hasAdmin, 'User object:', JSON.stringify(Object.keys(user)))
+      return hasAdmin
     },
     read: () => true,
     update: ({ req: { user }, id }) => {
       if (!user) return false
-      if (user.roles?.includes('admin')) {
+      // Ensure roles is an array and check for admin role
+      const roles = Array.isArray(user.roles) ? user.roles : []
+      if (roles.includes('admin')) {
         return true
       }
       return user.id === id
     },
     delete: ({ req: { user } }) => {
       if (!user) return false
-      return user.roles?.includes('admin')
+      // Ensure roles is an array and check for admin role
+      const roles = Array.isArray(user.roles) ? user.roles : []
+      return roles.includes('admin')
     },
   },
   fields: [
@@ -37,7 +49,9 @@ export const Users: CollectionConfig = {
       access: {
         update: ({ req: { user } }) => {
           if (!user) return false
-          return user.roles?.includes('admin')
+          // Ensure roles is an array and check for admin role
+          const roles = Array.isArray(user.roles) ? user.roles : []
+          return roles.includes('admin')
         },
       },
     },
