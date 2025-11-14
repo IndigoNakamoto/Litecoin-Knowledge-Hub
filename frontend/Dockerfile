@@ -15,6 +15,9 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# Set NODE_ENV to production to enable standalone output
+ENV NODE_ENV=production
+
 # Build arguments for Next.js public environment variables
 ARG NEXT_PUBLIC_BACKEND_URL
 ARG NEXT_PUBLIC_PAYLOAD_URL

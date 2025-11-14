@@ -79,8 +79,16 @@ export default function Home() {
       let buffer = ""; // Buffer for incomplete lines
       let shouldBreak = false;
 
+      // Type for SSE data objects
+      type SSEData = 
+        | { status: 'thinking' }
+        | { status: 'sources'; sources?: { metadata?: { title?: string; source?: string } }[] }
+        | { status: 'streaming'; chunk: string }
+        | { status: 'complete' }
+        | { status: 'error'; error?: string };
+
       // Helper function to process a single SSE data object
-      const processData = async (data: any) => {
+      const processData = async (data: SSEData) => {
         if (data.status === 'thinking') {
           setStreamingMessage(prev => prev ? { ...prev, status: 'thinking' } : null);
         } else if (data.status === 'sources') {

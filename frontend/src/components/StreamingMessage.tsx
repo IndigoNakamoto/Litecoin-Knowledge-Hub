@@ -80,7 +80,7 @@ const StreamingMessage: React.FC<StreamingMessageProps> = ({
               h4: ({ children }) => <h4 className="text-lg font-semibold mt-3 mb-2 text-foreground">{children}</h4>,
               h5: ({ children }) => <h5 className="text-base font-semibold mt-2 mb-1 text-foreground">{children}</h5>,
               h6: ({ children }) => <h6 className="text-base font-medium mt-2 mb-1 text-muted-foreground">{children}</h6>,
-              p: ({ children, ...props }) => <p className="my-4 leading-8 text-lg text-foreground">{children}</p>,
+              p: ({ children }) => <p className="my-4 leading-8 text-lg text-foreground">{children}</p>,
               ul: ({ children }) => <ul className="my-4 ml-6 list-disc space-y-2">{children}</ul>,
               ol: ({ children }) => <ol className="my-4 ml-6 list-decimal space-y-2">{children}</ol>,
               li: ({ children }) => <li className="leading-relaxed">{children}</li>,
