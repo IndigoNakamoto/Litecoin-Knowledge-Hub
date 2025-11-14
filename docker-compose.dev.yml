@@ -1,0 +1,124 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: litecoin-mongodb-dev
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_dev_data:/data/db
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mongosh --quiet --eval \"db.adminCommand('ping')\"",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: litecoin-backend-dev
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017
+      - MONGO_DETAILS=mongodb://mongodb:27017
+      - MONGODB_URI=mongodb://mongodb:27017
+      - TEST_MONGO_URI=mongodb://mongodb:27017
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - MONGO_DB_NAME=${MONGO_DB_NAME:-litecoin_rag_db}
+      - MONGO_COLLECTION_NAME=${MONGO_COLLECTION_NAME:-litecoin_docs}
+      - MONGO_DATABASE_NAME=${MONGO_DATABASE_NAME:-litecoin_rag_db}
+      - CMS_ARTICLES_COLLECTION_NAME=${CMS_ARTICLES_COLLECTION_NAME:-cms_articles}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-004}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001}
+      - NODE_ENV=development
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - JSON_LOGGING=${JSON_LOGGING:-false}
+    env_file:
+      - ./backend/.env
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    volumes:
+      # Mount backend code for hot reload
+      - ./backend:/app/backend
+      # Mount monitoring data directory
+      - ./backend/monitoring/data:/app/backend/monitoring/data
+      # Preserve Python cache in named volume to avoid conflicts
+      - backend_pycache:/app/backend/__pycache__
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/backend
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: litecoin-frontend-dev
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+      - NEXT_PUBLIC_PAYLOAD_URL=http://localhost:3001
+      - NODE_ENV=development
+      - WATCHPACK_POLLING=true
+      - HOSTNAME=0.0.0.0
+    volumes:
+      # Mount frontend code for hot reload
+      - ./frontend:/app
+      # Use named volume for node_modules to avoid conflicts
+      - frontend_node_modules:/app/node_modules
+      # Use named volume for .next to avoid conflicts
+      - frontend_next:/app/.next
+    command: npm run dev
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  payload_cms:
+    build:
+      context: ./payload_cms
+      dockerfile: Dockerfile.dev
+    container_name: litecoin-payload-cms-dev
+    ports:
+      - "3001:3000"
+    environment:
+      - DATABASE_URI=mongodb://mongodb:27017/payload_cms
+      - PAYLOAD_SECRET=${PAYLOAD_SECRET:-development-secret-change-me}
+      - PAYLOAD_PUBLIC_SERVER_URL=${PAYLOAD_PUBLIC_SERVER_URL:-http://localhost:3001}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - BACKEND_URL=${BACKEND_URL:-http://backend:8000}
+      - NODE_ENV=development
+      - WATCHPACK_POLLING=true
+      - HOSTNAME=0.0.0.0
+    env_file:
+      - ./payload_cms/.env
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    volumes:
+      # Mount payload_cms code for hot reload
+      - ./payload_cms:/app
+      # Use named volume for node_modules to avoid conflicts
+      - payload_cms_node_modules:/app/node_modules
+      # Use named volume for .next to avoid conflicts
+      - payload_cms_next:/app/.next
+    command: pnpm dev
+    restart: unless-stopped
+
+volumes:
+  mongodb_dev_data:
+  backend_pycache:
+  frontend_node_modules:
+  frontend_next:
+  payload_cms_node_modules:
+  payload_cms_next:

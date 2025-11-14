@@ -76,15 +76,106 @@ export default function Home() {
 
       let accumulatedContent = "";
       let sources: { metadata?: { title?: string; source?: string } }[] = [];
+      let buffer = ""; // Buffer for incomplete lines
+      let shouldBreak = false;
+
+      // Helper function to process a single SSE data object
+      const processData = async (data: any) => {
+        if (data.status === 'thinking') {
+          setStreamingMessage(prev => prev ? { ...prev, status: 'thinking' } : null);
+        } else if (data.status === 'sources') {
+          sources = data.sources || [];
+          setStreamingMessage(prev => prev ? {
+            ...prev,
+            sources: sources
+          } : null);
+        } else if (data.status === 'streaming') {
+          // Accumulate characters and display word by word
+          let wordBuffer = "";
+          for (const char of data.chunk) {
+            wordBuffer += char;
+            accumulatedContent += char;
+
+            // Check if we've completed a word (space, punctuation, or end of chunk)
+            const isWordBoundary = char === ' ' || char === '\n' || char === '.' || char === '!' || char === '?' || char === ',' || char === ';' || char === ':';
+
+            if (isWordBoundary || wordBuffer.length > 20) { // Also break long words
+              setStreamingMessage(prev => prev ? {
+                ...prev,
+                content: accumulatedContent,
+                status: 'streaming',
+                sources: sources,
+                isStreamActive: true
+              } : null);
+              // Delay between words for natural typing rhythm
+              await new Promise(resolve => setTimeout(resolve, 25));
+              wordBuffer = "";
+            }
+          }
+
+          // Display any remaining characters in the buffer
+          if (wordBuffer.length > 0) {
+            setStreamingMessage(prev => prev ? {
+              ...prev,
+              content: accumulatedContent,
+              status: 'streaming',
+              sources: sources,
+              isStreamActive: true
+            } : null);
+          }
+        } else if (data.status === 'complete') {
+          setStreamingMessage(prev => prev ? {
+            ...prev,
+            content: accumulatedContent,
+            status: 'complete',
+            sources: sources,
+            isStreamActive: false
+          } : null);
+          shouldBreak = true;
+        } else if (data.status === 'error') {
+          setStreamingMessage(prev => prev ? {
+            ...prev,
+            content: data.error || "An error occurred",
+            status: 'error',
+            isStreamActive: false
+          } : null);
+          shouldBreak = true;
+        }
+      };
 
       const processStream = async () => {
         try {
           while (true) {
             const { done, value } = await reader.read();
-            if (done) break;
+            if (done) {
+              // Process any remaining buffer content
+              if (buffer.trim()) {
+                const lines = buffer.split('\n');
+                for (const line of lines) {
+                  if (line.startsWith('data: ')) {
+                    try {
+                      const jsonStr = line.slice(6).trim();
+                      if (!jsonStr) continue;
+                      const data = JSON.parse(jsonStr);
+                      await processData(data);
+                      if (shouldBreak) break;
+                    } catch (parseError) {
+                      console.error('Error parsing final SSE data:', parseError);
+                    }
+                  }
+                }
+              }
+              break;
+            }
 
+            // Decode chunk and append to buffer
             const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split('\n');
+            buffer += chunk;
+
+            // Process complete lines (lines ending with \n)
+            const lines = buffer.split('\n');
+            // Keep the last incomplete line in the buffer
+            buffer = lines.pop() || "";
 
             for (const line of lines) {
               if (line.startsWith('data: ')) {
@@ -94,67 +185,8 @@ export default function Home() {
                   if (!jsonStr) continue;
                   
                   const data = JSON.parse(jsonStr);
-
-                  if (data.status === 'thinking') {
-                    setStreamingMessage(prev => prev ? { ...prev, status: 'thinking' } : null);
-                  } else if (data.status === 'sources') {
-                    sources = data.sources || [];
-                    setStreamingMessage(prev => prev ? {
-                      ...prev,
-                      sources: sources
-                    } : null);
-                  } else if (data.status === 'streaming') {
-                    // Accumulate characters and display word by word
-                    let wordBuffer = "";
-                    for (const char of data.chunk) {
-                      wordBuffer += char;
-                      accumulatedContent += char;
-
-                      // Check if we've completed a word (space, punctuation, or end of chunk)
-                      const isWordBoundary = char === ' ' || char === '\n' || char === '.' || char === '!' || char === '?' || char === ',' || char === ';' || char === ':';
-
-                      if (isWordBoundary || wordBuffer.length > 20) { // Also break long words
-                        setStreamingMessage(prev => prev ? {
-                          ...prev,
-                          content: accumulatedContent,
-                          status: 'streaming',
-                          sources: sources,
-                          isStreamActive: true
-                        } : null);
-                        // Delay between words for natural typing rhythm
-                        await new Promise(resolve => setTimeout(resolve, 25));
-                        wordBuffer = "";
-                      }
-                    }
-
-                    // Display any remaining characters in the buffer
-                    if (wordBuffer.length > 0) {
-                      setStreamingMessage(prev => prev ? {
-                        ...prev,
-                        content: accumulatedContent,
-                        status: 'streaming',
-                        sources: sources,
-                        isStreamActive: true
-                      } : null);
-                    }
-                  } else if (data.status === 'complete') {
-                    setStreamingMessage(prev => prev ? {
-                      ...prev,
-                      content: accumulatedContent,
-                      status: 'complete',
-                      sources: sources,
-                      isStreamActive: false
-                    } : null);
-                    break;
-                  } else if (data.status === 'error') {
-                    setStreamingMessage(prev => prev ? {
-                      ...prev,
-                      content: data.error || "An error occurred",
-                      status: 'error',
-                      isStreamActive: false
-                    } : null);
-                    break;
-                  }
+                  await processData(data);
+                  if (shouldBreak) break;
                 } catch (parseError) {
                   // Log the problematic JSON string for debugging
                   const jsonStr = line.slice(6).trim();
@@ -164,6 +196,8 @@ export default function Home() {
                 }
               }
             }
+            
+            if (shouldBreak) break;
           }
         } catch (error) {
           console.error('Stream processing error:', error);
