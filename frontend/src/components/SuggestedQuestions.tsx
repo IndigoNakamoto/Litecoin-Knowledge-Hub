@@ -105,7 +105,7 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({ onQuestionClick
     return (
       <div className="w-full max-w-4xl mx-auto px-4 py-8">
         <div className="text-center mb-6">
-          <h2 className="text-2xl font-semibold text-foreground mb-2">Get started with Litecoin</h2>
+          <h2 className="font-space-grotesk text-[30px] font-semibold text-foreground mb-2">Get started with Litecoin</h2>
           <p className="text-lg text-muted-foreground">Loading questions...</p>
         </div>
       </div>
@@ -116,7 +116,7 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({ onQuestionClick
     return (
       <div className="w-full max-w-4xl mx-auto px-4 py-8">
         <div className="text-center mb-6">
-          <h2 className="text-2xl font-semibold text-foreground mb-2">Get started with Litecoin</h2>
+          <h2 className="font-space-grotesk text-[30px] font-semibold text-foreground mb-2">Get started with Litecoin</h2>
           <p className="text-lg text-muted-foreground">No suggested questions available</p>
         </div>
       </div>
@@ -126,7 +126,7 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({ onQuestionClick
   return (
     <div className="w-full max-w-4xl mx-auto px-4 py-8">
       <div className="text-center mb-6">
-        <h2 className="text-2xl font-semibold text-foreground mb-2">Get started with Litecoin</h2>
+        <h2 className="font-space-grotesk text-[30px] font-semibold text-foreground mb-2">Get started with Litecoin</h2>
         <p className="text-lg text-muted-foreground">Choose a question below or ask your own</p>
         {error && (
           <p className="text-sm text-destructive mt-2">{error}</p>

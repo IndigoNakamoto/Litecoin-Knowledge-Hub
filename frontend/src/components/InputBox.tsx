@@ -49,7 +49,7 @@ const InputBox: React.FC<InputBoxProps> = ({ onSendMessage, isLoading }) => {
             onKeyDown={handleKeyPress}
             disabled={isLoading}
             rows={1}
-            className="flex-1 resize-none border-0 bg-transparent px-4 py-3.5 text-lg leading-7 text-foreground placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 min-h-[56px] max-h-[200px] overflow-y-auto"
+            className="flex-1 resize-none border-0 bg-transparent px-4 py-3.5 text-[16px] leading-7 text-[#222222] placeholder:text-gray-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 min-h-[56px] max-h-[200px] overflow-y-auto"
             style={{
               scrollbarWidth: "thin",
               scrollbarColor: "var(--muted) transparent",

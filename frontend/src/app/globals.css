@@ -45,37 +45,37 @@
 
 :root {
   --radius: 0.625rem;
-  --background: #e5e5e5;
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --background: #f2f2f2;
+  --foreground: #222222;
+  --card: #ffffff;
+  --card-foreground: #222222;
+  --popover: #ffffff;
+  --popover-foreground: #222222;
+  --primary: #345D9D;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f0f0;
+  --secondary-foreground: #222222;
+  --muted: #f0f0f0;
+  --muted-foreground: #6b7280;
+  --accent: #f0f0f0;
+  --accent-foreground: #222222;
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --border: #e5e7eb;
+  --input: #e5e7eb;
+  --ring: #345D9D;
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: #ffffff;
+  --sidebar-foreground: #222222;
+  --sidebar-primary: #345D9D;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f0f0f0;
+  --sidebar-accent-foreground: #222222;
+  --sidebar-border: #e5e7eb;
+  --sidebar-ring: #345D9D;
 }
 
 .dark {
@@ -117,15 +117,16 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground text-lg;
+    @apply bg-background text-foreground text-[16px];
     font-feature-settings: "rlig" 1, "calt" 1;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
   }
 }
 
 /* Enhanced prose and markdown styling */
 @layer components {
   .prose {
-    @apply text-foreground;
+    @apply text-gray-800;
   }
   
   .prose code {
@@ -140,16 +141,16 @@
   }
   
   .prose pre code {
-    @apply bg-transparent p-0 text-foreground;
+    @apply bg-transparent p-0 text-gray-800;
     font-size: inherit;
   }
   
   .prose a {
-    @apply text-primary hover:text-primary/80 underline underline-offset-2 transition-colors;
+    @apply text-blue-500 hover:text-blue-600 underline underline-offset-2 transition-colors;
   }
   
   .prose strong {
-    @apply font-semibold text-foreground;
+    @apply font-semibold text-gray-800;
   }
   
   .prose em {
@@ -157,7 +158,7 @@
   }
   
   .prose blockquote {
-    @apply border-l-4 border-primary/30 pl-4 italic my-4 text-muted-foreground;
+    @apply border-l-4 border-blue-500/30 pl-4 italic my-4 text-gray-600;
   }
   
   .prose ul, .prose ol {
@@ -209,7 +210,7 @@
   }
   
   .prose p {
-    @apply leading-8 text-lg;
+    @apply leading-relaxed text-[16px];
   }
 }
 

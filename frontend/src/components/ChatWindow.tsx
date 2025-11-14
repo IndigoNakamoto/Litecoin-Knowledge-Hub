@@ -90,7 +90,7 @@ const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(
   }, [handleScroll]);
 
     return (
-      <div ref={scrollRef} className="flex flex-col h-full m-4 p-16 overflow-y-auto">
+      <div ref={scrollRef} className="flex flex-col h-full m-4 px-4 md:px-16 py-16 overflow-y-auto">
         {children}
       </div>
     );
