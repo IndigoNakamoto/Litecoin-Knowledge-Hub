@@ -4,7 +4,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import React, { useEffect, useState } from "react";
+import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -21,26 +21,13 @@ const StreamingMessage: React.FC<StreamingMessageProps> = ({
   sources,
   isStreamActive
 }) => {
-  const [showCursor, setShowCursor] = useState(false);
-
-  // Handle cursor blinking during streaming
-  useEffect(() => {
-    if (status === "streaming" && isStreamActive) {
-      const interval = setInterval(() => {
-        setShowCursor(prev => !prev);
-      }, 500);
-      return () => clearInterval(interval);
-    } else {
-      setShowCursor(false);
-    }
-  }, [status, isStreamActive]);
 
   const getStatusText = () => {
     switch (status) {
       case "thinking":
-        return "";
+        return "Thinking...";
       case "streaming":
-        return "";
+        return "Streaming...";
       case "complete":
         return "";
       case "error":
@@ -53,32 +40,36 @@ const StreamingMessage: React.FC<StreamingMessageProps> = ({
   const getStatusColor = () => {
     switch (status) {
       case "thinking":
-        return "text-blue-500";
+        return "text-primary";
       case "streaming":
-        return "text-green-500";
+        return "text-primary";
       case "error":
-        return "text-red-500";
+        return "text-destructive";
       default:
         return "text-muted-foreground";
     }
   };
 
+  const shouldShowCursor = status === "streaming" && isStreamActive;
+
   return (
-    <div className="w-full">
+    <div className={`w-full transition-all duration-300 ${status === "streaming" && isStreamActive ? "animate-stream-pulse" : ""}`}>
       {/* Status indicator */}
       {status !== "complete" && (
-        <div className={`text-sm ${getStatusColor()} flex items-center gap-2 mb-2 mx-auto`}>
-          <div className="flex gap-1">
-            <div className="w-1.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-            <div className="w-1.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-            <div className="w-1.5 h-1.5 bg-current rounded-full animate-bounce"></div>
+        <div className={`text-sm ${getStatusColor()} flex items-center gap-3 mb-3 transition-opacity duration-300`}>
+          <div className="flex gap-1.5 items-center">
+            <div className="w-2 h-2 bg-current rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+            <div className="w-2 h-2 bg-current rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+            <div className="w-2 h-2 bg-current rounded-full animate-bounce"></div>
           </div>
-          {getStatusText()}
+          <span className="text-xs font-medium opacity-80 animate-fade-in">
+            {getStatusText()}
+          </span>
         </div>
       )}
 
       {/* Message content */}
-      <div className="prose prose-lg max-w-none dark:prose-invert prose-p:my-6 prose-headings:my-4 text-lg leading-relaxed">
+      <div className="prose prose-lg max-w-none dark:prose-invert prose-p:my-6 prose-headings:my-4 text-lg leading-relaxed relative">
         <div className="animate-fade-in">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
@@ -89,7 +80,7 @@ const StreamingMessage: React.FC<StreamingMessageProps> = ({
               h4: ({ children }) => <h4 className="text-lg font-semibold mt-3 mb-2 text-foreground">{children}</h4>,
               h5: ({ children }) => <h5 className="text-base font-semibold mt-2 mb-1 text-foreground">{children}</h5>,
               h6: ({ children }) => <h6 className="text-base font-medium mt-2 mb-1 text-muted-foreground">{children}</h6>,
-              p: ({ children }) => <p className="my-4 leading-8 text-lg text-foreground">{children}</p>,
+              p: ({ children, ...props }) => <p className="my-4 leading-8 text-lg text-foreground">{children}</p>,
               ul: ({ children }) => <ul className="my-4 ml-6 list-disc space-y-2">{children}</ul>,
               ol: ({ children }) => <ol className="my-4 ml-6 list-decimal space-y-2">{children}</ol>,
               li: ({ children }) => <li className="leading-relaxed">{children}</li>,
@@ -137,8 +128,12 @@ const StreamingMessage: React.FC<StreamingMessageProps> = ({
               img: ({ src, alt }) => <img src={src} alt={alt} className="rounded-lg my-4 max-w-full" />,
             }}
           >
-            {content + (showCursor ? "▊" : "")}
+            {content}
           </ReactMarkdown>
+          {/* Cursor element - separate from markdown, appears inline after content */}
+          {shouldShowCursor && (
+            <span className="inline-block w-0.5 h-[1.5em] bg-foreground ml-1 align-middle animate-cursor-blink" aria-hidden="true"></span>
+          )}
         </div>
       </div>
 
