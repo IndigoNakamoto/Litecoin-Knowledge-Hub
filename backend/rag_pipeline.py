@@ -76,6 +76,13 @@ QA_WITH_HISTORY_PROMPT = ChatPromptTemplate.from_messages(
 RAG_PROMPT_TEMPLATE = """
 You are a knowledgeable cryptocurrency expert, specifically Litecoin. Use the information below to provide a helpful, accurate answer to the user's question. If the information doesn't contain the answer, simply say so.
 
+RESPONSE GUIDELINES:
+- Provide a comprehensive answer that directly addresses the user's question
+- Include relevant and interesting information from the knowledge base that directly relates to the question
+- Integrate related details naturally into your answer to provide context and depth
+- Focus on information that is directly relevant to the question (avoid tangential topics)
+- Highlight interesting facts, historical context, or technical details that enhance understanding of the topic
+
 IMPORTANT FORMATTING INSTRUCTIONS:
 - Use markdown headings with ## for section headers (e.g., ## Origin and Goal)
 - NEVER use bold text with colons like (**Header:** text)
@@ -139,7 +146,7 @@ class RAGPipeline:
         # Get retriever from vector store
         retriever = self.vector_store_manager.get_retriever(
             search_type="similarity",
-            search_kwargs={"k": 10}
+            search_kwargs={"k": 15}
         )
 
         # Create history-aware retriever for standalone question generation
@@ -167,7 +174,7 @@ class RAGPipeline:
         # Get retriever from vector store
         retriever = self.vector_store_manager.get_retriever(
             search_type="similarity",
-            search_kwargs={"k": 10}
+            search_kwargs={"k": 15}
         )
 
         # Create history-aware retriever for standalone question generation
@@ -439,7 +446,7 @@ class RAGPipeline:
             # Use direct vector search for performance
             retriever = self.vector_store_manager.get_retriever(
                 search_type="similarity",
-                search_kwargs={"k": 10}
+                search_kwargs={"k": 15}
             )
             context_docs = retriever.get_relevant_documents(query_text)
             retrieval_duration = time.time() - retrieval_start
