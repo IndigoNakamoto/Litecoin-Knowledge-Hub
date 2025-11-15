@@ -54,7 +54,7 @@ if not MONGO_URI:
 # --- Constants ---
 DB_NAME = os.getenv("MONGO_DB_NAME", "litecoin_rag_db")
 COLLECTION_NAME = os.getenv("MONGO_COLLECTION_NAME", "litecoin_docs")
-LLM_MODEL_NAME = "gemini-2.0-flash-lite"  # Google Flash 2.0 experimental. If "gemini-2.5-flash" becomes available, update here.
+LLM_MODEL_NAME = "gemini-2.5-flash-lite"  # Google Flash 2.5 experimental. If "gemini-2.5-flash" becomes available, update here.
 # Maximum number of chat history pairs (human-AI exchanges) to include in context
 # This prevents token overflow and keeps context manageable. Default: 10 pairs (20 messages)
 MAX_CHAT_HISTORY_PAIRS = int(os.getenv("MAX_CHAT_HISTORY_PAIRS", "4"))
