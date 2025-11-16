@@ -77,7 +77,53 @@ export default function Home() {
         body: JSON.stringify({ query: trimmedMessage, chat_history: chatHistoryForBackend }),
       });
 
+      // Handle HTTP errors explicitly so we can surface clear messages (e.g., rate limiting)
       if (!response.ok) {
+        if (response.status === 429) {
+          let retryAfterSeconds: number | null = null;
+          const retryAfterHeader = response.headers.get("Retry-After");
+          if (retryAfterHeader) {
+            const parsed = parseInt(retryAfterHeader, 10);
+            if (!Number.isNaN(parsed)) {
+              retryAfterSeconds = parsed;
+            }
+          }
+
+          let serverMessage: string | null = null;
+          try {
+            const body = await response.json();
+            if (body && body.detail && typeof body.detail === "object") {
+              if (typeof body.detail.message === "string") {
+                serverMessage = body.detail.message;
+              }
+            }
+          } catch {
+            // Ignore JSON parse errors and fall back to default message
+          }
+
+          const humanReadableRetry =
+            retryAfterSeconds && retryAfterSeconds >= 60
+              ? `${Math.round(retryAfterSeconds / 60)} minute${retryAfterSeconds >= 120 ? "s" : ""}`
+              : retryAfterSeconds
+              ? `${retryAfterSeconds} seconds`
+              : null;
+
+          const content =
+            serverMessage ||
+            (humanReadableRetry
+              ? `You're sending messages too quickly. Please wait about ${humanReadableRetry} and try again.`
+              : "You're sending messages too quickly. Please wait a bit and try again.");
+
+          setStreamingMessage({
+            role: "ai",
+            content,
+            status: "error",
+            isStreamActive: false,
+          });
+          setIsLoading(false);
+          return;
+        }
+
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 

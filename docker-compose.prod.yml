@@ -32,6 +32,9 @@ services:
       - MONGO_DETAILS=mongodb://mongodb:27017
       - MONGODB_URI=mongodb://mongodb:27017
       - TEST_MONGO_URI=mongodb://mongodb:27017
+      - REDIS_URL=redis://redis:6379/0
+      - RATE_LIMIT_PER_MINUTE=20
+      - RATE_LIMIT_PER_HOUR=300
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - MONGO_DB_NAME=${MONGO_DB_NAME:-litecoin_rag_db}
       - MONGO_COLLECTION_NAME=${MONGO_COLLECTION_NAME:-litecoin_docs}
@@ -161,8 +164,17 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    container_name: litecoin-redis
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
 volumes:
   prometheus_data:
   grafana_data:
   mongodb_data:
+  redis_data:
 

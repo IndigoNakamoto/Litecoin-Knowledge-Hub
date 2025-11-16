@@ -158,6 +158,13 @@ user_questions_count_from_db = Gauge(
     ["endpoint_type"],  # endpoint_type: "chat", "stream", or "total"
 )
 
+# Rate limiting metrics
+rate_limit_rejections_total = Counter(
+    "rate_limit_rejections_total",
+    "Total number of requests rejected due to rate limiting",
+    ["endpoint_type"],  # e.g. "chat", "chat_stream"
+)
+
 
 def setup_metrics():
     """Initialize metrics registry. Called at application startup."""

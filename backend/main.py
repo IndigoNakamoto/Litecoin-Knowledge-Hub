@@ -8,7 +8,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field # Re-add BaseModel and Field
 from typing import List, Dict, Any, Tuple
@@ -45,6 +45,7 @@ from backend.monitoring import (
 )
 from backend.monitoring.metrics import user_questions_total
 from backend.monitoring.llm_observability import setup_langsmith
+from backend.rate_limiter import RateLimitConfig, check_rate_limit
 
 # Configure structured logging
 log_level = os.getenv("LOG_LEVEL", "INFO")
@@ -127,6 +128,13 @@ async def lifespan(app: FastAPI):
         close_shared_mongo_client()
     except Exception as e:
         logger.error(f"Error closing shared VectorStoreManager MongoDB client: {e}", exc_info=True)
+
+    # Shutdown: Close Redis client
+    try:
+        from backend.redis_client import close_redis_client
+        await close_redis_client()
+    except Exception as e:
+        logger.error(f"Error closing Redis client: {e}", exc_info=True)
     
     try:
         # Close Sources API PyMongo client
@@ -260,13 +268,23 @@ async def log_user_question(question: str, chat_history_length: int, endpoint_ty
         # Log error but don't fail the request
         logger.error(f"Failed to log user question: {e}", exc_info=True)
 
+CHAT_RATE_LIMIT = RateLimitConfig(
+    requests_per_minute=int(os.getenv("RATE_LIMIT_PER_MINUTE", "60")),
+    requests_per_hour=int(os.getenv("RATE_LIMIT_PER_HOUR", "1000")),
+    identifier="chat",
+)
+
+
 @app.post("/api/v1/chat", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest, background_tasks: BackgroundTasks):
+async def chat_endpoint(request: ChatRequest, background_tasks: BackgroundTasks, http_request: Request):
     """
     Endpoint to handle chat queries with conversational history.
     Processes the query through the RAG pipeline to get a generated response
     and the source documents used, taking into account previous messages.
     """
+    # Rate limiting
+    await check_rate_limit(http_request, CHAT_RATE_LIMIT)
+
     # Log the user question in the background
     background_tasks.add_task(
         log_user_question,
@@ -308,12 +326,22 @@ async def chat_endpoint(request: ChatRequest, background_tasks: BackgroundTasks)
         sources=source_documents
     )
 
+STREAM_RATE_LIMIT = RateLimitConfig(
+    requests_per_minute=int(os.getenv("RATE_LIMIT_PER_MINUTE", "60")),
+    requests_per_hour=int(os.getenv("RATE_LIMIT_PER_HOUR", "1000")),
+    identifier="chat_stream",
+)
+
+
 @app.post("/api/v1/chat/stream")
-async def chat_stream_endpoint(request: ChatRequest, background_tasks: BackgroundTasks):
+async def chat_stream_endpoint(request: ChatRequest, background_tasks: BackgroundTasks, http_request: Request):
     """
     Streaming endpoint for chat queries with real-time response delivery.
     Returns Server-Sent Events with incremental chunks of the response.
     """
+    # Rate limiting
+    await check_rate_limit(http_request, STREAM_RATE_LIMIT)
+
     # Log the user question in the background
     background_tasks.add_task(
         log_user_question,
