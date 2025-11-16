@@ -11,6 +11,7 @@ from langchain_core.documents import Document
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from data_ingestion.vector_store_manager import VectorStoreManager
 from cache_utils import query_cache
+from backend.utils.input_sanitizer import sanitize_query_input, detect_prompt_injection
 # --- Environment Variable Checks ---
 google_api_key = os.getenv("GOOGLE_API_KEY")
 if not google_api_key:
@@ -319,8 +320,22 @@ class RAGPipeline:
         """
         start_time = time.time()
         
+        # Sanitize query for prompt injection and other attacks
+        # Additional layer of protection even though Pydantic validators already sanitize
+        is_injection, pattern = detect_prompt_injection(query_text)
+        if is_injection:
+            logger.warning(f"Prompt injection detected in query (pattern: {pattern}). Sanitizing...")
+        query_text = sanitize_query_input(query_text)
+        
+        # Sanitize chat history messages as well
+        sanitized_history = []
+        for human_msg, ai_msg in chat_history:
+            sanitized_human = sanitize_query_input(human_msg) if human_msg else human_msg
+            sanitized_ai = sanitize_query_input(ai_msg) if ai_msg else ai_msg
+            sanitized_history.append((sanitized_human, sanitized_ai))
+        
         # Truncate chat history to prevent token overflow
-        truncated_history = self._truncate_chat_history(chat_history)
+        truncated_history = self._truncate_chat_history(sanitized_history)
         
         # Check cache first (using truncated history for cache key)
         cached_result = query_cache.get(query_text, truncated_history)
@@ -415,9 +430,8 @@ class RAGPipeline:
 
             return answer, published_sources
         except Exception as e:
-            print(f"Error during conversational RAG query execution: {e}")
-            import traceback
-            traceback.print_exc()
+            # Log full error details for debugging but don't expose to user
+            logger.error(f"Error during conversational RAG query execution: {e}", exc_info=True)
             
             if MONITORING_ENABLED:
                 total_duration = time.time() - start_time
@@ -432,7 +446,8 @@ class RAGPipeline:
                     status="error",
                 )
             
-            return f"Error processing query: {e}", []
+            # Return generic error message without exposing internal details
+            return "I encountered an error while processing your query. Please try again or rephrase your question.", []
 
     async def aquery(self, query_text: str, chat_history: List[Tuple[str, str]]) -> Tuple[str, List[Document]]:
         """
@@ -447,8 +462,22 @@ class RAGPipeline:
         """
         start_time = time.time()
         
+        # Sanitize query for prompt injection and other attacks
+        # Additional layer of protection even though Pydantic validators already sanitize
+        is_injection, pattern = detect_prompt_injection(query_text)
+        if is_injection:
+            logger.warning(f"Prompt injection detected in query (pattern: {pattern}). Sanitizing...")
+        query_text = sanitize_query_input(query_text)
+        
+        # Sanitize chat history messages as well
+        sanitized_history = []
+        for human_msg, ai_msg in chat_history:
+            sanitized_human = sanitize_query_input(human_msg) if human_msg else human_msg
+            sanitized_ai = sanitize_query_input(ai_msg) if ai_msg else ai_msg
+            sanitized_history.append((sanitized_human, sanitized_ai))
+        
         # Truncate chat history to prevent token overflow
-        truncated_history = self._truncate_chat_history(chat_history)
+        truncated_history = self._truncate_chat_history(sanitized_history)
         
         # Check cache first (using truncated history for cache key)
         cached_result = query_cache.get(query_text, truncated_history)
@@ -552,9 +581,8 @@ class RAGPipeline:
 
             return answer, published_sources
         except Exception as e:
-            print(f"Error during async RAG query execution: {e}")
-            import traceback
-            traceback.print_exc()
+            # Log full error details for debugging but don't expose to user
+            logger.error(f"Error during async RAG query execution: {e}", exc_info=True)
             
             if MONITORING_ENABLED:
                 total_duration = time.time() - start_time
@@ -569,7 +597,8 @@ class RAGPipeline:
                     status="error",
                 )
             
-            return f"Error processing query: {e}", []
+            # Return generic error message without exposing internal details
+            return "I encountered an error while processing your query. Please try again or rephrase your question.", []
 
     async def astream_query(self, query_text: str, chat_history: List[Tuple[str, str]]):
         """
@@ -584,8 +613,22 @@ class RAGPipeline:
         """
         start_time = time.time()
         try:
+            # Sanitize query for prompt injection and other attacks
+            # Additional layer of protection even though Pydantic validators already sanitize
+            is_injection, pattern = detect_prompt_injection(query_text)
+            if is_injection:
+                logger.warning(f"Prompt injection detected in query (pattern: {pattern}). Sanitizing...")
+            query_text = sanitize_query_input(query_text)
+            
+            # Sanitize chat history messages as well
+            sanitized_history = []
+            for human_msg, ai_msg in chat_history:
+                sanitized_human = sanitize_query_input(human_msg) if human_msg else human_msg
+                sanitized_ai = sanitize_query_input(ai_msg) if ai_msg else ai_msg
+                sanitized_history.append((sanitized_human, sanitized_ai))
+            
             # Truncate chat history to prevent token overflow
-            truncated_history = self._truncate_chat_history(chat_history)
+            truncated_history = self._truncate_chat_history(sanitized_history)
             
             # Check cache first (using truncated history for cache key)
             cached_result = query_cache.get(query_text, truncated_history)
@@ -711,9 +754,8 @@ class RAGPipeline:
             yield {"type": "complete", "from_cache": False}
 
         except Exception as e:
-            print(f"Error during streaming RAG query execution: {e}")
-            import traceback
-            traceback.print_exc()
+            # Log full error details for debugging but don't expose to user
+            logger.error(f"Error during streaming RAG query execution: {e}", exc_info=True)
             
             # Track error metrics
             if MONITORING_ENABLED:
@@ -729,7 +771,8 @@ class RAGPipeline:
                     status="error",
                 )
             
-            yield {"type": "error", "error": str(e)}
+            # Return generic error message without exposing internal details
+            yield {"type": "error", "error": "An error occurred while processing your query. Please try again or rephrase your question."}
 
 
 # Example of how to use the RAGPipeline class (for testing or direct script use)

@@ -73,12 +73,21 @@ export default function DashboardPage() {
     loadAllArticles();
   }, [token]);
 
+  const MAX_QUERY_LENGTH = 1000;
+
   const handleSearch = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     
     // If search query is empty, show all articles
-    if (!searchQuery.trim()) {
+    const trimmedQuery = searchQuery.trim();
+    if (!trimmedQuery) {
       setDisplayedArticles(allArticles);
+      return;
+    }
+
+    // Validate search query length
+    if (trimmedQuery.length > MAX_QUERY_LENGTH) {
+      setError(`Search query is too long. Maximum length is ${MAX_QUERY_LENGTH} characters. Your query is ${trimmedQuery.length} characters.`);
       return;
     }
 
@@ -93,7 +102,7 @@ export default function DashboardPage() {
     try {
       // Build query parameters for GET request
       const params = new URLSearchParams({
-        query: searchQuery,
+        query: trimmedQuery,
         limit: '50' // Changed from top_k to limit to match backend
       });
 

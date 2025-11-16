@@ -25,9 +25,23 @@ export default function Home() {
   const chatWindowRef = useRef<ChatWindowRef>(null);
   const lastUserMessageIdRef = useRef<string | null>(null);
 
+  const MAX_QUERY_LENGTH = 1000;
+
   const handleSendMessage = async (message: string) => {
+    // Validate message length
+    if (message.length > MAX_QUERY_LENGTH) {
+      alert(`Message is too long. Maximum length is ${MAX_QUERY_LENGTH} characters. Your message is ${message.length} characters.`);
+      return;
+    }
+
+    // Trim whitespace
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage) {
+      return; // Don't send empty messages
+    }
+
     const messageId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const newUserMessage: Message = { role: "human", content: message, id: messageId };
+    const newUserMessage: Message = { role: "human", content: trimmedMessage, id: messageId };
 
     // Prepare chat history for the backend - only include complete exchanges
     const chatHistoryForBackend = messages.map(msg => ({
@@ -60,7 +74,7 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ query: message, chat_history: chatHistoryForBackend }),
+        body: JSON.stringify({ query: trimmedMessage, chat_history: chatHistoryForBackend }),
       });
 
       if (!response.ok) {

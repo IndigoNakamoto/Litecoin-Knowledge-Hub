@@ -7,6 +7,8 @@ interface InputBoxProps {
   isLoading: boolean;
 }
 
+const MAX_QUERY_LENGTH = 1000;
+
 const InputBox: React.FC<InputBoxProps> = ({ onSendMessage, isLoading }) => {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -67,9 +69,18 @@ const InputBox: React.FC<InputBoxProps> = ({ onSendMessage, isLoading }) => {
             </Button>
           </div>
         </div>
-        <div className="mt-2 text-center">
+        <div className="mt-2 flex justify-between items-center px-4">
           <p className="text-sm text-muted-foreground">
             Press Enter to send, Shift+Enter for new line
+          </p>
+          <p className={`text-sm ${
+            input.length > MAX_QUERY_LENGTH 
+              ? 'text-red-500 font-semibold' 
+              : input.length > MAX_QUERY_LENGTH * 0.9 
+                ? 'text-yellow-500' 
+                : 'text-muted-foreground'
+          }`}>
+            {input.length}/{MAX_QUERY_LENGTH}
           </p>
         </div>
       </div>

@@ -8,6 +8,7 @@ import logging
 
 from backend.data_models import UserQuestion
 from backend.dependencies import get_user_questions_collection
+from backend.utils.input_sanitizer import sanitize_mongodb_query_param
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,16 @@ async def get_user_questions(
     Only accessible by admins (authentication should be added).
     """
     try:
+        # Sanitize endpoint_type parameter to prevent NoSQL injection
+        if endpoint_type:
+            endpoint_type = sanitize_mongodb_query_param(endpoint_type)
+            # Validate it's one of the allowed values
+            if endpoint_type not in ["chat", "stream"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid endpoint_type. Must be 'chat' or 'stream'."
+                )
+        
         # Build query filter
         query_filter = {}
         if analyzed is not None:
@@ -75,9 +86,10 @@ async def get_user_questions(
         )
     except Exception as e:
         logger.error(f"Error fetching user questions: {e}", exc_info=True)
+        # Don't expose internal error details to client
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching user questions: {str(e)}"
+            detail="An error occurred while fetching user questions. Please try again later."
         )
 
 @router.get("/stats")
@@ -114,8 +126,9 @@ async def get_questions_stats(
         }
     except Exception as e:
         logger.error(f"Error fetching question stats: {e}", exc_info=True)
+        # Don't expose internal error details to client
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching question stats: {str(e)}"
+            detail="An error occurred while fetching question statistics. Please try again later."
         )
 

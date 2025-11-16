@@ -1,8 +1,9 @@
 # backend/data_models.py
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from typing import List, Literal, Optional, Dict, Any
+from backend.utils.input_sanitizer import sanitize_query_input, MAX_QUERY_LENGTH
 
 class PayloadArticleMetadata(BaseModel):
     """
@@ -85,6 +86,14 @@ class ChatMessage(BaseModel):
     """
     role: Literal["human", "ai"] = Field(..., description="The role of the sender, either 'human' or 'ai'.")
     content: str = Field(..., description="The content of the chat message.")
+    
+    @field_validator('content')
+    @classmethod
+    def sanitize_content(cls, v: str) -> str:
+        """Sanitize chat message content for prompt injection, NoSQL injection, and length."""
+        if not v:
+            return v
+        return sanitize_query_input(v, MAX_QUERY_LENGTH)
 
 class ChatRequest(BaseModel):
     """
@@ -92,6 +101,14 @@ class ChatRequest(BaseModel):
     """
     query: str = Field(..., description="The user's current query.")
     chat_history: List[ChatMessage] = Field([], description="A list of previous chat messages in the conversation.")
+    
+    @field_validator('query')
+    @classmethod
+    def sanitize_query(cls, v: str) -> str:
+        """Sanitize query for prompt injection, NoSQL injection, and length."""
+        if not v:
+            return v
+        return sanitize_query_input(v, MAX_QUERY_LENGTH)
 
     class Config:
         json_schema_extra = {
@@ -139,6 +156,14 @@ class UserQuestion(BaseModel):
     tags: List[str] = Field(default_factory=list, description="Tags assigned by LLM analysis (to be populated later).")
     analyzed: bool = Field(False, description="Whether this question has been analyzed by LLM yet.")
     analyzed_at: Optional[datetime] = Field(None, description="When the question was analyzed.")
+    
+    @field_validator('question')
+    @classmethod
+    def sanitize_question(cls, v: str) -> str:
+        """Sanitize question for prompt injection, NoSQL injection, and length."""
+        if not v:
+            return v
+        return sanitize_query_input(v, MAX_QUERY_LENGTH)
 
     class Config:
         json_schema_extra = {
