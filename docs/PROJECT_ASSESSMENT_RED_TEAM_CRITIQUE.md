@@ -31,11 +31,11 @@
 > "Production Readiness: 7/10"
 
 **Reality Check:**
-- ❌ **No authentication/authorization on public chat endpoints** - Critical security flaw
+- ❌ **No authentication/authorization on public chat endpoints** - Critical security flaw 
 - ❌ **No rate limiting** - Open to abuse and cost attacks
 - ❌ **Hardcoded localhost URLs** in webhook code (`http://localhost:8000`)
-- ❌ **Admin endpoints exposed** (`/api/v1/refresh-rag`, `/api/v1/clean-drafts`) without auth
-- ❌ **No input sanitization visible** for user queries
+- ❌ **Admin endpoints exposed** (`/api/v1/refresh-rag`, `/api/v1/clean-drafts`) without auth (endpoints removed 11/16)
+- ❌ **No input sanitization visible** for user queries (sanitization enabled 11/16)
 - ❌ **Debug print statements** in production code (`sources.py` lines 136-137)
 - ❌ **TODO comments** indicating incomplete functionality
 

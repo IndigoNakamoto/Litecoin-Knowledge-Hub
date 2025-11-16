@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
 import logging
-import requests
 from pydantic import ValidationError
 from datetime import datetime
 from typing import Dict, Any, List, Union
@@ -8,6 +7,7 @@ from typing import Dict, Any, List, Union
 from backend.data_models import PayloadWebhookDoc
 from backend.data_ingestion.embedding_processor import process_payload_documents
 from backend.data_ingestion.vector_store_manager import VectorStoreManager
+from backend.rag_pipeline import RAGPipeline
 
 # Import monitoring metrics
 try:
@@ -84,11 +84,9 @@ def delete_and_refresh_vector_store(payload_id, operation="delete"):
 
         # Refresh the RAG pipeline
         try:
-            refresh_response = requests.post("http://localhost:8000/api/v1/refresh-rag", timeout=30)
-            if refresh_response.status_code == 200:
-                logger.info(f"✅ [Delete Task: {payload_id}] RAG pipeline refreshed successfully")
-            else:
-                logger.warning(f"⚠️ [Delete Task: {payload_id}] RAG pipeline refresh returned status {refresh_response.status_code}: {refresh_response.text}")
+            rag_pipeline = RAGPipeline()
+            rag_pipeline.refresh_vector_store()
+            logger.info(f"✅ [Delete Task: {payload_id}] RAG pipeline refreshed successfully")
         except Exception as refresh_error:
             logger.warning(f"⚠️ [Delete Task: {payload_id}] Failed to refresh RAG pipeline: {refresh_error}")
 
@@ -168,12 +166,9 @@ def process_and_embed_document(payload_doc, operation="create"):
         # 4. Refresh the RAG pipeline to include the new documents
         logger.info(f"🔄 [Task ID: {payload_id}] Refreshing RAG pipeline with new documents...")
         try:
-            # Make an internal HTTP call to refresh the RAG pipeline
-            refresh_response = requests.post("http://localhost:8000/api/v1/refresh-rag", timeout=30)
-            if refresh_response.status_code == 200:
-                logger.info(f"✅ [Task ID: {payload_id}] RAG pipeline refreshed successfully")
-            else:
-                logger.warning(f"⚠️ [Task ID: {payload_id}] RAG pipeline refresh returned status {refresh_response.status_code}: {refresh_response.text}")
+            rag_pipeline = RAGPipeline()
+            rag_pipeline.refresh_vector_store()
+            logger.info(f"✅ [Task ID: {payload_id}] RAG pipeline refreshed successfully")
         except Exception as refresh_error:
             logger.warning(f"⚠️ [Task ID: {payload_id}] Failed to refresh RAG pipeline: {refresh_error}")
 

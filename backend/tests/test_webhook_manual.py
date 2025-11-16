@@ -143,27 +143,6 @@ def test_draft_filtering(backend_url="http://localhost:8000"):
         print(f"❌ Draft filtering test failed: {e}")
         return False
 
-def test_clean_drafts_endpoint(backend_url="http://localhost:8000"):
-    """Test the clean drafts endpoint."""
-    print("🧪 Testing clean drafts endpoint...")
-
-    try:
-        response = requests.post(
-            f"{backend_url}/api/v1/clean-drafts",
-            timeout=60
-        )
-
-        if response.status_code == 200:
-            response_data = response.json()
-            print(f"✅ Clean drafts response: {response_data}")
-            return True
-        else:
-            print(f"❌ Clean drafts failed with status {response.status_code}: {response.text}")
-            return False
-
-    except Exception as e:
-        print(f"❌ Clean drafts test failed: {e}")
-        return False
 
 def main():
     """Main function to run webhook tests."""
@@ -191,15 +170,11 @@ def main():
     # Test draft filtering
     draft_filter_ok = test_draft_filtering(backend_url)
 
-    # Test clean drafts endpoint
-    clean_drafts_ok = test_clean_drafts_endpoint(backend_url)
-
-    if webhook_ok and draft_filter_ok and clean_drafts_ok:
+    if webhook_ok and draft_filter_ok:
         print("\n✅ All tests passed! The integration should work correctly.")
         print("📝 Summary:")
         print("   - Webhook processing: ✅")
         print("   - Draft content filtering: ✅")
-        print("   - Clean drafts utility: ✅")
         print("\nNext steps:")
         print("   1. Publish/unpublish articles in Payload CMS")
         print("   2. Test queries about the article content")
@@ -210,10 +185,8 @@ def main():
             print("   - Webhook processing failed")
         if not draft_filter_ok:
             print("   - Draft content filtering failed")
-        if not clean_drafts_ok:
-            print("   - Clean drafts utility failed")
 
-    return webhook_ok and draft_filter_ok and clean_drafts_ok
+    return webhook_ok and draft_filter_ok
 
 if __name__ == "__main__":
     success = main()

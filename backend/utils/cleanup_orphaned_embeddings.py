@@ -4,10 +4,19 @@ Cleanup utility to remove orphaned embeddings from FAISS for articles that were 
 but whose embeddings weren't removed due to the webhook validation bug.
 """
 
-import requests
+import sys
+import os
+
+# Add the project root to the Python path
+# This allows absolute imports from the 'backend' directory
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import logging
 from datetime import datetime
 from data_ingestion.vector_store_manager import VectorStoreManager
+from backend.rag_pipeline import RAGPipeline
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -97,13 +106,10 @@ def refresh_rag_pipeline():
     """
     try:
         logger.info("Refreshing RAG pipeline...")
-        response = requests.post("http://localhost:8000/api/v1/refresh-rag", timeout=30)
-        if response.status_code == 200:
-            logger.info("✅ RAG pipeline refreshed successfully")
-            return True
-        else:
-            logger.warning(f"⚠️ RAG pipeline refresh returned status {response.status_code}: {response.text}")
-            return False
+        rag_pipeline = RAGPipeline()
+        rag_pipeline.refresh_vector_store()
+        logger.info("✅ RAG pipeline refreshed successfully")
+        return True
     except Exception as e:
         logger.error(f"Failed to refresh RAG pipeline: {e}")
         return False
