@@ -16,6 +16,28 @@ import { SuggestedQuestions } from './collections/SuggestedQuestions'
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
 
+// Build CORS and CSRF arrays dynamically based on environment
+const frontendUrl = process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? 'https://chat.lite.space' : 'http://localhost:3000')
+const payloadUrl = process.env.PAYLOAD_PUBLIC_SERVER_URL || (process.env.NODE_ENV === 'production' ? 'https://cms.lite.space' : 'http://localhost:3001')
+
+const corsOrigins = [
+  frontendUrl,
+  'https://cms.lite.space',
+  'https://chat.lite.space',
+]
+
+const csrfOrigins = [
+  frontendUrl,
+  'https://cms.lite.space',
+  'https://chat.lite.space',
+]
+
+// Only include localhost URLs in development mode
+if (process.env.NODE_ENV !== 'production') {
+  corsOrigins.push('http://localhost:3000', 'http://localhost:3001')
+  csrfOrigins.push('http://localhost:3000', 'http://localhost:3001')
+}
+
 export default buildConfig({
   admin: {
     user: Users.slug,
@@ -25,20 +47,8 @@ export default buildConfig({
     },
   },
   collections: [Users, Media, Article, Category, SuggestedQuestions],
-  cors: [
-    process.env.FRONTEND_URL || 'http://localhost:3000',
-    'https://cms.lite.space',
-    'https://chat.lite.space',
-    'http://localhost:3000',
-    'http://localhost:3001',
-  ],
-  csrf: [
-    process.env.FRONTEND_URL || 'http://localhost:3000',
-    'https://cms.lite.space',
-    'https://chat.lite.space',
-    'http://localhost:3000',
-    'http://localhost:3001',
-  ],
+  cors: corsOrigins,
+  csrf: csrfOrigins,
   editor: lexicalEditor({
     features: ({ defaultFeatures }) => [...defaultFeatures],
   }),

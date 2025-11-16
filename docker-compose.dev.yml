@@ -39,6 +39,7 @@ services:
       - CMS_ARTICLES_COLLECTION_NAME=${CMS_ARTICLES_COLLECTION_NAME:-cms_articles}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-004}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001}
+      - BACKEND_URL=${BACKEND_URL:-http://localhost:8000}
       - NODE_ENV=development
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - JSON_LOGGING=${JSON_LOGGING:-false}
@@ -65,8 +66,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
-      - NEXT_PUBLIC_PAYLOAD_URL=http://localhost:3001
+      - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8000}
+      - NEXT_PUBLIC_PAYLOAD_URL=${NEXT_PUBLIC_PAYLOAD_URL:-http://localhost:3001}
       - NODE_ENV=development
       - WATCHPACK_POLLING=true
       - HOSTNAME=0.0.0.0

@@ -46,7 +46,8 @@ from backend.rag_pipeline import RAGPipeline # RAGPipeline checks for GOOGLE_API
 
 
 # Define the URL of the FastAPI chat endpoint (for the original test)
-API_URL = "http://127.0.0.1:8000/api/v1/chat"
+BACKEND_BASE_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+API_URL = f"{BACKEND_BASE_URL}/api/v1/chat"
 
 # Define a sample query for the original test
 SAMPLE_QUERY = "What is Litecoin?"

@@ -14,6 +14,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 import logging
+import requests
 from datetime import datetime
 from data_ingestion.vector_store_manager import VectorStoreManager
 from backend.rag_pipeline import RAGPipeline
@@ -22,10 +23,12 @@ from backend.rag_pipeline import RAGPipeline
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def get_payload_articles(payload_url="http://localhost:3000"):
+def get_payload_articles(payload_url=None):
     """
     Fetch all articles from Payload CMS to get the current list of valid article IDs.
     """
+    if payload_url is None:
+        payload_url = os.getenv("PAYLOAD_PUBLIC_SERVER_URL", "http://localhost:3001")
     try:
         # Query Payload CMS for all articles (including drafts and published)
         response = requests.get(
@@ -121,7 +124,8 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Clean up orphaned embeddings from deleted Payload CMS articles")
-    parser.add_argument("--payload-url", default="http://localhost:3000", help="Payload CMS URL")
+    default_payload_url = os.getenv("PAYLOAD_PUBLIC_SERVER_URL", "http://localhost:3001")
+    parser.add_argument("--payload-url", default=default_payload_url, help="Payload CMS URL")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be deleted without actually deleting")
     parser.add_argument("--force", action="store_true", help="Actually perform the deletion (required if not dry-run)")
 

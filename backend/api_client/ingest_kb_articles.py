@@ -12,7 +12,8 @@ sys.path.insert(0, backend_dir)
 from utils.clear_litecoin_docs_collection import clear_collection
 
 # Base URL for the FastAPI application
-BASE_URL = "http://localhost:8000/api/v1"
+BACKEND_BASE_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+BASE_URL = f"{BACKEND_BASE_URL}/api/v1"
 
 def get_frontmatter(file_path: str) -> Dict[str, Any]:
     """

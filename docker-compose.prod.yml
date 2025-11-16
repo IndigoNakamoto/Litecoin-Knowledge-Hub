@@ -39,6 +39,7 @@ services:
       - CMS_ARTICLES_COLLECTION_NAME=${CMS_ARTICLES_COLLECTION_NAME:-cms_articles}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-004}
       - CORS_ORIGINS=${CORS_ORIGINS:-https://chat.lite.space,http://localhost:3000}
+      - BACKEND_URL=${BACKEND_URL:-http://litecoin-backend:8000}
     env_file:
       - ./backend/.env
     depends_on:
