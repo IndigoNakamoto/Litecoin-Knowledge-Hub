@@ -25,20 +25,18 @@ class MarkdownTextSplitter:
     """
     A text splitter that processes Markdown content hierarchically.
     It uses the parse_markdown_hierarchically function to create Document chunks
-    with prepended titles and section context, and then further splits these
-    into smaller chunks using RecursiveCharacterTextSplitter.
+    with prepended titles and section context. Each paragraph under a heading
+    becomes a single semantic chunk without further splitting.
     """
     def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 100, **kwargs):
         """
         Initializes the MarkdownTextSplitter.
+        
+        Note: chunk_size and chunk_overlap are kept for backward compatibility
+        but are not used, as chunks are not further split.
         """
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        self.recursive_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=self.chunk_size,
-            chunk_overlap=self.chunk_overlap,
-            **kwargs
-        )
 
     def split_text(self, text: str, metadata: dict = None) -> List[Document]:
         """
@@ -57,10 +55,9 @@ class MarkdownTextSplitter:
         if 'source' not in initial_metadata:
             initial_metadata['source'] = 'unknown_markdown_source'
             
-        # First, parse hierarchically to get logical sections
-        hierarchical_sections = parse_markdown_hierarchically(text, initial_metadata, self.recursive_splitter)
+        # Parse hierarchically to get semantic chunks (one per paragraph under headings)
+        hierarchical_sections = parse_markdown_hierarchically(text, initial_metadata)
         
-        # The parse_markdown_hierarchically function now returns already split documents
         return hierarchical_sections
 
     def split_documents(self, documents: List[Document]) -> List[Document]:
@@ -111,11 +108,11 @@ class EmbeddingService:
             raise
 
 
-def parse_markdown_hierarchically(content: str, initial_metadata: dict, recursive_splitter: RecursiveCharacterTextSplitter) -> List[Document]:
+def parse_markdown_hierarchically(content: str, initial_metadata: dict) -> List[Document]:
     """
     Parses Markdown content hierarchically, creating chunks with prepended titles.
     Handles YAML frontmatter for legacy files and extracts metadata from Payload documents.
-    Uses a recursive_splitter to further break down large paragraphs into smaller chunks.
+    Each paragraph under a heading becomes a single semantic chunk.
     """
     chunks = []
     current_metadata = initial_metadata.copy()
@@ -161,7 +158,12 @@ def parse_markdown_hierarchically(content: str, initial_metadata: dict, recursiv
     lines = content.splitlines()
     current_paragraph_lines = []
 
-    def create_and_split_chunk(paragraph_lines_list, h1, h2, h3, h4, meta, splitter):
+    def create_document_chunk(paragraph_lines_list, h1, h2, h3, h4, meta):
+        """
+        Creates ONE document chunk from a list of paragraph lines,
+        prepending the hierarchical headings.
+        This replaces the 'create_and_split_chunk' function.
+        """
         if not paragraph_lines_list:
             return []
         
@@ -169,6 +171,7 @@ def parse_markdown_hierarchically(content: str, initial_metadata: dict, recursiv
         if not text:
             return []
 
+        # 1. Create the prepended header
         prepended_text_parts = []
         if h1: prepended_text_parts.append(f"Title: {h1}")
         if h2: prepended_text_parts.append(f"Section: {h2}")
@@ -176,36 +179,27 @@ def parse_markdown_hierarchically(content: str, initial_metadata: dict, recursiv
         if h4: prepended_text_parts.append(f"Sub-subsection: {h4}")
         
         prepended_header = "\n".join(prepended_text_parts)
-        
-        # Create a temporary document for the current section/paragraph
-        temp_doc_content = text
-        temp_doc_metadata = meta.copy()
-        if h1: temp_doc_metadata['doc_title_hierarchical'] = h1
-        if h2: temp_doc_metadata['section_title'] = h2
-        if h3: temp_doc_metadata['subsection_title'] = h3
-        if h4: temp_doc_metadata['subsubsection_title'] = h4
-        temp_doc_metadata['chunk_type'] = 'section' if h2 or h3 or h4 else 'text'
 
-        # Use the recursive splitter to break down the section/paragraph into smaller chunks
-        split_docs = splitter.create_documents([temp_doc_content], metadatas=[temp_doc_metadata])
-        
-        final_chunks = []
-        for i, split_doc in enumerate(split_docs):
-            # Prepend hierarchical header to each split chunk
-            final_page_content = f"{prepended_header}\n\n{split_doc.page_content}" if prepended_header else split_doc.page_content
-            
-            chunk_metadata = split_doc.metadata.copy()
-            chunk_metadata['content_length'] = len(split_doc.page_content)
-            chunk_metadata['sub_chunk_index'] = i # Index for sub-chunks within a hierarchical section
+        # 2. Create the final page content
+        final_page_content = f"{prepended_header}\n\n{text}" if prepended_header else text
 
-            for key, value in chunk_metadata.items():
-                if isinstance(value, datetime.date) and not isinstance(value, datetime.datetime):
-                    logger.debug(f"Converting datetime.date to datetime.datetime for key '{key}' in source: {chunk_metadata.get('source', 'Unknown')}")
-                    chunk_metadata[key] = datetime.datetime.combine(value, datetime.time.min)
-            
-            final_chunks.append(Document(page_content=final_page_content, metadata=chunk_metadata))
+        # 3. Create the final metadata
+        final_metadata = meta.copy()
+        if h1: final_metadata['doc_title_hierarchical'] = h1
+        if h2: final_metadata['section_title'] = h2
+        if h3: final_metadata['subsection_title'] = h3
+        if h4: final_metadata['subsubsection_title'] = h4
+        final_metadata['chunk_type'] = 'section' if h2 or h3 or h4 else 'text'
+        final_metadata['content_length'] = len(text)
         
-        return final_chunks
+        # 4. Clean up any bad date objects (from your original code)
+        for key, value in final_metadata.items():
+            if isinstance(value, datetime.date) and not isinstance(value, datetime.datetime):
+                logger.debug(f"Converting datetime.date to datetime.datetime for key '{key}' in source: {final_metadata.get('source', 'Unknown')}")
+                final_metadata[key] = datetime.datetime.combine(value, datetime.time.min)
+
+        # 5. Return a list containing just this ONE chunk
+        return [Document(page_content=final_page_content, metadata=final_metadata)]
 
     for line_number, line in enumerate(lines):
         h1_match = re.match(r"^#\s+(.*)", line)
@@ -215,41 +209,41 @@ def parse_markdown_hierarchically(content: str, initial_metadata: dict, recursiv
 
         if h1_match and not is_payload_doc:
             if current_paragraph_lines:
-                chunks.extend(create_and_split_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata, recursive_splitter))
+                chunks.extend(create_document_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata))
                 current_paragraph_lines = []
             current_h1 = h1_match.group(1).strip()
             current_h2, current_h3, current_h4 = "", "", ""
         elif h1_match and is_payload_doc:
             if current_paragraph_lines:
-                chunks.extend(create_and_split_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata, recursive_splitter))
+                chunks.extend(create_document_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata))
                 current_paragraph_lines = []
             current_h2 = h1_match.group(1).strip()
             current_h3, current_h4 = "", ""
         elif h2_match:
             if current_paragraph_lines:
-                chunks.extend(create_and_split_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata, recursive_splitter))
+                chunks.extend(create_document_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata))
                 current_paragraph_lines = []
             current_h2 = h2_match.group(1).strip()
             current_h3, current_h4 = "", ""
         elif h3_match:
             if current_paragraph_lines:
-                chunks.extend(create_and_split_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata, recursive_splitter))
+                chunks.extend(create_document_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata))
                 current_paragraph_lines = []
             current_h3 = h3_match.group(1).strip()
             current_h4 = ""
         elif h4_match:
             if current_paragraph_lines:
-                chunks.extend(create_and_split_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata, recursive_splitter))
+                chunks.extend(create_document_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata))
                 current_paragraph_lines = []
             current_h4 = h4_match.group(1).strip()
         elif line.strip() or (not line.strip() and current_paragraph_lines and line_number < len(lines) -1 and lines[line_number+1].strip()):
             current_paragraph_lines.append(line)
         elif current_paragraph_lines:
-            chunks.extend(create_and_split_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata, recursive_splitter))
+            chunks.extend(create_document_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata))
             current_paragraph_lines = []
 
     if current_paragraph_lines:
-        chunks.extend(create_and_split_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata, recursive_splitter))
+        chunks.extend(create_document_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata))
     
     if not chunks and content.strip():
         page_content = content.strip()
@@ -263,9 +257,14 @@ def parse_markdown_hierarchically(content: str, initial_metadata: dict, recursiv
         final_metadata['content_length'] = len(page_content)
         final_metadata['chunk_type'] = 'title_summary'
         
-        # Use recursive splitter for the single chunk if no headings were found
-        single_chunk_docs = recursive_splitter.create_documents([final_page_content], metadatas=[final_metadata])
-        chunks.extend(single_chunk_docs)
+        # Clean up any bad date objects
+        for key, value in final_metadata.items():
+            if isinstance(value, datetime.date) and not isinstance(value, datetime.datetime):
+                logger.debug(f"Converting datetime.date to datetime.datetime for key '{key}' in source: {final_metadata.get('source', 'Unknown')}")
+                final_metadata[key] = datetime.datetime.combine(value, datetime.time.min)
+        
+        # Create a single chunk if no headings were found
+        chunks.append(Document(page_content=final_page_content, metadata=final_metadata))
 
     elif not chunks and not content.strip():
         logger.info(f"No content to chunk for source: {initial_metadata.get('source', 'Unknown')}")

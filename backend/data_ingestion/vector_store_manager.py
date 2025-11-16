@@ -61,6 +61,8 @@ class VectorStoreManager:
         """
         self.mongo_uri = os.getenv("MONGO_URI")
         self.mongodb_available = False
+        self.db_name = db_name
+        self.collection_name = collection_name
 
         # Initialize MongoDB connection if available (optional, for document storage)
         if self.mongo_uri:
@@ -77,8 +79,6 @@ class VectorStoreManager:
                 )
                 self.client.admin.command('ping')
                 self.mongodb_available = True
-                self.db_name = db_name
-                self.collection_name = collection_name
                 self.collection = self.client[self.db_name][self.collection_name]
                 logger.info("MongoDB connection successful with connection pooling")
             except Exception as e:
@@ -197,7 +197,10 @@ class VectorStoreManager:
 
         # Save FAISS index after all additions
         self._save_faiss_index()
-        logger.info(f"Finished adding {success_count} of {total_docs} documents to FAISS and MongoDB collection '{self.collection_name}'.")
+        if self.mongodb_available:
+            logger.info(f"Finished adding {success_count} of {total_docs} documents to FAISS and MongoDB collection '{self.collection_name}'.")
+        else:
+            logger.info(f"Finished adding {success_count} of {total_docs} documents to FAISS (MongoDB not available).")
 
     def get_cached_embeddings(self, texts: List[str]) -> List[List[float]]:
         """

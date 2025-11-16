@@ -9,17 +9,35 @@ import os
 
 router = APIRouter()
 
+# Global MongoDB client instance with connection pooling
+# This prevents creating a new client on every request, which was causing connection churn
+_mongo_client: MongoClient = None
+
+def get_mongo_client() -> MongoClient:
+    """Returns a singleton MongoDB client instance with connection pooling."""
+    global _mongo_client
+    if _mongo_client is None:
+        mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
+        _mongo_client = MongoClient(
+            mongo_uri,
+            serverSelectionTimeoutMS=5000,
+            maxPoolSize=50,
+            minPoolSize=10,
+            maxIdleTimeMS=30000,
+            waitQueueTimeoutMS=5000,
+            retryWrites=True,
+            retryReads=True
+        )
+        # Verify connection
+        _mongo_client.admin.command('ping')
+    return _mongo_client
+
 def document_to_data_source(doc: dict) -> DataSource:
     """Converts a MongoDB document to a DataSource model."""
     if "_id" in doc:
         doc["id"] = str(doc["_id"])
         del doc["_id"] # Explicitly remove _id to avoid validation issues
     return DataSource(**doc)
-
-def get_mongo_client():
-    """Returns a MongoDB client instance."""
-    mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
-    return MongoClient(mongo_uri)
 
 def get_database(client: MongoClient = Depends(get_mongo_client)):
     """Returns the MongoDB database instance."""
