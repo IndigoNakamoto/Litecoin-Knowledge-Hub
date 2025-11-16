@@ -111,6 +111,31 @@ async def lifespan(app: FastAPI):
         await metrics_task
     except asyncio.CancelledError:
         logger.info("Stopped background metrics update task")
+    
+    # Shutdown: Close all MongoDB connections to prevent connection leaks
+    logger.info("Closing MongoDB connections...")
+    try:
+        # Close Motor client (from dependencies.py)
+        from backend.dependencies import close_mongo_connection
+        await close_mongo_connection()
+    except Exception as e:
+        logger.error(f"Error closing Motor MongoDB connection: {e}", exc_info=True)
+    
+    try:
+        # Close shared VectorStoreManager MongoClient
+        from backend.data_ingestion.vector_store_manager import close_shared_mongo_client
+        close_shared_mongo_client()
+    except Exception as e:
+        logger.error(f"Error closing shared VectorStoreManager MongoDB client: {e}", exc_info=True)
+    
+    try:
+        # Close Sources API PyMongo client
+        from backend.api.v1.sources import close_mongo_client
+        close_mongo_client()
+    except Exception as e:
+        logger.error(f"Error closing Sources API MongoDB client: {e}", exc_info=True)
+    
+    logger.info("MongoDB connection cleanup completed")
 
 app = FastAPI(
     title="Litecoin Knowledge Hub API",
@@ -139,14 +164,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Initialize RAGPipeline globally or as a dependency
+# For simplicity, initializing globally for now. Consider dependency injection for better testability.
+rag_pipeline_instance = RAGPipeline()
+
+# Set global RAG pipeline instance for payload sync endpoints to avoid creating new connection pools
+# This fixes the connection leak issue where each webhook created a new VectorStoreManager
+try:
+    from backend.api.v1.sync.payload import set_global_rag_pipeline
+    set_global_rag_pipeline(rag_pipeline_instance)
+except ImportError:
+    logger.warning("Could not set global RAG pipeline for payload sync endpoints")
+
+# Set global VectorStoreManager instance for health checker to avoid creating new connection pools
+try:
+    from backend.monitoring.health import set_global_vector_store_manager
+    set_global_vector_store_manager(rag_pipeline_instance.vector_store_manager)
+except (ImportError, AttributeError) as e:
+    logger.warning(f"Could not set global VectorStoreManager for health checker: {e}")
+
 # Include API routers
 app.include_router(sources_router, prefix="/api/v1/sources", tags=["Data Sources"])
 app.include_router(payload_sync_router, prefix="/api/v1/sync", tags=["Payload Sync"])
 app.include_router(questions_router, prefix="/api/v1/questions", tags=["User Questions"])
-
-# Initialize RAGPipeline globally or as a dependency
-# For simplicity, initializing globally for now. Consider dependency injection for better testability.
-rag_pipeline_instance = RAGPipeline()
 
 class SourceDocument(BaseModel):
     page_content: str

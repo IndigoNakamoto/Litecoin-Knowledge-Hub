@@ -314,6 +314,28 @@ For local development, the backend uses FAISS vector store instead of MongoDB At
    - Access the admin panel to manage content collections
    - Content published here will automatically sync with the RAG pipeline
 
+### **Staging Environment (Local Production Verification)**
+
+For verifying production builds locally before deployment:
+
+1. **Create `.env.stage` file** in the project root:
+   ```bash
+   cp .env.stage.example .env.stage
+   ```
+   
+   The example file contains a comprehensive template. At minimum, ensure the URL variables are set for localhost access (they're already configured in the example file).
+
+2. **Run staging environment:**
+   ```bash
+   # Using helper script (recommended)
+   ./scripts/run-stage.sh
+   
+   # Or manually
+   export $(cat .env.stage | xargs) && docker-compose -f docker-compose.prod.yml up --build
+   ```
+
+This runs production builds with the full stack (including monitoring) using localhost URLs. See [docs/STAGING.md](./docs/STAGING.md) for detailed documentation.
+
 ## **Deployment**
 
 For detailed deployment instructions for all services (Frontend, Backend, and Payload CMS), see [DEPLOYMENT.md](./DEPLOYMENT.md).

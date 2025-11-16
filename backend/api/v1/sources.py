@@ -6,6 +6,7 @@ from bson import ObjectId # For MongoDB _id handling
 from pymongo import MongoClient # For direct MongoDB interaction
 from pymongo.collection import Collection
 import os
+import logging
 
 router = APIRouter()
 
@@ -31,6 +32,23 @@ def get_mongo_client() -> MongoClient:
         # Verify connection
         _mongo_client.admin.command('ping')
     return _mongo_client
+
+def close_mongo_client():
+    """
+    Closes the Sources API MongoDB client connection.
+    Should be called during application shutdown to prevent connection leaks.
+    """
+    global _mongo_client
+    if _mongo_client:
+        try:
+            _mongo_client.close()
+            logger = logging.getLogger(__name__)
+            logger.info("Sources API MongoDB client closed")
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error closing Sources API MongoDB client: {e}")
+        finally:
+            _mongo_client = None
 
 def document_to_data_source(doc: dict) -> DataSource:
     """Converts a MongoDB document to a DataSource model."""

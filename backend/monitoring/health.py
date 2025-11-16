@@ -35,15 +35,25 @@ class HealthChecker:
     Comprehensive health checker for all service dependencies.
     """
     
-    def __init__(self):
-        self.vector_store_manager = None
+    def __init__(self, vector_store_manager: Optional[VectorStoreManager] = None):
+        """
+        Initialize health checker.
+        
+        Args:
+            vector_store_manager: Optional VectorStoreManager instance to reuse.
+                                 If None, will create new instance (not recommended).
+        """
+        self.vector_store_manager = vector_store_manager
         self._last_check_time = None
         self._last_check_result = None
     
     def check_vector_store(self) -> Dict[str, Any]:
         """Check vector store health and return status."""
         try:
+            # Use provided instance or create new one (fallback)
+            # Note: Creating new instance creates new connection pool - should be avoided
             if self.vector_store_manager is None:
+                logger.warning("Health checker creating new VectorStoreManager instance (should use global instance)")
                 self.vector_store_manager = VectorStoreManager()
             
             start_time = time.time()
@@ -219,20 +229,38 @@ class HealthChecker:
 
 
 # Global health checker instance
-_health_checker = HealthChecker()
+# Will be initialized with global VectorStoreManager instance by main.py
+_health_checker: Optional[HealthChecker] = None
+
+def set_global_vector_store_manager(vector_store_manager: VectorStoreManager):
+    """
+    Set the global VectorStoreManager instance for the health checker.
+    Called by main.py during application startup to avoid creating new connection pools.
+    """
+    global _health_checker
+    _health_checker = HealthChecker(vector_store_manager=vector_store_manager)
+    logger.info("Health checker initialized with global VectorStoreManager instance")
+
+def _get_health_checker() -> HealthChecker:
+    """Get health checker instance, creating default if not set."""
+    global _health_checker
+    if _health_checker is None:
+        logger.warning("Health checker not initialized with global instance, creating default")
+        _health_checker = HealthChecker()
+    return _health_checker
 
 
 def get_health_status() -> Dict[str, Any]:
     """Get comprehensive health status."""
-    return _health_checker.get_comprehensive_health()
+    return _get_health_checker().get_comprehensive_health()
 
 
 def get_liveness() -> Dict[str, Any]:
     """Get liveness status."""
-    return _health_checker.get_liveness()
+    return _get_health_checker().get_liveness()
 
 
 def get_readiness() -> Dict[str, Any]:
     """Get readiness status."""
-    return _health_checker.get_readiness()
+    return _get_health_checker().get_readiness()
 

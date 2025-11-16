@@ -24,10 +24,19 @@ async def get_mongo_client() -> AsyncIOMotorClient:
             raise ConnectionError("MONGO_DETAILS or MONGO_URI environment variable must be set.")
         try:
             print(f"Attempting to connect to MongoDB at: {MONGO_DETAILS}")
-            mongo_client = AsyncIOMotorClient(MONGO_DETAILS)
+            # Configure connection pool settings to prevent connection leaks
+            mongo_client = AsyncIOMotorClient(
+                MONGO_DETAILS,
+                maxPoolSize=50,
+                minPoolSize=5,
+                maxIdleTimeMS=30000,
+                serverSelectionTimeoutMS=5000,
+                retryWrites=True,
+                retryReads=True
+            )
             # Verify connection
             await mongo_client.admin.command('ping') 
-            print("Successfully connected to MongoDB.")
+            print("Successfully connected to MongoDB with connection pooling configured.")
         except ConnectionFailure as e:
             print(f"Failed to connect to MongoDB: {e}")
             mongo_client = None # Reset on failure
@@ -79,13 +88,17 @@ async def get_user_questions_collection() -> AsyncIOMotorCollection:
         print(f"Error accessing user questions collection: {e}")
         raise ConnectionError(f"Error accessing user questions collection: {e}")
 
-# Example of how to close the client on app shutdown (if used with app events)
-# async def close_mongo_connection():
-#     global mongo_client
-#     if mongo_client:
-#         mongo_client.close()
-#         print("MongoDB connection closed.")
-
-# In main.py, you would add:
-# app.add_event_handler("startup", get_mongo_client) # To initialize on startup
-# app.add_event_handler("shutdown", close_mongo_connection)
+async def close_mongo_connection():
+    """
+    Closes the Motor MongoDB client connection.
+    Should be called during application shutdown to prevent connection leaks.
+    """
+    global mongo_client
+    if mongo_client:
+        try:
+            mongo_client.close()
+            print("Motor MongoDB connection closed.")
+        except Exception as e:
+            print(f"Error closing Motor MongoDB connection: {e}")
+        finally:
+            mongo_client = None

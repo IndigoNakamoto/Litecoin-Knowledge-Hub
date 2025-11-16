@@ -9,6 +9,19 @@ from backend.data_ingestion.embedding_processor import process_payload_documents
 from backend.data_ingestion.vector_store_manager import VectorStoreManager
 from backend.rag_pipeline import RAGPipeline
 
+# Global RAG pipeline instance reference (set by main.py to avoid circular imports)
+# This prevents creating new connection pools per webhook request
+_global_rag_pipeline = None
+
+def set_global_rag_pipeline(rag_pipeline):
+    """
+    Set the global RAG pipeline instance.
+    Called by main.py during application startup to avoid circular imports.
+    """
+    global _global_rag_pipeline
+    _global_rag_pipeline = rag_pipeline
+    logger.info("Global RAG pipeline instance set for payload sync endpoints")
+
 # Import monitoring metrics
 try:
     from backend.monitoring.metrics import (
@@ -75,18 +88,30 @@ def delete_and_refresh_vector_store(payload_id, operation="delete"):
     try:
         logger.info(f"🗑️ [Delete Task: {payload_id}] Starting deletion and refresh...")
 
-        # Initialize vector store manager
-        vector_store_manager = VectorStoreManager()
+        # Use global VectorStoreManager instance to avoid creating new connection pools
+        # This fixes the connection leak issue where each webhook created a new pool
+        if _global_rag_pipeline and hasattr(_global_rag_pipeline, 'vector_store_manager'):
+            vector_store_manager = _global_rag_pipeline.vector_store_manager
+            logger.debug(f"🗑️ [Delete Task: {payload_id}] Using global VectorStoreManager instance")
+        else:
+            # Fallback: create new instance only if global not available
+            vector_store_manager = VectorStoreManager()
+            logger.warning(f"🗑️ [Delete Task: {payload_id}] Created new VectorStoreManager (global instance unavailable)")
 
         # Delete documents
         deleted_count = vector_store_manager.delete_documents_by_metadata_field('payload_id', payload_id)
         logger.info(f"🗑️ [Delete Task: {payload_id}] Deleted {deleted_count} document(s).")
 
-        # Refresh the RAG pipeline
+        # Refresh the RAG pipeline using global instance
         try:
-            rag_pipeline = RAGPipeline()
-            rag_pipeline.refresh_vector_store()
-            logger.info(f"✅ [Delete Task: {payload_id}] RAG pipeline refreshed successfully")
+            if _global_rag_pipeline:
+                _global_rag_pipeline.refresh_vector_store()
+                logger.info(f"✅ [Delete Task: {payload_id}] RAG pipeline refreshed successfully")
+            else:
+                # Fallback: create new RAG pipeline instance
+                rag_pipeline = RAGPipeline()
+                rag_pipeline.refresh_vector_store()
+                logger.info(f"✅ [Delete Task: {payload_id}] RAG pipeline refreshed successfully (new instance)")
         except Exception as refresh_error:
             logger.warning(f"⚠️ [Delete Task: {payload_id}] Failed to refresh RAG pipeline: {refresh_error}")
 
@@ -135,9 +160,16 @@ def process_and_embed_document(payload_doc, operation="create"):
     try:
         logger.info(f"🚀 [Task ID: {payload_id}] Starting background processing for published document '{payload_doc.title}'")
 
-        # Initialize vector store manager
-        logger.info(f"🔌 [Task ID: {payload_id}] Initializing vector store connection...")
-        vector_store_manager = VectorStoreManager()
+        # Use global VectorStoreManager instance to avoid creating new connection pools
+        # This fixes the connection leak issue where each webhook created a new pool
+        logger.info(f"🔌 [Task ID: {payload_id}] Getting vector store connection...")
+        if _global_rag_pipeline and hasattr(_global_rag_pipeline, 'vector_store_manager'):
+            vector_store_manager = _global_rag_pipeline.vector_store_manager
+            logger.debug(f"✅ [Task ID: {payload_id}] Using global VectorStoreManager instance (shared connection pool)")
+        else:
+            # Fallback: create new instance only if global not available
+            vector_store_manager = VectorStoreManager()
+            logger.warning(f"⚠️ [Task ID: {payload_id}] Created new VectorStoreManager (global instance unavailable)")
         logger.info(f"✅ [Task ID: {payload_id}] Vector store connected successfully")
 
         # 1. Delete existing documents for this payload_id to handle updates cleanly.
@@ -166,9 +198,14 @@ def process_and_embed_document(payload_doc, operation="create"):
         # 4. Refresh the RAG pipeline to include the new documents
         logger.info(f"🔄 [Task ID: {payload_id}] Refreshing RAG pipeline with new documents...")
         try:
-            rag_pipeline = RAGPipeline()
-            rag_pipeline.refresh_vector_store()
-            logger.info(f"✅ [Task ID: {payload_id}] RAG pipeline refreshed successfully")
+            if _global_rag_pipeline:
+                _global_rag_pipeline.refresh_vector_store()
+                logger.info(f"✅ [Task ID: {payload_id}] RAG pipeline refreshed successfully")
+            else:
+                # Fallback: create new RAG pipeline instance
+                rag_pipeline = RAGPipeline()
+                rag_pipeline.refresh_vector_store()
+                logger.info(f"✅ [Task ID: {payload_id}] RAG pipeline refreshed successfully (new instance)")
         except Exception as refresh_error:
             logger.warning(f"⚠️ [Task ID: {payload_id}] Failed to refresh RAG pipeline: {refresh_error}")
 
@@ -265,8 +302,12 @@ async def webhook_health_check():
     Health check endpoint for webhook connectivity testing.
     """
     try:
-        # Test vector store connection
-        vector_store_manager = VectorStoreManager()
+        # Use global VectorStoreManager instance to avoid creating new connection pools
+        if _global_rag_pipeline and hasattr(_global_rag_pipeline, 'vector_store_manager'):
+            vector_store_manager = _global_rag_pipeline.vector_store_manager
+        else:
+            # Fallback: create new instance only if global not available
+            vector_store_manager = VectorStoreManager()
 
         # Get total document count from MongoDB (documents have 'text' and 'metadata' fields)
         total_count = 0

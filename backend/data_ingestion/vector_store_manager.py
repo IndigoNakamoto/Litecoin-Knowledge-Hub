@@ -11,6 +11,63 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+# Global shared MongoClient instance for connection pool sharing
+# This prevents creating multiple connection pools when multiple VectorStoreManager instances are created
+_shared_mongo_client: Optional[MongoClient] = None
+_shared_mongo_client_lock = None
+
+def _get_shared_mongo_client() -> Optional[MongoClient]:
+    """
+    Returns a shared MongoClient instance for connection pool sharing.
+    This ensures all VectorStoreManager instances use the same connection pool.
+    """
+    global _shared_mongo_client, _shared_mongo_client_lock
+    
+    # Lazy import threading to avoid circular dependencies
+    if _shared_mongo_client_lock is None:
+        import threading
+        _shared_mongo_client_lock = threading.Lock()
+    
+    if _shared_mongo_client is None:
+        mongo_uri = os.getenv("MONGO_URI")
+        if mongo_uri:
+            try:
+                with _shared_mongo_client_lock:
+                    # Double-check pattern in case another thread created it
+                    if _shared_mongo_client is None:
+                        _shared_mongo_client = MongoClient(
+                            mongo_uri,
+                            serverSelectionTimeoutMS=5000,
+                            maxPoolSize=50,
+                            minPoolSize=10,
+                            maxIdleTimeMS=30000,
+                            waitQueueTimeoutMS=5000,
+                            retryWrites=True,
+                            retryReads=True
+                        )
+                        _shared_mongo_client.admin.command('ping')
+                        logger.info("Shared MongoDB client created with connection pooling")
+            except Exception as e:
+                logger.warning(f"Failed to create shared MongoDB client: {e}")
+                return None
+    
+    return _shared_mongo_client
+
+def close_shared_mongo_client():
+    """
+    Closes the shared MongoClient instance.
+    Should be called during application shutdown.
+    """
+    global _shared_mongo_client
+    if _shared_mongo_client is not None:
+        try:
+            _shared_mongo_client.close()
+            logger.info("Shared MongoDB client closed")
+        except Exception as e:
+            logger.error(f"Error closing shared MongoDB client: {e}")
+        finally:
+            _shared_mongo_client = None
+
 # Auto-detect Apple M1/M2/M3 GPU (Metal Performance Shaders)
 if torch.backends.mps.is_available():
     device = "mps"
@@ -63,24 +120,21 @@ class VectorStoreManager:
         self.mongodb_available = False
         self.db_name = db_name
         self.collection_name = collection_name
+        self.client = None  # Will use shared client, not own instance
+        self._owns_client = False  # Track if we own the client (for cleanup)
 
-        # Initialize MongoDB connection if available (optional, for document storage)
+        # Use shared MongoDB connection pool instead of creating new one
+        # This prevents connection pool accumulation when multiple VectorStoreManager instances are created
         if self.mongo_uri:
             try:
-                self.client = MongoClient(
-                    self.mongo_uri,
-                    serverSelectionTimeoutMS=5000,
-                    maxPoolSize=50,
-                    minPoolSize=10,
-                    maxIdleTimeMS=30000,
-                    waitQueueTimeoutMS=5000,
-                    retryWrites=True,
-                    retryReads=True
-                )
-                self.client.admin.command('ping')
-                self.mongodb_available = True
-                self.collection = self.client[self.db_name][self.collection_name]
-                logger.info("MongoDB connection successful with connection pooling")
+                self.client = _get_shared_mongo_client()
+                if self.client:
+                    self.mongodb_available = True
+                    self.collection = self.client[self.db_name][self.collection_name]
+                    logger.info(f"MongoDB connection successful using shared connection pool (db: {self.db_name}, collection: {self.collection_name})")
+                else:
+                    logger.warning("Shared MongoDB client unavailable. Using FAISS only mode.")
+                    self.mongodb_available = False
             except Exception as e:
                 logger.warning(f"MongoDB connection failed: {e}. Using FAISS only mode.")
                 self.mongodb_available = False
@@ -354,6 +408,22 @@ class VectorStoreManager:
         logger.info("FAISS index cleared and saved.")
 
         return 0 if not self.mongodb_available else result.deleted_count
+
+    def close(self):
+        """
+        Closes MongoDB connection if this instance owns it.
+        Note: With shared connection pool, this is a no-op as the shared client
+        should be closed via close_shared_mongo_client() during application shutdown.
+        """
+        if self._owns_client and self.client:
+            try:
+                self.client.close()
+                logger.info("VectorStoreManager MongoDB client closed")
+            except Exception as e:
+                logger.error(f"Error closing VectorStoreManager MongoDB client: {e}")
+            finally:
+                self.client = None
+                self.mongodb_available = False
 
 
 # For direct execution and testing of this module (optional)
