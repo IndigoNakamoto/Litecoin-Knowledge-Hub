@@ -109,21 +109,72 @@ export const KnowledgeBase: CollectionConfig = {
   ],
   hooks: {
     afterChange: [
-      ({ doc, operation }: any) => {
-        if (operation === 'update' && doc.status === 'published') {
-          console.log(`Article "${doc.title}" has been published.`);
-          // Here you would trigger the Content Sync Service
-          // For example:
-          // fetch(`${process.env.BACKEND_URL}/api/v1/sync/payload`, {
-          //   method: 'POST',
-          //   headers: {
-          //     'Content-Type': 'application/json',
-          //   },
-          //   body: JSON.stringify({
-          //     collection: 'knowledge-base',
-          //     id: doc.id,
-          //   }),
-          // });
+      async ({ doc, req, operation }: any) => {
+        console.log(`KnowledgeBase "${doc.title}" (ID: ${doc.id}) changed with operation: ${operation}, status: ${doc.status}`);
+        
+        const backendUrl = process.env.BACKEND_URL;
+        if (!backendUrl) {
+          console.error('❌ BACKEND_URL environment variable is not set. Cannot trigger RAG pipeline sync.');
+          return;
+        }
+
+        try {
+          // Always trigger sync to handle publishing, unpublishing, and updates
+          const response = await fetch(`${backendUrl}/api/v1/sync/payload`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              operation: operation,
+              doc: doc,
+            }),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`❌ Failed to sync knowledge base "${doc.title}" (ID: ${doc.id}) to RAG pipeline. Status: ${response.status}, Error: ${errorText}`);
+          } else {
+            const result = await response.json();
+            console.log(`✅ Successfully triggered RAG pipeline sync for knowledge base "${doc.title}" (ID: ${doc.id}):`, result);
+          }
+        } catch (error) {
+          console.error(`💥 Error triggering RAG pipeline sync for knowledge base "${doc.title}" (ID: ${doc.id}):`, error);
+        }
+      },
+    ],
+    afterDelete: [
+      async ({ doc, req }: any) => {
+        console.log(`KnowledgeBase "${doc.title}" (ID: ${doc.id}) has been deleted.`);
+        
+        const backendUrl = process.env.BACKEND_URL;
+        if (!backendUrl) {
+          console.error('❌ BACKEND_URL environment variable is not set. Cannot trigger RAG pipeline deletion.');
+          return;
+        }
+
+        try {
+          // Trigger removal from vector store
+          const response = await fetch(`${backendUrl}/api/v1/sync/payload`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              operation: 'delete',
+              doc: doc,
+            }),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`❌ Failed to delete knowledge base "${doc.title}" (ID: ${doc.id}) from RAG pipeline. Status: ${response.status}, Error: ${errorText}`);
+          } else {
+            const result = await response.json();
+            console.log(`✅ Successfully triggered RAG pipeline deletion for knowledge base "${doc.title}" (ID: ${doc.id}):`, result);
+          }
+        } catch (error) {
+          console.error(`💥 Error triggering RAG pipeline deletion for knowledge base "${doc.title}" (ID: ${doc.id}):`, error);
         }
       },
     ],
