@@ -247,14 +247,20 @@ For local development, the backend uses FAISS vector store instead of MongoDB At
    ```
 
 2. **Configure Environment Variables:**
-   Update `backend/.env` with local settings:
-   ```env
-   # Local MongoDB Connection String
-   MONGO_URI="mongodb://localhost:27017"
-   FAISS_INDEX_PATH="./backend/faiss_index"
-
-   # Keep other variables (GOOGLE_API_KEY, etc.)
+   
+   The project uses a centralized environment variable system. See [docs/ENVIRONMENT_VARIABLES.md](./docs/ENVIRONMENT_VARIABLES.md) for complete documentation.
+   
+   For local development:
+   ```bash
+   # Copy the template
+   cp .env.example .env.local
+   
+   # Create service-specific .env files for secrets
+   echo "GOOGLE_API_KEY=your-key-here" > backend/.env
+   echo "PAYLOAD_SECRET=your-secret-here" > payload_cms/.env
    ```
+   
+   The `.env.local` file already has localhost URLs configured. Update secrets in service-specific `.env` files.
 
 3. **Data Persistence:**
    - **Documents**: Stored in local MongoDB collections
@@ -273,7 +279,8 @@ For local development, the backend uses FAISS vector store instead of MongoDB At
    cd backend
    python3 -m venv venv && source venv/bin/activate
    pip install -r requirements.txt
-   cp .env.example .env && \# Edit .env with your local credentials
+   # Ensure .env.local exists in project root (see step 2 above)
+   # Ensure backend/.env has GOOGLE_API_KEY
    uvicorn main:app --reload
    \# Backend available at <http://localhost:8000>
 
@@ -284,20 +291,13 @@ For local development, the backend uses FAISS vector store instead of MongoDB At
 
 3. **Payload CMS (Content Management):**
    cd payload_cms
-   cp .env.example .env && \# Edit .env with your MongoDB connection string
+   # Ensure .env.local exists in project root (see step 2 above)
+   # Ensure payload_cms/.env has PAYLOAD_SECRET
    pnpm install
    pnpm dev
    \# Payload CMS admin panel available at <http://localhost:3001>
 
-   **Environment Setup:**
-   ```env
-   # MongoDB connection (use same as backend for local development)
-   MONGO_URI="mongodb://localhost:27017/payload_cms"
-
-   # Payload configuration
-   PAYLOAD_SECRET="your-secret-key-here"
-   PAYLOAD_PUBLIC_SERVER_URL="http://localhost:3001"
-   ```
+   **Note:** Environment variables are now managed centrally. See [docs/ENVIRONMENT_VARIABLES.md](./docs/ENVIRONMENT_VARIABLES.md) for details.
 
    **Alternative: Docker Setup**
    ```bash
@@ -314,27 +314,27 @@ For local development, the backend uses FAISS vector store instead of MongoDB At
    - Access the admin panel to manage content collections
    - Content published here will automatically sync with the RAG pipeline
 
-### **Staging Environment (Local Production Verification)**
+### **Local Production Build Verification**
 
 For verifying production builds locally before deployment:
 
-1. **Create `.env.stage` file** in the project root:
+1. **Create `.env.prod-local` file** in the project root:
    ```bash
-   cp .env.stage.example .env.stage
+   cp .env.example .env.prod-local
    ```
    
-   The example file contains a comprehensive template. At minimum, ensure the URL variables are set for localhost access (they're already configured in the example file).
+   Update the values as needed for local production builds. See [docs/ENVIRONMENT_VARIABLES.md](./docs/ENVIRONMENT_VARIABLES.md) for variable documentation.
 
-2. **Run staging environment:**
+2. **Run local production build verification:**
    ```bash
    # Using helper script (recommended)
-   ./scripts/run-stage.sh
+   ./scripts/run-prod-local.sh
    
    # Or manually
-   export $(cat .env.stage | xargs) && docker-compose -f docker-compose.prod.yml up --build
+   export $(cat .env.prod-local | xargs) && docker-compose -f docker-compose.prod-local.yml up --build
    ```
 
-This runs production builds with the full stack (including monitoring) using localhost URLs. See [docs/STAGING.md](./docs/STAGING.md) for detailed documentation.
+This runs production builds with the full stack (including monitoring) using localhost URLs. See [docs/PROD_LOCAL.md](./docs/PROD_LOCAL.md) for detailed documentation.
 
 ## **Deployment**
 
