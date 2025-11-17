@@ -68,7 +68,8 @@ services:
     environment:
       - DATABASE_URI=mongodb://mongodb:27017/payload_cms
       - PAYLOAD_SECRET=${PAYLOAD_SECRET:-development-secret}
-      - PAYLOAD_PUBLIC_SERVER_URL=${PAYLOAD_PUBLIC_SERVER_URL:-https://cms.lite.space}
+      # Only set PAYLOAD_PUBLIC_SERVER_URL if explicitly provided, otherwise let Payload detect it
+      - PAYLOAD_PUBLIC_SERVER_URL=${PAYLOAD_PUBLIC_SERVER_URL}
       - FRONTEND_URL=${FRONTEND_URL:-https://chat.lite.space}
       - BACKEND_URL=${BACKEND_URL:-http://litecoin-backend:8000}
       - NODE_ENV=production

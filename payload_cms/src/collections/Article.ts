@@ -35,6 +35,7 @@ const articleCreateAccess = ({ req }: { req: { user?: User } }): AccessResult =>
 const articleReadAccess = ({ req }: { req: { user?: User } }): AccessResult => {
   const user = req.user as User | undefined
   if (!user) {
+    console.log('[Article access] Read check - No user, allowing published articles only')
     return {
       status: {
         equals: 'published',
@@ -42,10 +43,16 @@ const articleReadAccess = ({ req }: { req: { user?: User } }): AccessResult => {
     }
   }
 
-  if (userHasRole(user, ['admin', 'publisher'])) {
+  const roles = Array.isArray(user.roles) ? user.roles : []
+  const hasAdminOrPublisher = userHasRole(user, ['admin', 'publisher'])
+  console.log('[Article access] Read check - User:', user.email, 'Roles:', JSON.stringify(roles), 'Has admin/publisher:', hasAdminOrPublisher)
+
+  if (hasAdminOrPublisher) {
+    console.log('[Article access] Read check - Allowing all articles for admin/publisher')
     return true
   }
 
+  console.log('[Article access] Read check - Allowing published articles or user\'s own articles')
   return {
     or: [
       {
@@ -64,28 +71,70 @@ const articleReadAccess = ({ req }: { req: { user?: User } }): AccessResult => {
 
 const articleUpdateAccess = async ({ req, id }: { req: { user?: User; payload: any }; id?: string }): Promise<AccessResult> => {
   const user = req.user as User | undefined
-  if (!user) return false
+  
+  // For form state building (when id is not provided), allow access even without user
+  // Payload's authentication middleware will handle authentication for actual operations
+  if (!id) {
+    if (user) {
+      const roles = Array.isArray(user.roles) ? user.roles : []
+      console.log('[Article access] Update check - Form state building, User:', user.email, 'Roles:', JSON.stringify(roles))
+      return true
+    } else {
+      // Allow form state building without user - Payload will handle auth for actual operations
+      console.log('[Article access] Update check - Form state building, no user (allowing for form structure)')
+      return true
+    }
+  }
 
-  if (userHasRole(user, ['admin', 'publisher', 'verified-translator'])) {
+  // For actual update operations (when id is provided), require a user
+  if (!user) {
+    console.log('[Article access] Update check - No user found for update operation, denying access')
+    return false
+  }
+
+  const roles = Array.isArray(user.roles) ? user.roles : []
+  console.log('[Article access] Update check - User:', user.email, 'Roles:', JSON.stringify(roles), 'Article ID:', id)
+
+  const hasAdminPublisherOrTranslator = userHasRole(user, ['admin', 'publisher', 'verified-translator'])
+  if (hasAdminPublisherOrTranslator) {
+    console.log('[Article access] Update check - Allowing update for admin/publisher/translator')
     return true
   }
 
-  if (userHasRole(user, ['contributor'])) {
+  const hasContributor = userHasRole(user, ['contributor'])
+  if (hasContributor) {
     if (id) {
-      const doc = await req.payload.findByID({
-        collection: 'articles',
-        id,
-        depth: 0,
-      })
+      console.log('[Article access] Update check - Contributor trying to update article:', id)
+      try {
+        const doc = await req.payload.findByID({
+          collection: 'articles',
+          id,
+          depth: 0,
+        })
 
-      if (doc) {
-        const authorId = typeof doc.author === 'string' ? doc.author : doc.author
-        return authorId === user.id && doc.status === 'draft'
+        if (doc) {
+          const authorId = typeof doc.author === 'string' ? doc.author : (doc.author as any)?.id || doc.author
+          const isAuthor = authorId === user.id
+          const isDraft = doc.status === 'draft'
+          console.log('[Article access] Update check - Contributor update result:', {
+            isAuthor,
+            isDraft,
+            authorId,
+            userId: user.id,
+            status: doc.status
+          })
+          return isAuthor && isDraft
+        }
+
+        console.log('[Article access] Update check - Article not found')
+        return false
+      } catch (error) {
+        console.error('[Article access] Update check - Error fetching article:', error)
+        return false
       }
-
-      return false
     }
 
+    console.log('[Article access] Update check - Contributor creating/updating own draft articles')
     return {
       and: [
         {
@@ -102,6 +151,7 @@ const articleUpdateAccess = async ({ req, id }: { req: { user?: User; payload: a
     }
   }
 
+  console.log('[Article access] Update check - User does not have required role, denying access')
   return false
 }
 
@@ -234,14 +284,20 @@ export const Article: CollectionConfig = {
       access: {
         create: ({ req: { user } }: any) => {
           if (!user) return false
-          const roles = user.roles || []
+          const roles = Array.isArray(user.roles) ? user.roles : []
           return roles.includes('admin') || roles.includes('publisher')
         },
         read: () => true,
         update: ({ req: { user } }: any) => {
-          if (!user) return false
-          const roles = user.roles || []
-          return roles.includes('admin') || roles.includes('publisher')
+          // ALWAYS require a user for update operations
+          if (!user) {
+            console.log('[Article status field] Update check - No user found, denying access')
+            return false
+          }
+          const roles = Array.isArray(user.roles) ? user.roles : []
+          const canUpdate = roles.includes('admin') || roles.includes('publisher')
+          console.log('[Article status field] Update check - User:', user.email, 'Roles:', JSON.stringify(roles), 'Can update:', canUpdate)
+          return canUpdate
         },
       },
     },

@@ -18,7 +18,6 @@ const dirname = path.dirname(filename)
 
 // Build CORS and CSRF arrays dynamically based on environment
 const frontendUrl = process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? 'https://chat.lite.space' : 'http://localhost:3000')
-const payloadUrl = process.env.PAYLOAD_PUBLIC_SERVER_URL || (process.env.NODE_ENV === 'production' ? 'https://cms.lite.space' : 'http://localhost:3001')
 
 const corsOrigins = [
   frontendUrl,
@@ -53,6 +52,9 @@ export default buildConfig({
     features: ({ defaultFeatures }) => [...defaultFeatures],
   }),
   secret: process.env.PAYLOAD_SECRET || '',
+  // Use PAYLOAD_PUBLIC_SERVER_URL if explicitly set, otherwise use localhost
+  // This ensures the admin panel makes requests to the correct URL when accessing locally
+  serverURL: process.env.PAYLOAD_PUBLIC_SERVER_URL || 'http://localhost:3001',
   cookiePrefix: 'payload',
   typescript: {
     outputFile: path.resolve(dirname, 'payload-types.ts'),

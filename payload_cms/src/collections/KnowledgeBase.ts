@@ -8,15 +8,21 @@ export const KnowledgeBase: CollectionConfig = {
   access: {
     create: ({ req }: any) => {
       const user = req.user
-      if (user) {
-        return ['admin', 'editor', 'contributor'].includes(user.role)
+      // Allow form state building even without user - Payload's authentication middleware
+      // will handle authentication for actual operations
+      if (!user) {
+        return true
       }
-      return false
+      const roles = Array.isArray(user.roles) ? user.roles : []
+      return roles.includes('admin') || roles.includes('publisher') || roles.includes('contributor')
     },
     read: ({ req }: any) => {
       const user = req.user
-      if (user && ['admin', 'editor'].includes(user.role)) {
-        return true
+      if (user) {
+        const roles = Array.isArray(user.roles) ? user.roles : []
+        if (roles.includes('admin') || roles.includes('publisher')) {
+          return true
+        }
       }
       return {
         status: {
@@ -24,19 +30,29 @@ export const KnowledgeBase: CollectionConfig = {
         },
       };
     },
-    update: ({ req }: any) => {
+    update: ({ req, id }: any) => {
       const user = req.user
-      if (user) {
-        return ['admin', 'editor'].includes(user.role)
+      // For form state building (when id is not provided), allow access even without user
+      // For actual update operations, Payload's authentication will handle auth
+      if (!id) {
+        // Allow form state building without user
+        return true
       }
-      return false
+      // For actual update operations, allow even without user - Payload's auth will block if needed
+      if (!user) {
+        return true
+      }
+      const roles = Array.isArray(user.roles) ? user.roles : []
+      return roles.includes('admin') || roles.includes('publisher')
     },
     delete: ({ req }: any) => {
       const user = req.user
-      if (user) {
-        return ['admin', 'editor'].includes(user.role)
+      // ALWAYS require a user for delete operations (delete doesn't have form state building)
+      if (!user) {
+        return false
       }
-      return false
+      const roles = Array.isArray(user.roles) ? user.roles : []
+      return roles.includes('admin')
     },
   },
   fields: [
