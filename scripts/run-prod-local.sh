@@ -4,6 +4,17 @@
 
 set -e
 
+# Detect Docker Compose command (v2 uses 'docker compose', v1 uses 'docker-compose')
+if docker compose version &>/dev/null; then
+    DOCKER_COMPOSE="docker compose"
+elif docker-compose version &>/dev/null; then
+    DOCKER_COMPOSE="docker-compose"
+else
+    echo "❌ Error: Docker Compose not found!"
+    echo "   Please install Docker Compose (v2: 'docker compose' or v1: 'docker-compose')"
+    exit 1
+fi
+
 # Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
@@ -42,9 +53,9 @@ if [ -n "$EXISTING_CONTAINERS" ]; then
     echo "$EXISTING_CONTAINERS" | sed 's/^/   - /'
     echo ""
     echo "💡 Tip: Stop existing containers first with:"
-    echo "   docker-compose -f docker-compose.prod.yml down"
-    echo "   docker-compose -f docker-compose.dev.yml down"
-    echo "   docker-compose -f docker-compose.prod-local.yml down"
+    echo "   $DOCKER_COMPOSE -f docker-compose.prod.yml down"
+    echo "   $DOCKER_COMPOSE -f docker-compose.dev.yml down"
+    echo "   $DOCKER_COMPOSE -f docker-compose.prod-local.yml down"
     echo ""
     read -p "Continue anyway? (y/N) " -n 1 -r
     echo
@@ -111,16 +122,16 @@ if [ -n "$NEXT_PUBLIC_BACKEND_URL" ] && [ -n "$NEXT_PUBLIC_PAYLOAD_URL" ]; then
   echo "🔨 Building all services with --no-cache (clean build)..."
   # Build all services with --no-cache, passing explicit build args for frontend
   # Note: "$@" is intentionally excluded from build command to ensure --no-cache cannot be overridden
-  docker-compose -f docker-compose.prod-local.yml build --no-cache \
+  $DOCKER_COMPOSE -f docker-compose.prod-local.yml build --no-cache \
     --build-arg NEXT_PUBLIC_BACKEND_URL="$NEXT_PUBLIC_BACKEND_URL" \
     --build-arg NEXT_PUBLIC_PAYLOAD_URL="$NEXT_PUBLIC_PAYLOAD_URL"
-  docker-compose -f docker-compose.prod-local.yml up "$@"
+  $DOCKER_COMPOSE -f docker-compose.prod-local.yml up "$@"
 else
   echo "⚠️  Warning: NEXT_PUBLIC_* variables not set, using defaults from docker-compose.prod-local.yml"
   echo "🔨 Building all services with --no-cache (clean build)..."
   # Build all services with --no-cache
   # Note: "$@" is intentionally excluded from build command to ensure --no-cache cannot be overridden
-  docker-compose -f docker-compose.prod-local.yml build --no-cache
-  docker-compose -f docker-compose.prod-local.yml up "$@"
+  $DOCKER_COMPOSE -f docker-compose.prod-local.yml build --no-cache
+  $DOCKER_COMPOSE -f docker-compose.prod-local.yml up "$@"
 fi
 
