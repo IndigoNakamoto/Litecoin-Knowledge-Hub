@@ -78,7 +78,11 @@ __pypackages__/
 .env.development.local
 .env.test.local
 .env.production.local
-.env.stage
+.env.prod-local
+.env.docker.dev
+.env.docker.prod
+# Keep .env.example in git (it's a template)
+!.env.example
 
 # Node.js
 /node_modules/

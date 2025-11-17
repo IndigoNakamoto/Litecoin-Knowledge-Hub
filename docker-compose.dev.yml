@@ -27,27 +27,13 @@ services:
     container_name: litecoin-backend-dev
     ports:
       - "8000:8000"
-    environment:
-      - MONGO_URI=mongodb://mongodb:27017
-      - MONGO_DETAILS=mongodb://mongodb:27017
-      - MONGODB_URI=mongodb://mongodb:27017
-      - TEST_MONGO_URI=mongodb://mongodb:27017
-      - RATE_LIMIT_PER_MINUTE=20
-      - RATE_LIMIT_PER_HOUR=300
-      - REDIS_URL=redis://redis:6379/0
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - MONGO_DB_NAME=${MONGO_DB_NAME:-litecoin_rag_db}
-      - MONGO_COLLECTION_NAME=${MONGO_COLLECTION_NAME:-litecoin_docs}
-      - MONGO_DATABASE_NAME=${MONGO_DATABASE_NAME:-litecoin_rag_db}
-      - CMS_ARTICLES_COLLECTION_NAME=${CMS_ARTICLES_COLLECTION_NAME:-cms_articles}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-004}
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001}
-      - BACKEND_URL=${BACKEND_URL:-http://localhost:8000}
-      - NODE_ENV=development
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - JSON_LOGGING=${JSON_LOGGING:-false}
     env_file:
+      - ./.env.docker.dev
       - ./backend/.env
+    environment:
+      # Development-specific overrides
+      # Note: GOOGLE_API_KEY is loaded from ./backend/.env via env_file above
+      - NODE_ENV=development
     depends_on:
       mongodb:
         condition: service_healthy
@@ -77,12 +63,11 @@ services:
     container_name: litecoin-frontend-dev
     ports:
       - "3000:3000"
+    env_file:
+      - ./.env.docker.dev
     environment:
-      - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8000}
-      - NEXT_PUBLIC_PAYLOAD_URL=${NEXT_PUBLIC_PAYLOAD_URL:-http://localhost:3001}
+      # Development-specific overrides
       - NODE_ENV=development
-      - WATCHPACK_POLLING=true
-      - HOSTNAME=0.0.0.0
     volumes:
       # Mount frontend code for hot reload
       - ./frontend:/app
@@ -102,17 +87,13 @@ services:
     container_name: litecoin-payload-cms-dev
     ports:
       - "3001:3000"
-    environment:
-      - DATABASE_URI=mongodb://mongodb:27017/payload_cms
-      - PAYLOAD_SECRET=${PAYLOAD_SECRET:-development-secret-change-me}
-      - PAYLOAD_PUBLIC_SERVER_URL=${PAYLOAD_PUBLIC_SERVER_URL:-http://localhost:3001}
-      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
-      - BACKEND_URL=${BACKEND_URL:-http://backend:8000}
-      - NODE_ENV=development
-      - WATCHPACK_POLLING=true
-      - HOSTNAME=0.0.0.0
     env_file:
+      - ./.env.docker.dev
       - ./payload_cms/.env
+    environment:
+      # Development-specific overrides
+      # Note: PAYLOAD_SECRET is loaded from ./payload_cms/.env via env_file above
+      - NODE_ENV=development
     depends_on:
       mongodb:
         condition: service_healthy
@@ -125,7 +106,7 @@ services:
       - payload_cms_node_modules:/app/node_modules
       # Use named volume for .next to avoid conflicts
       - payload_cms_next:/app/.next
-    command: pnpm dev
+    command: npx pnpm dev
     restart: unless-stopped
 
 volumes:

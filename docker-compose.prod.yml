@@ -7,7 +7,8 @@ services:
     ports:
       - "27017:27017"
     volumes:
-      - mongodb_data:/data/db
+      - mongodb_dev_data:/data/db
+      # - mongodb_data:/data/db
     restart: unless-stopped
     healthcheck:
       test:
@@ -27,24 +28,13 @@ services:
     container_name: litecoin-backend
     ports:
       - "8000:8000"
-    environment:
-      - MONGO_URI=mongodb://mongodb:27017
-      - MONGO_DETAILS=mongodb://mongodb:27017
-      - MONGODB_URI=mongodb://mongodb:27017
-      - TEST_MONGO_URI=mongodb://mongodb:27017
-      - REDIS_URL=redis://redis:6379/0
-      - RATE_LIMIT_PER_MINUTE=20
-      - RATE_LIMIT_PER_HOUR=300
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - MONGO_DB_NAME=${MONGO_DB_NAME:-litecoin_rag_db}
-      - MONGO_COLLECTION_NAME=${MONGO_COLLECTION_NAME:-litecoin_docs}
-      - MONGO_DATABASE_NAME=${MONGO_DATABASE_NAME:-litecoin_rag_db}
-      - CMS_ARTICLES_COLLECTION_NAME=${CMS_ARTICLES_COLLECTION_NAME:-cms_articles}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-004}
-      - CORS_ORIGINS=${CORS_ORIGINS:-https://chat.lite.space,http://localhost:3000}
-      - BACKEND_URL=${BACKEND_URL:-http://litecoin-backend:8000}
     env_file:
+      - ./.env.docker.prod
       - ./backend/.env
+    environment:
+      # Production-specific overrides
+      # Note: GOOGLE_API_KEY is loaded from ./backend/.env via env_file above
+      - NODE_ENV=production
     depends_on:
       mongodb:
         condition: service_healthy
@@ -65,16 +55,13 @@ services:
     container_name: litecoin-payload-cms
     ports:
       - "3001:3000"
-    environment:
-      - DATABASE_URI=mongodb://mongodb:27017/payload_cms
-      - PAYLOAD_SECRET=${PAYLOAD_SECRET:-development-secret}
-      # Only set PAYLOAD_PUBLIC_SERVER_URL if explicitly provided, otherwise let Payload detect it
-      - PAYLOAD_PUBLIC_SERVER_URL=${PAYLOAD_PUBLIC_SERVER_URL}
-      - FRONTEND_URL=${FRONTEND_URL:-https://chat.lite.space}
-      - BACKEND_URL=${BACKEND_URL:-http://litecoin-backend:8000}
-      - NODE_ENV=production
     env_file:
+      - ./.env.docker.prod
       - ./payload_cms/.env
+    environment:
+      # Production-specific overrides
+      # Note: PAYLOAD_SECRET is loaded from ./payload_cms/.env via env_file above
+      - NODE_ENV=production
     depends_on:
       backend:
         condition: service_healthy
@@ -98,9 +85,10 @@ services:
     container_name: litecoin-frontend
     ports:
       - "3000:3000"
+    env_file:
+      - ./.env.docker.prod
     environment:
-      - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL:-https://api.lite.space}
-      - NEXT_PUBLIC_PAYLOAD_URL=${NEXT_PUBLIC_PAYLOAD_URL:-https://cms.lite.space}
+      # Production-specific overrides
       - NODE_ENV=production
     depends_on:
       backend:
@@ -139,6 +127,8 @@ services:
     container_name: litecoin-grafana
     ports:
       - "3002:3000"
+    env_file:
+      - ./.env.docker.prod
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
@@ -156,6 +146,8 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: litecoin-cloudflared
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    env_file:
+      - ./.env.docker.prod
     environment:
       - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
     depends_on:
@@ -176,6 +168,6 @@ services:
 volumes:
   prometheus_data:
   grafana_data:
-  mongodb_data:
+  mongodb_dev_data:
   redis_data:
 

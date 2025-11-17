@@ -27,44 +27,37 @@ This guide explains how to run the Litecoin Knowledge Hub in development mode us
 
 ## Environment Setup
 
-### Backend Environment Variables
+The project uses a centralized environment variable management system. See [ENVIRONMENT_VARIABLES.md](./ENVIRONMENT_VARIABLES.md) for complete documentation.
 
-Create or update `backend/.env` with the following variables:
+### Quick Setup for Docker Development
 
-```env
-# MongoDB Connection
-MONGO_URI=mongodb://mongodb:27017
-MONGO_DB_NAME=litecoin_rag_db
-MONGO_COLLECTION_NAME=litecoin_docs
+1. **Create the Docker development environment file:**
+   ```bash
+   cp .env.example .env.docker.dev
+   ```
+   
+   The `.env.docker.dev` file already has Docker service names configured (e.g., `mongodb://mongodb:27017`).
 
-# Google AI API Key (required for LLM)
-GOOGLE_API_KEY=your-google-api-key-here
+2. **Create service-specific .env files for secrets:**
+   ```bash
+   # Backend secrets
+   echo "GOOGLE_API_KEY=your-google-api-key-here" > backend/.env
+   
+   # Payload CMS secrets
+   echo "PAYLOAD_SECRET=your-secret-key-here" > payload_cms/.env
+   ```
 
-# Optional: Logging
-LOG_LEVEL=INFO
-JSON_LOGGING=false
-```
+3. **That's it!** The docker-compose.dev.yml will automatically load:
+   - `.env.docker.dev` for all shared configuration
+   - Service-specific `.env` files for secrets
 
-### Frontend Environment Variables
+### Environment Variable Files
 
-The frontend uses environment variables set in `docker-compose.dev.yml`. These are automatically configured for development:
-- `NEXT_PUBLIC_BACKEND_URL=http://localhost:8000`
-- `NEXT_PUBLIC_PAYLOAD_URL=http://localhost:3001`
+- **`.env.docker.dev`** - Shared configuration for Docker development (service URLs, database connections, etc.)
+- **`backend/.env`** - Backend secrets only (GOOGLE_API_KEY)
+- **`payload_cms/.env`** - Payload CMS secrets only (PAYLOAD_SECRET)
 
-### Payload CMS Environment Variables
-
-Create or update `payload_cms/.env` with the following variables:
-
-```env
-# MongoDB Connection
-DATABASE_URI=mongodb://mongodb:27017/payload_cms
-
-# Payload Configuration
-PAYLOAD_SECRET=your-secret-key-here
-PAYLOAD_PUBLIC_SERVER_URL=http://localhost:3001
-FRONTEND_URL=http://localhost:3000
-BACKEND_URL=http://backend:8000
-```
+All other variables are managed in the centralized `.env.docker.dev` file.
 
 ## Common Commands
 
