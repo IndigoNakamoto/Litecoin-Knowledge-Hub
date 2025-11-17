@@ -58,7 +58,7 @@ COLLECTION_NAME = os.getenv("MONGO_COLLECTION_NAME", "litecoin_docs")
 LLM_MODEL_NAME = "gemini-2.5-flash-lite-preview-09-2025"  # 
 # Maximum number of chat history pairs (human-AI exchanges) to include in context
 # This prevents token overflow and keeps context manageable. Default: 10 pairs (20 messages)
-MAX_CHAT_HISTORY_PAIRS = int(os.getenv("MAX_CHAT_HISTORY_PAIRS", "4"))
+MAX_CHAT_HISTORY_PAIRS = int(os.getenv("MAX_CHAT_HISTORY_PAIRS", "3"))
 NO_KB_MATCH_RESPONSE = (
     "I couldn’t find any relevant content in our knowledge base yet. "
 )
@@ -180,7 +180,7 @@ class RAGPipeline:
         # Get retriever from vector store
         retriever = self.vector_store_manager.get_retriever(
             search_type="similarity",
-            search_kwargs={"k": 15}
+            search_kwargs={"k": 7}
         )
 
         # Create history-aware retriever for standalone question generation
