@@ -55,7 +55,7 @@ if not MONGO_URI:
 # --- Constants ---
 DB_NAME = os.getenv("MONGO_DB_NAME", "litecoin_rag_db")
 COLLECTION_NAME = os.getenv("MONGO_COLLECTION_NAME", "litecoin_docs")
-LLM_MODEL_NAME = "gemini-2.5-flash-lite"  # Google Flash 2.5 experimental. If "gemini-2.5-flash" becomes available, update here.
+LLM_MODEL_NAME = "gemini-2.5-flash-lite-preview-09-2025"  # 
 # Maximum number of chat history pairs (human-AI exchanges) to include in context
 # This prevents token overflow and keeps context manageable. Default: 10 pairs (20 messages)
 MAX_CHAT_HISTORY_PAIRS = int(os.getenv("MAX_CHAT_HISTORY_PAIRS", "4"))
@@ -75,9 +75,9 @@ QA_WITH_HISTORY_PROMPT = ChatPromptTemplate.from_messages(
 
 # 2. RAG prompt for final answer generation
 RAG_PROMPT_TEMPLATE = """
-You are a neutral, factual expert on Litecoin, a peer-to-peer cryptocurrency. Your primary goal is to provide comprehensive, well-structured, and educational answers. Your responses must be based **exclusively** on the provided context. Do not speculate or add external knowledge.
+You are a neutral, factual expert on Litecoin, a peer-to-peer decentralized cryptocurrency. Your primary goal is to provide comprehensive, well-structured, and educational answers. Your responses must be based **exclusively** on the provided context. Do not speculate or add external knowledge.
 
-**Use a friendly, engaging tone**—like chatting with a knowledgeable friend who's excited about crypto. If the context does not contain sufficient information, state this clearly.
+If the context does not contain sufficient information, state this clearly.
 
 ---
 **EXPERT RESPONSE STRUCTURE:**
