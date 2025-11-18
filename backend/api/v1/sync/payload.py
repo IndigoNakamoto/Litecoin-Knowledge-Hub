@@ -8,6 +8,7 @@ from backend.data_models import PayloadWebhookDoc
 from backend.data_ingestion.embedding_processor import process_payload_documents
 from backend.data_ingestion.vector_store_manager import VectorStoreManager
 from backend.rag_pipeline import RAGPipeline
+from backend.utils.webhook_security import verify_webhook_request
 
 # Global RAG pipeline instance reference (set by main.py to avoid circular imports)
 # This prevents creating new connection pools per webhook request
@@ -246,8 +247,19 @@ async def receive_payload_webhook(request: Request, background_tasks: Background
     """
     Receives a webhook from Payload CMS after a document is changed.
     Validates the payload and triggers a background task for processing if the document is published.
+    
+    Security: This endpoint verifies webhook authenticity using HMAC signature verification,
+    IP allowlisting (if configured), and replay attack prevention.
     """
-    raw_payload = await request.json()
+    # Read raw body for signature verification
+    body = await request.body()
+    
+    # Verify webhook request authenticity (raises HTTPException if verification fails)
+    await verify_webhook_request(request, body)
+    
+    # Parse JSON payload after verification
+    import json
+    raw_payload = json.loads(body.decode('utf-8'))
     logger.info(f"🔗 Received Payload webhook - Raw payload keys: {list(raw_payload.keys())}")
 
     try:
@@ -290,10 +302,13 @@ async def receive_payload_webhook(request: Request, background_tasks: Background
             return {"status": "processing_triggered", "message": msg, "document_id": payload_doc.id}
     except ValidationError as e:
         logger.error(f"❌ Payload webhook validation error: {e.errors()}", exc_info=True)
-        raise HTTPException(status_code=422, detail={"error": "Validation failed", "details": e.errors()})
+        raise HTTPException(status_code=422, detail={"error": "validation_failed", "message": "Invalid webhook payload structure"})
+    except HTTPException:
+        # Re-raise HTTP exceptions from webhook verification
+        raise
     except Exception as e:
         logger.error(f"💥 Unexpected error in Payload webhook: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail={"error": "Internal server error", "message": str(e)})
+        raise HTTPException(status_code=500, detail={"error": "internal_error", "message": "An error occurred processing the webhook"})
 
 
 @router.get("/health")
@@ -347,9 +362,12 @@ async def webhook_health_check():
 async def test_webhook_endpoint(request: Request):
     """
     Test endpoint to simulate webhook payload for debugging.
+    Note: This endpoint does NOT require webhook authentication for testing purposes.
     """
     try:
-        payload = await request.json()
+        body = await request.body()
+        import json
+        payload = json.loads(body.decode('utf-8'))
         logger.info(f"🧪 Test webhook received: {payload}")
 
         # Validate the payload structure

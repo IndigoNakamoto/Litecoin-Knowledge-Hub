@@ -60,6 +60,9 @@ These should be stored in service-specific `.env` files and never committed to g
 |----------|---------|-------------|
 | `GOOGLE_API_KEY` | Backend | Google AI API key for Gemini |
 | `PAYLOAD_SECRET` | Payload CMS | Payload CMS secret key |
+| `WEBHOOK_SECRET` | Backend | Shared secret for webhook signature verification (HMAC SHA-256) |
+| `WEBHOOK_ALLOWED_IPS` | Backend | Comma-separated list of allowed IP addresses for webhooks (optional, leave empty to disable IP checking) |
+| `WEBHOOK_MAX_AGE` | Backend | Maximum age of webhook in seconds for replay attack prevention (default: 300) |
 | `CLOUDFLARE_TUNNEL_TOKEN` | Production | Cloudflare tunnel token (optional) |
 
 **Where to set:** 

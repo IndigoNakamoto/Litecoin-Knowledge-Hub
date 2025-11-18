@@ -107,13 +107,16 @@ class HealthChecker:
             google_api_key = os.getenv("GOOGLE_API_KEY")
             
             if not google_api_key:
+                logger.warning("GOOGLE_API_KEY not configured (health check)")
                 return {
                     "status": HealthStatus.UNHEALTHY,
                     "error": "GOOGLE_API_KEY not configured",
                 }
             
             # Simple check - verify key is present and not empty
+            # Don't log the actual key value for security
             if len(google_api_key) < 10:  # Basic validation
+                logger.warning("GOOGLE_API_KEY appears invalid (length check)")
                 return {
                     "status": HealthStatus.DEGRADED,
                     "error": "GOOGLE_API_KEY appears invalid",

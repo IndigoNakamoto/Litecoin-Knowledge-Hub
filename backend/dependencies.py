@@ -1,7 +1,10 @@
 import os
+import logging
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
 from pymongo.errors import ConnectionFailure
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -23,7 +26,8 @@ async def get_mongo_client() -> AsyncIOMotorClient:
         if not MONGO_DETAILS:
             raise ConnectionError("MONGO_DETAILS or MONGO_URI environment variable must be set.")
         try:
-            print(f"Attempting to connect to MongoDB at: {MONGO_DETAILS}")
+            # Log connection attempt without exposing credentials
+            logger.info("Attempting to connect to MongoDB")
             # Configure connection pool settings to prevent connection leaks
             mongo_client = AsyncIOMotorClient(
                 MONGO_DETAILS,
@@ -36,13 +40,13 @@ async def get_mongo_client() -> AsyncIOMotorClient:
             )
             # Verify connection
             await mongo_client.admin.command('ping') 
-            print("Successfully connected to MongoDB with connection pooling configured.")
+            logger.info("Successfully connected to MongoDB with connection pooling configured.")
         except ConnectionFailure as e:
-            print(f"Failed to connect to MongoDB: {e}")
+            logger.error(f"Failed to connect to MongoDB: {e}")
             mongo_client = None # Reset on failure
             raise ConnectionError(f"Failed to connect to MongoDB: {e}")
         except Exception as e: # Catch other potential errors during client creation
-            print(f"An unexpected error occurred during MongoDB client initialization: {e}")
+            logger.error(f"An unexpected error occurred during MongoDB client initialization: {e}", exc_info=True)
             mongo_client = None
             raise ConnectionError(f"An unexpected error occurred: {e}")
     return mongo_client
@@ -65,7 +69,7 @@ async def get_cms_db() -> AsyncIOMotorCollection:
         raise e
     except Exception as e:
         # Catch any other unexpected errors during DB access
-        print(f"Error accessing CMS DB collection: {e}")
+        logger.error(f"Error accessing CMS DB collection: {e}", exc_info=True)
         raise ConnectionError(f"Error accessing CMS DB collection: {e}")
 
 USER_QUESTIONS_COLLECTION_NAME = os.getenv("USER_QUESTIONS_COLLECTION_NAME", "user_questions") # Default collection
@@ -85,7 +89,7 @@ async def get_user_questions_collection() -> AsyncIOMotorCollection:
     except ConnectionError as e:
         raise e
     except Exception as e:
-        print(f"Error accessing user questions collection: {e}")
+        logger.error(f"Error accessing user questions collection: {e}", exc_info=True)
         raise ConnectionError(f"Error accessing user questions collection: {e}")
 
 async def close_mongo_connection():
@@ -97,8 +101,8 @@ async def close_mongo_connection():
     if mongo_client:
         try:
             mongo_client.close()
-            print("Motor MongoDB connection closed.")
+            logger.info("Motor MongoDB connection closed.")
         except Exception as e:
-            print(f"Error closing Motor MongoDB connection: {e}")
+            logger.error(f"Error closing Motor MongoDB connection: {e}", exc_info=True)
         finally:
             mongo_client = None

@@ -4,8 +4,10 @@ services:
   mongodb:
     image: mongo:7.0
     container_name: litecoin-mongodb
-    ports:
-      - "27017:27017"
+    # MongoDB port not exposed externally in production for security
+    # Access is only available within Docker network
+    # ports:
+    #   - "27017:27017"
     volumes:
       - mongodb_dev_data:/data/db
       # - mongodb_data:/data/db

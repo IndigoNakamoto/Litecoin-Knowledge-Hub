@@ -91,8 +91,9 @@ async def create_data_source(
     # Retrieve the inserted document to get the actual _id and return it as DataSource
     inserted_doc = data_sources_collection.find_one({"_id": result.inserted_id})
     
-    # TODO: Trigger ingestion process here (e.g., call a background task or a dedicated ingestion service)
-    # For now, we'll just update the status to 'ingesting'
+    # Note: Ingestion process should be triggered by the ingestion service or scheduled task
+    # For now, we'll just update the status to 'ingesting' to indicate processing is needed
+    # In production, this would trigger an async ingestion job
     data_sources_collection.update_one(
         {"_id": result.inserted_id},
         {"$set": {"status": "ingesting"}}
@@ -151,8 +152,9 @@ async def update_data_source(
 
     # Get only the fields that are actually provided in the update request
     update_data = source_update.model_dump(exclude_unset=True)
-    print(f"DEBUG: Incoming source_update: {source_update}")
-    print(f"DEBUG: Update data for MongoDB: {update_data}")
+    logger = logging.getLogger(__name__)
+    logger.debug(f"Incoming source_update: {source_update}")
+    logger.debug(f"Update data for MongoDB: {update_data}")
     update_data["updated_at"] = datetime.utcnow()
 
     # Check if URI changed, which implies content change and requires re-ingestion
@@ -203,7 +205,8 @@ async def delete_data_source(
     # Delete all associated document chunks from the litecoin_docs collection
     # Assuming 'source_uri' is the metadata field that stores the URI of the original source
     if source_uri:
-        litecoin_docs_collection.delete_many({"source_uri": source_uri})
-        # TODO: Log the number of deleted documents from litecoin_docs_collection
+        delete_result = litecoin_docs_collection.delete_many({"source_uri": source_uri})
+        logger = logging.getLogger(__name__)
+        logger.info(f"Deleted {delete_result.deleted_count} document chunks from litecoin_docs_collection for source URI: {source_uri}")
 
     return {"message": "Data source and associated embeddings deleted successfully."}

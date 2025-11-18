@@ -1,0 +1,30 @@
+title = "Gitleaks configuration for Litecoin Knowledge Hub"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "google-api-key"
+description = "Google API Key"
+regex = '''AIza[0-9A-Za-z-_]{35}'''
+
+[[rules]]
+id = "webhook-secret"
+description = "Webhook Secret"
+regex = '''(?i)(webhook[-_]?secret|webhook[-_]?key)\s*=\s*['"]?[A-Za-z0-9+/=]{32,}['"]?'''
+
+[[rules]]
+id = "mongodb-uri"
+description = "MongoDB Connection String with credentials"
+regex = '''mongodb://[^:]+:[^@]+@'''
+
+[[rules]]
+id = "payload-secret"
+description = "Payload CMS Secret"
+regex = '''(?i)(payload[-_]?secret)\s*=\s*['"]?[A-Za-z0-9+/=]{32,}['"]?'''
+
+[[rules]]
+id = "redis-password"
+description = "Redis Password"
+regex = '''redis://:[^@]+@'''
+

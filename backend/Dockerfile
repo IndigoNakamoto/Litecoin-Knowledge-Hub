@@ -19,8 +19,15 @@ COPY . /app/backend
 # Ensure FAISS directory exists
 RUN mkdir -p /app/backend/faiss_index
 
+# Create non-root user for security
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app
+
 # Make backend modules importable from anywhere
 ENV PYTHONPATH=/app/backend:/app:${PYTHONPATH}
+
+# Switch to non-root user
+USER appuser
 
 # Expose port
 EXPOSE 8000

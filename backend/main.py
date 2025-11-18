@@ -8,7 +8,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, BackgroundTasks, Request
+from fastapi import FastAPI, BackgroundTasks, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field # Re-add BaseModel and Field
 from typing import List, Dict, Any, Tuple
@@ -32,6 +32,8 @@ import logging
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # Import monitoring components
 from backend.monitoring import (
@@ -43,6 +45,7 @@ from backend.monitoring import (
     get_readiness,
     generate_metrics_response,
 )
+from backend.monitoring.error_handler import ErrorSanitizationMiddleware, exception_handler
 from backend.monitoring.metrics import user_questions_total
 from backend.monitoring.llm_observability import setup_langsmith
 from backend.rate_limiter import RateLimitConfig, check_rate_limit
@@ -52,6 +55,10 @@ log_level = os.getenv("LOG_LEVEL", "INFO")
 json_logging = os.getenv("JSON_LOGGING", "false").lower() == "true"
 setup_logging(log_level=log_level, json_format=json_logging)
 logger = logging.getLogger(__name__)
+
+# Determine if we're in development/debug mode for error handling
+IS_DEVELOPMENT = os.getenv("NODE_ENV", "development") == "development"
+DEBUG_MODE = os.getenv("DEBUG", "false").lower() == "true"
 
 # Initialize metrics
 setup_metrics()
@@ -161,15 +168,26 @@ app.json_encoders = {
 cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:3000")
 origins = [origin.strip() for origin in cors_origins_env.split(",")]
 
+# Add error sanitization middleware first (to catch all exceptions)
+app.add_middleware(ErrorSanitizationMiddleware)
+
 # Add monitoring middleware (before CORS to capture all requests)
 app.add_middleware(MetricsMiddleware)
 
+# Register exception handlers for FastAPI
+app.add_exception_handler(HTTPException, exception_handler)
+app.add_exception_handler(RequestValidationError, exception_handler)
+app.add_exception_handler(StarletteHTTPException, exception_handler)
+app.add_exception_handler(Exception, exception_handler)
+
+# CORS configuration - restrict methods and headers for security
 app.add_middleware(
     CORSMiddleware, 
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],  # Only allow required methods
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],  # Only allow required headers
+    expose_headers=["X-Request-ID"],  # Expose custom headers if needed
 )
 
 # Initialize RAGPipeline globally or as a dependency
@@ -411,21 +429,27 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
                     break
 
         except Exception as e:
-            logger.error(f"Error in streaming response: {e}")
+            logger.error(f"Error in streaming response: {e}", exc_info=True)
+            # Sanitize error message
+            error_message = "An error occurred processing your request" if not (IS_DEVELOPMENT or DEBUG_MODE) else str(e)
             payload = {
                 "status": "error",
-                "error": str(e),
+                "error": error_message,
                 "isComplete": True
             }
             yield f"data: {json.dumps(payload)}\n\n"
 
+    # Get the origin from the request to validate it
+    origin = http_request.headers.get("Origin")
+    cors_origin = origin if origin in origins else origins[0] if origins else None
+    
     return StreamingResponse(
         generate_stream(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "Cache-Control",
+            "Access-Control-Allow-Origin": cors_origin or origins[0] if origins else "*",
+            "Access-Control-Allow-Headers": "Content-Type, Cache-Control",
         }
     )

@@ -1,0 +1,112 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run weekly security scan
+    - cron: '0 0 * * 0'
+
+jobs:
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install safety
+        run: pip install safety
+      
+      - name: Run safety check
+        run: |
+          cd backend
+          safety check --json || true
+        continue-on-error: true
+      
+      - name: Install pip-audit
+        run: pip install pip-audit
+      
+      - name: Run pip-audit
+        run: |
+          cd backend
+          pip-audit --format=json || true
+        continue-on-error: true
+
+  code-security:
+    name: Code Security Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install bandit
+        run: pip install bandit
+      
+      - name: Run bandit security scan
+        run: |
+          cd backend
+          bandit -r . -f json -o bandit-report.json || true
+        continue-on-error: true
+      
+      - name: Upload bandit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bandit-security-report
+          path: backend/bandit-report.json
+
+  secrets-scan:
+    name: Secrets Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          config-path: .gitleaks.toml
+      
+      - name: Run gitleaks scan
+        run: |
+          gitleaks detect --source . --verbose || true
+        continue-on-error: true
+
+  webhook-security-test:
+    name: Webhook Security Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+      
+      - name: Run webhook security tests
+        run: |
+          cd backend
+          pytest tests/test_webhook_security.py -v
+        env:
+          WEBHOOK_SECRET: test-secret-key-for-webhook-verification-minimum-32-chars
+          WEBHOOK_MAX_AGE: "300"
+          MONGO_URI: mongodb://localhost:27017/test
+          GOOGLE_API_KEY: test-key
+

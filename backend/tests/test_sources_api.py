@@ -159,7 +159,8 @@ def test_update_data_source_uri_change_deletes_embeddings():
     assert test_litecoin_docs_collection.count_documents({"source_uri": old_uri}) == 0
     # Other embeddings should remain
     assert test_litecoin_docs_collection.count_documents({"source_uri": "other_uri.md"}) == 1
-    # TODO: In a real scenario, new embeddings for 'new_uri' would be created by ingestion process.
+    # Note: In a real scenario, new embeddings for 'new_uri' would be created by ingestion process.
+    # This test verifies that the URI update triggers deletion of old embeddings.
 
 def test_delete_data_source():
     """Test deleting a data source and its associated embeddings."""
