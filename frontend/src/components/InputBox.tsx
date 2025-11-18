@@ -7,7 +7,7 @@ interface InputBoxProps {
   isLoading: boolean;
 }
 
-const MAX_QUERY_LENGTH = 1000;
+const MAX_QUERY_LENGTH = 400;
 
 const InputBox: React.FC<InputBoxProps> = ({ onSendMessage, isLoading }) => {
   const [input, setInput] = useState("");

@@ -27,7 +27,7 @@ export default function Home() {
 
   const MAX_QUERY_LENGTH = 1000;
 
-  const handleSendMessage = async (message: string, metadata?: { fromFeelingLit?: boolean; originalQuestion?: string }) => {
+  const handleSendMessage = async (message: string, _metadata?: { fromFeelingLit?: boolean; originalQuestion?: string }) => {
     // Validate message length
     if (message.length > MAX_QUERY_LENGTH) {
       alert(`Message is too long. Maximum length is ${MAX_QUERY_LENGTH} characters. Your message is ${message.length} characters.`);
