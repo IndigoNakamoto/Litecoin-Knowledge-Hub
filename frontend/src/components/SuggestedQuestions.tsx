@@ -3,6 +3,22 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
+const useIsMobile = () => {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768); // md breakpoint in Tailwind
+    };
+
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
+  return isMobile;
+};
+
 interface SuggestedQuestionsProps {
   onQuestionClick: (question: string) => void;
 }
@@ -27,12 +43,13 @@ interface PayloadResponse {
   nextPage: number | null;
 }
 
-const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({ onQuestionClick }) => {
+const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({ onQuestionClick, onQuestionsLoaded }) => {
   const [questions, setQuestions] = useState<SuggestedQuestion[]>([]);
   const [allQuestions, setAllQuestions] = useState<SuggestedQuestion[]>([]);
   const [currentPage, setCurrentPage] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     const fetchQuestions = async () => {
@@ -98,9 +115,16 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({ onQuestionClick
           const allData: PayloadResponse = await allResponse.json();
           const sortedAllQuestions = allData.docs.sort((a, b) => a.order - b.order);
           setAllQuestions(sortedAllQuestions);
+          // Notify parent component about loaded questions for finding similar ones
+          if (onQuestionsLoaded) {
+            onQuestionsLoaded(sortedAllQuestions);
+          }
         } else {
           // If all questions fetch fails, use active questions as fallback
           setAllQuestions(sortedActiveQuestions);
+          if (onQuestionsLoaded) {
+            onQuestionsLoaded(sortedActiveQuestions);
+          }
         }
       } catch (err) {
         console.error("Error fetching suggested questions:", err);
@@ -117,13 +141,16 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({ onQuestionClick
         ];
         setQuestions(fallbackQuestions);
         setAllQuestions(fallbackQuestions);
+        if (onQuestionsLoaded) {
+          onQuestionsLoaded(fallbackQuestions);
+        }
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchQuestions();
-  }, []);
+  }, [onQuestionsLoaded]);
 
   if (isLoading) {
     return (
@@ -155,10 +182,13 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({ onQuestionClick
     if (allQuestions.length === 0) return;
     const randomIndex = Math.floor(Math.random() * allQuestions.length);
     const randomQuestion = allQuestions[randomIndex];
-    onQuestionClick(randomQuestion.question);
+    onQuestionClick(randomQuestion.question, { 
+      fromFeelingLit: true, 
+      originalQuestion: randomQuestion.question 
+    });
   };
 
-  const QUESTIONS_PER_PAGE = 7;
+  const QUESTIONS_PER_PAGE = isMobile ? 3 : 7;
   const startIndex = currentPage * QUESTIONS_PER_PAGE;
   const endIndex = startIndex + QUESTIONS_PER_PAGE;
   const visibleQuestions = questions.slice(startIndex, endIndex);
