@@ -1,4 +1,5 @@
 import { CollectionConfig } from 'payload'
+import crypto from 'crypto'
 
 export const KnowledgeBase: CollectionConfig = {
   slug: 'knowledge-base',
@@ -119,21 +120,47 @@ export const KnowledgeBase: CollectionConfig = {
         }
 
         try {
+          // Prepare webhook payload
+          const payload = JSON.stringify({
+            operation: operation,
+            doc: doc,
+          });
+          
+          // Generate HMAC signature if WEBHOOK_SECRET is configured
+          const webhookSecret = process.env.WEBHOOK_SECRET;
+          const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+          };
+          
+          if (webhookSecret) {
+            // Generate HMAC-SHA256 signature
+            const signature = crypto
+              .createHmac('sha256', webhookSecret)
+              .update(payload)
+              .digest('hex');
+            
+            // Add signature and timestamp headers
+            headers['X-Webhook-Signature'] = signature;
+            headers['X-Webhook-Timestamp'] = Math.floor(Date.now() / 1000).toString();
+            console.log(`🔐 Webhook authentication enabled - Sending signed webhook to backend`);
+          } else {
+            console.warn('⚠️  WEBHOOK_SECRET not configured - Webhook will be sent without authentication');
+          }
+          
           // Always trigger sync to handle publishing, unpublishing, and updates
           const response = await fetch(`${backendUrl}/api/v1/sync/payload`, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              operation: operation,
-              doc: doc,
-            }),
+            headers: headers,
+            body: payload,
           });
 
           if (!response.ok) {
             const errorText = await response.text();
-            console.error(`❌ Failed to sync knowledge base "${doc.title}" (ID: ${doc.id}) to RAG pipeline. Status: ${response.status}, Error: ${errorText}`);
+            if (response.status === 401) {
+              console.error(`🔒 Webhook authentication failed for knowledge base "${doc.title}" (ID: ${doc.id}). Status: ${response.status}, Error: ${errorText}`);
+            } else {
+              console.error(`❌ Failed to sync knowledge base "${doc.title}" (ID: ${doc.id}) to RAG pipeline. Status: ${response.status}, Error: ${errorText}`);
+            }
           } else {
             const result = await response.json();
             console.log(`✅ Successfully triggered RAG pipeline sync for knowledge base "${doc.title}" (ID: ${doc.id}):`, result);
@@ -154,21 +181,47 @@ export const KnowledgeBase: CollectionConfig = {
         }
 
         try {
+          // Prepare webhook payload
+          const payload = JSON.stringify({
+            operation: 'delete',
+            doc: doc,
+          });
+          
+          // Generate HMAC signature if WEBHOOK_SECRET is configured
+          const webhookSecret = process.env.WEBHOOK_SECRET;
+          const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+          };
+          
+          if (webhookSecret) {
+            // Generate HMAC-SHA256 signature
+            const signature = crypto
+              .createHmac('sha256', webhookSecret)
+              .update(payload)
+              .digest('hex');
+            
+            // Add signature and timestamp headers
+            headers['X-Webhook-Signature'] = signature;
+            headers['X-Webhook-Timestamp'] = Math.floor(Date.now() / 1000).toString();
+            console.log(`🔐 Webhook authentication enabled - Sending signed webhook to backend`);
+          } else {
+            console.warn('⚠️  WEBHOOK_SECRET not configured - Webhook will be sent without authentication');
+          }
+          
           // Trigger removal from vector store
           const response = await fetch(`${backendUrl}/api/v1/sync/payload`, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              operation: 'delete',
-              doc: doc,
-            }),
+            headers: headers,
+            body: payload,
           });
 
           if (!response.ok) {
             const errorText = await response.text();
-            console.error(`❌ Failed to delete knowledge base "${doc.title}" (ID: ${doc.id}) from RAG pipeline. Status: ${response.status}, Error: ${errorText}`);
+            if (response.status === 401) {
+              console.error(`🔒 Webhook authentication failed for deletion of knowledge base "${doc.title}" (ID: ${doc.id}). Status: ${response.status}, Error: ${errorText}`);
+            } else {
+              console.error(`❌ Failed to delete knowledge base "${doc.title}" (ID: ${doc.id}) from RAG pipeline. Status: ${response.status}, Error: ${errorText}`);
+            }
           } else {
             const result = await response.json();
             console.log(`✅ Successfully triggered RAG pipeline deletion for knowledge base "${doc.title}" (ID: ${doc.id}):`, result);

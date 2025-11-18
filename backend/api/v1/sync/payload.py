@@ -3,11 +3,14 @@ import logging
 from pydantic import ValidationError
 from datetime import datetime
 from typing import Dict, Any, List, Union
+import os
+import json
 
 from backend.data_models import PayloadWebhookDoc
 from backend.data_ingestion.embedding_processor import process_payload_documents
 from backend.data_ingestion.vector_store_manager import VectorStoreManager
 from backend.rag_pipeline import RAGPipeline
+from backend.utils.webhook_auth import verify_webhook_request
 
 # Global RAG pipeline instance reference (set by main.py to avoid circular imports)
 # This prevents creating new connection pools per webhook request
@@ -246,8 +249,46 @@ async def receive_payload_webhook(request: Request, background_tasks: Background
     """
     Receives a webhook from Payload CMS after a document is changed.
     Validates the payload and triggers a background task for processing if the document is published.
+    
+    Requires HMAC-SHA256 signature verification via X-Webhook-Signature header
+    and timestamp validation via X-Webhook-Timestamp header.
     """
-    raw_payload = await request.json()
+    try:
+        # Read raw body for signature verification (can only be read once)
+        body = await request.body()
+        
+        # Verify webhook signature and timestamp
+        is_valid, error_message = await verify_webhook_request(request, body)
+        if not is_valid:
+            logger.warning(
+                f"Webhook authentication failed: {error_message}. "
+                f"IP: {request.client.host if request.client else 'unknown'}"
+            )
+            raise HTTPException(
+                status_code=401,
+                detail={"error": "Unauthorized", "message": "Invalid webhook signature or timestamp"}
+            )
+        
+        # Log successful authentication
+        logger.info(f"🔐 Webhook authentication successful - IP: {request.client.host if request.client else 'unknown'}")
+        
+        # Parse JSON payload after verification
+        try:
+            raw_payload = json.loads(body.decode('utf-8'))
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.error(f"Failed to parse webhook payload as JSON: {e}")
+            raise HTTPException(status_code=400, detail={"error": "Invalid JSON payload"})
+    except HTTPException:
+        # Re-raise HTTP exceptions (they're already properly formatted)
+        raise
+    except Exception as e:
+        # Catch any other exceptions to prevent connection reset
+        logger.error(f"Unexpected error in webhook endpoint: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Internal server error", "message": "An error occurred processing the webhook"}
+        )
+    
     logger.info(f"🔗 Received Payload webhook - Raw payload keys: {list(raw_payload.keys())}")
 
     try:
@@ -347,9 +388,45 @@ async def webhook_health_check():
 async def test_webhook_endpoint(request: Request):
     """
     Test endpoint to simulate webhook payload for debugging.
+    
+    In production, this endpoint is disabled or requires authentication.
     """
+    # Check if we're in production
+    node_env = os.getenv("NODE_ENV", "").lower()
+    is_production = node_env == "production"
+    
+    if is_production:
+        logger.warning(
+            f"Test webhook endpoint accessed in production. "
+            f"IP: {request.client.host if request.client else 'unknown'}"
+        )
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "Not found"}
+        )
+    
+    # In development, require webhook authentication if WEBHOOK_SECRET is set
+    body = await request.body()
+    payload = None
+    
+    # If WEBHOOK_SECRET is configured, require authentication
+    if os.getenv("WEBHOOK_SECRET"):
+        is_valid, error_message = await verify_webhook_request(request, body)
+        if not is_valid:
+            logger.warning(f"Test webhook authentication failed: {error_message}")
+            raise HTTPException(
+                status_code=401,
+                detail={"error": "Unauthorized", "message": "Invalid webhook signature or timestamp"}
+            )
+    
+    # Parse JSON payload
     try:
-        payload = await request.json()
+        payload = json.loads(body.decode('utf-8'))
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        logger.error(f"Failed to parse test webhook payload as JSON: {e}")
+        raise HTTPException(status_code=400, detail={"error": "Invalid JSON payload"})
+    
+    try:
         logger.info(f"🧪 Test webhook received: {payload}")
 
         # Validate the payload structure
