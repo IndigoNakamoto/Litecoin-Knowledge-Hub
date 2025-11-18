@@ -25,7 +25,7 @@ export default function Home() {
   const chatWindowRef = useRef<ChatWindowRef>(null);
   const lastUserMessageIdRef = useRef<string | null>(null);
 
-  const MAX_QUERY_LENGTH = 1000;
+  const MAX_QUERY_LENGTH = 400;
 
   const handleSendMessage = async (message: string, _metadata?: { fromFeelingLit?: boolean; originalQuestion?: string }) => {
     // Validate message length
