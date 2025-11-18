@@ -297,9 +297,39 @@ export default function Home() {
   useEffect(() => {
     // Only scroll if we have a pending user message ID
     if (lastUserMessageIdRef.current && chatWindowRef.current) {
-      // Use multiple requestAnimationFrame to ensure DOM is fully updated
+      const messageId = lastUserMessageIdRef.current;
+      
+      // Function to attempt scrolling
+      const attemptScroll = (retryCount = 0) => {
+        const messageElement = document.getElementById(messageId);
+        console.log('Attempting scroll, retry:', retryCount, 'element found:', !!messageElement, 'messageId:', messageId);
+        if (messageElement && chatWindowRef.current) {
+          console.log('Scrolling to element');
+          chatWindowRef.current.scrollToElement(messageElement);
+          // Don't clear the ref yet - we'll clear it after streaming message appears
+          return true;
+        } else if (retryCount < 5) {
+          // Retry up to 5 times with increasing delays
+          setTimeout(() => attemptScroll(retryCount + 1), 50 * (retryCount + 1));
+        }
+        return false;
+      };
+      
+      // Try immediate scroll, then with delays
+      requestAnimationFrame(() => {
+        attemptScroll(0);
+      });
+    }
+  }, [messages]); // Trigger when messages array changes
+
+  // Effect to re-scroll when streaming message appears to ensure proper positioning
+  useEffect(() => {
+    // Re-scroll to user message when streaming message is set to account for layout changes
+    if (lastUserMessageIdRef.current && chatWindowRef.current && streamingMessage) {
+      const messageId = lastUserMessageIdRef.current;
+      
       const scrollToMessage = () => {
-        const messageElement = document.getElementById(lastUserMessageIdRef.current!);
+        const messageElement = document.getElementById(messageId);
         if (messageElement && chatWindowRef.current) {
           chatWindowRef.current.scrollToElement(messageElement);
           // Clear the ref after scrolling to prevent re-scrolling
@@ -307,14 +337,16 @@ export default function Home() {
         }
       };
       
-      // Wait for React to render and DOM to update
+      // Wait for streaming message to render, with multiple attempts
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          setTimeout(scrollToMessage, 10); // Small delay to ensure layout is complete
+          setTimeout(scrollToMessage, 100);
+          // Also try again after a longer delay in case layout is still settling
+          setTimeout(scrollToMessage, 300);
         });
       });
     }
-  }, [messages]); // Trigger when messages array changes
+  }, [streamingMessage]); // Trigger when streaming message changes
 
   // Effect to move completed streaming message to messages array
   useEffect(() => {
@@ -337,7 +369,7 @@ export default function Home() {
 
   return (
     <div className="flex flex-col h-screen max-h-screen bg-background">
-      <div className="flex-1">
+      <div className="flex-1 min-h-0 overflow-hidden">
         {messages.length === 0 && !streamingMessage && !isLoading ? (
           <div className="flex items-center justify-center h-full">
             <SuggestedQuestions onQuestionClick={handleSendMessage} />
@@ -362,6 +394,12 @@ export default function Home() {
               />
             )}
             {!streamingMessage && isLoading && <MessageLoader />}
+            {/* Spacer to provide scrollable space below messages so they can scroll to top */}
+            {/* Only show spacer when streaming, loading, or actively scrolling a new message to avoid empty space after completion */}
+            {/* Height accounts for header (~80px) and input box (~150px) */}
+            {(streamingMessage || isLoading || lastUserMessageIdRef.current) && (
+              <div className="min-h-screen" />
+            )}
           </ChatWindow>
         )}
       </div>

@@ -22,21 +22,6 @@ const StreamingMessage: React.FC<StreamingMessageProps> = ({
   isStreamActive
 }) => {
 
-  const getStatusText = () => {
-    switch (status) {
-      case "thinking":
-        return "Thinking...";
-      case "streaming":
-        return "Streaming...";
-      case "complete":
-        return "";
-      case "error":
-        return "Error occurred";
-      default:
-        return "";
-    }
-  };
-
   const getStatusColor = () => {
     switch (status) {
       case "thinking":
@@ -50,8 +35,6 @@ const StreamingMessage: React.FC<StreamingMessageProps> = ({
     }
   };
 
-  const shouldShowCursor = status === "streaming" && isStreamActive;
-
   return (
     <div className={`w-full transition-all duration-300 ${status === "streaming" && isStreamActive ? "animate-stream-pulse" : ""}`}>
       {/* Status indicator */}
@@ -62,9 +45,6 @@ const StreamingMessage: React.FC<StreamingMessageProps> = ({
             <div className="w-2 h-2 bg-current rounded-full animate-bounce [animation-delay:-0.15s]"></div>
             <div className="w-2 h-2 bg-current rounded-full animate-bounce"></div>
           </div>
-          <span className="text-xs font-medium opacity-80 animate-fade-in">
-            {getStatusText()}
-          </span>
         </div>
       )}
 
@@ -130,10 +110,6 @@ const StreamingMessage: React.FC<StreamingMessageProps> = ({
           >
             {content}
           </ReactMarkdown>
-          {/* Cursor element - separate from markdown, appears inline after content */}
-          {shouldShowCursor && (
-            <span className="inline-block w-0.5 h-[1.5em] bg-gray-800 ml-1 align-middle animate-cursor-blink" aria-hidden="true"></span>
-          )}
         </div>
       </div>
 

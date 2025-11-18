@@ -15,6 +15,7 @@ const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(
     const scrollRef = useRef<HTMLDivElement>(null);
     const [isUserScrolling, setIsUserScrolling] = useState(false);
     const [lastScrollTop, setLastScrollTop] = useState(0);
+    const isProgrammaticScrollRef = useRef(false);
 
     // Expose scroll methods via ref
     useImperativeHandle(ref, () => ({
@@ -22,20 +23,86 @@ const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(
         if (element && scrollRef.current) {
           const container = scrollRef.current;
           
-          // Get bounding rectangles
-          const containerRect = container.getBoundingClientRect();
-          const elementRect = element.getBoundingClientRect();
+          // Scroll function that recalculates position right before scrolling
+          const performScroll = () => {
+            // Calculate element's position relative to container using getBoundingClientRect
+            const containerRect = container.getBoundingClientRect();
+            const elementRect = element.getBoundingClientRect();
+            
+            // Get computed styles to account for padding
+            const containerStyles = window.getComputedStyle(container);
+            const paddingTop = parseFloat(containerStyles.paddingTop) || 0;
+            
+            // The element's position relative to the container's visible top edge
+            const elementOffsetFromContainerTop = elementRect.top - containerRect.top;
+            
+            // The element's absolute position in the scrollable content
+            // This is where the element actually is in the scrollable content
+            const absoluteElementPosition = elementOffsetFromContainerTop + container.scrollTop;
+            
+            // To position the element at the top of the content area (after padding),
+            // we need to scroll so that the element's absolute position minus padding equals scrollTop
+            // So: scrollTop = absoluteElementPosition - paddingTop
+            const targetScroll = absoluteElementPosition - paddingTop;
+            
+            // Check if container can actually scroll
+            const maxScroll = container.scrollHeight - container.clientHeight;
+            const clampedScroll = Math.min(Math.max(0, targetScroll), maxScroll);
+            
+            console.log('scrollToElement - performing scroll:', {
+              elementTop: elementRect.top,
+              containerTop: containerRect.top,
+              paddingTop,
+              elementOffsetFromContainerTop,
+              currentScrollTop: container.scrollTop,
+              absoluteElementPosition,
+              targetScroll,
+              clampedScroll,
+              scrollHeight: container.scrollHeight,
+              clientHeight: container.clientHeight,
+              maxScroll
+            });
+            
+            // Set flag to prevent scroll handler from interfering
+            isProgrammaticScrollRef.current = true;
+            
+            // Scroll to position the element at the top of the content area (after padding)
+            container.scrollTop = clampedScroll;
+            
+            // Verify scroll worked and retry if needed
+            setTimeout(() => {
+              const actualScrollTop = container.scrollTop;
+              
+              // Check where the element actually ended up
+              const newElementRect = element.getBoundingClientRect();
+              const newContainerRect = container.getBoundingClientRect();
+              const finalOffset = newElementRect.top - newContainerRect.top;
+              const offsetFromTarget = Math.abs(finalOffset - paddingTop);
+              
+              console.log('After scroll, scrollTop:', actualScrollTop, 'expected:', clampedScroll, 'elementOffsetFromTop:', finalOffset, 'paddingTop:', paddingTop, 'offsetFromTarget:', offsetFromTarget);
+              
+              // If element is not at the top (accounting for padding), retry with corrected calculation
+              if (offsetFromTarget > 2 && container.scrollHeight > container.clientHeight) {
+                console.log('Element not at top, retrying...');
+                // Recalculate: current offset + current scroll = absolute position
+                // We want: scrollTop = absolutePosition - paddingTop
+                const retryAbsolute = finalOffset + actualScrollTop;
+                const retryTarget = retryAbsolute - paddingTop;
+                const retryClamped = Math.min(Math.max(0, retryTarget), maxScroll);
+                console.log('Retry calculation:', { retryAbsolute, retryTarget, retryClamped });
+                container.scrollTop = retryClamped;
+              }
+              
+              isProgrammaticScrollRef.current = false;
+            }, 100);
+          };
           
-          // Calculate the element's position relative to the container's scrollable content
-          // elementRect.top is relative to viewport, containerRect.top is container's position in viewport
-          // We need to add the current scrollTop to get the absolute position in the scrollable content
-          const elementPositionInScrollContent = elementRect.top - containerRect.top + container.scrollTop;
-          
-          // Target scroll position: element's position minus padding (16px)
-          const targetScroll = elementPositionInScrollContent - 16;
-          
-          // Use instant scroll for immediate positioning
-          container.scrollTop = Math.max(0, targetScroll);
+          // Wait for layout to be ready, then scroll
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              setTimeout(performScroll, 100);
+            });
+          });
         }
       },
       scrollToTop: () => {
@@ -55,6 +122,11 @@ const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(
   // Handle scroll events to detect user interaction
   const handleScroll = useCallback(() => {
     if (!scrollRef.current) return;
+    
+    // Ignore scroll events during programmatic scrolling
+    if (isProgrammaticScrollRef.current) {
+      return;
+    }
 
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
     const isAtBottom = scrollTop + clientHeight >= scrollHeight - 10; // 10px tolerance
