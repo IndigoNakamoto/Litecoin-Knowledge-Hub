@@ -60,12 +60,26 @@ These should be stored in service-specific `.env` files and never committed to g
 |----------|---------|-------------|
 | `GOOGLE_API_KEY` | Backend | Google AI API key for Gemini |
 | `PAYLOAD_SECRET` | Payload CMS | Payload CMS secret key |
+| `WEBHOOK_SECRET` | Both | Shared secret for webhook HMAC signature verification (must be same in both services) |
 | `CLOUDFLARE_TUNNEL_TOKEN` | Production | Cloudflare tunnel token (optional) |
 
 **Where to set:** 
-- `backend/.env` for `GOOGLE_API_KEY`
-- `payload_cms/.env` for `PAYLOAD_SECRET`
+- `backend/.env` for `GOOGLE_API_KEY` and `WEBHOOK_SECRET`
+- `payload_cms/.env` for `PAYLOAD_SECRET` and `WEBHOOK_SECRET`
 - Root `.env.docker.prod` or environment variables for `CLOUDFLARE_TUNNEL_TOKEN`
+
+**Important:** `WEBHOOK_SECRET` must be the same value in both `backend/.env` and `payload_cms/.env` for webhook authentication to work. Generate a secure random string:
+
+```bash
+# Using OpenSSL
+openssl rand -base64 32
+
+# Or using Node.js
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+
+# Or using Python
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+```
 
 ### 4. Configuration
 
@@ -118,11 +132,16 @@ These variables are usually the same across environments but can be overridden.
 
 3. Create service-specific `.env` files:
    ```bash
+   # Generate a secure webhook secret (use the same value in both files)
+   WEBHOOK_SECRET=$(openssl rand -base64 32)
+   
    # Backend secrets
    echo "GOOGLE_API_KEY=your-key-here" > backend/.env
+   echo "WEBHOOK_SECRET=$WEBHOOK_SECRET" >> backend/.env
    
    # Payload CMS secrets
    echo "PAYLOAD_SECRET=your-secret-here" > payload_cms/.env
+   echo "WEBHOOK_SECRET=$WEBHOOK_SECRET" >> payload_cms/.env
    ```
 
 ### For Docker Development

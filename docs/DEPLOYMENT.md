@@ -62,6 +62,10 @@ CMS_ARTICLES_COLLECTION_NAME=cms_articles
 # Google AI API
 GOOGLE_API_KEY=your-google-api-key-here
 
+# Webhook Secret (must match Payload CMS WEBHOOK_SECRET)
+# Generate with: openssl rand -base64 32
+WEBHOOK_SECRET=your-webhook-secret-here
+
 # Embedding Model (optional, defaults to text-embedding-004)
 EMBEDDING_MODEL=text-embedding-004
 
@@ -101,6 +105,10 @@ PAYLOAD_PUBLIC_SERVER_URL=https://your-cms-domain.com
 
 # Backend URL (for webhook sync)
 BACKEND_URL=https://your-backend-api-domain.com
+
+# Webhook Secret (must match backend WEBHOOK_SECRET)
+# Generate with: openssl rand -base64 32
+WEBHOOK_SECRET=your-webhook-secret-here
 
 # Node Environment
 NODE_ENV=production
