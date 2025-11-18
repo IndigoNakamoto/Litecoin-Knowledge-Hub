@@ -49,7 +49,7 @@ const StreamingMessage: React.FC<StreamingMessageProps> = ({
       )}
 
       {/* Message content */}
-      <div className="prose prose-lg max-w-none dark:prose-invert prose-p:my-6 prose-headings:my-4 leading-relaxed relative">
+      <div className="prose prose-lg max-w-none prose-p:my-6 prose-headings:my-4 leading-relaxed relative">
         <div className="animate-fade-in">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}

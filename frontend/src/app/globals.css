@@ -1,8 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-@custom-variant dark (&:is(.dark *));
-
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -51,18 +49,20 @@
   --card-foreground: #222222;
   --popover: #ffffff;
   --popover-foreground: #222222;
-  --primary: #345D9D;
+  --primary: #0066CC;
   --primary-foreground: #ffffff;
   --secondary: #f0f0f0;
   --secondary-foreground: #222222;
   --muted: #f0f0f0;
   --muted-foreground: #6b7280;
-  --accent: #f0f0f0;
+  --accent: #A6B0C3;
   --accent-foreground: #222222;
   --destructive: oklch(0.577 0.245 27.325);
   --border: #e5e7eb;
   --input: #e5e7eb;
-  --ring: #345D9D;
+  --ring: #0066CC;
+  --litecoin-blue: #0066CC;
+  --litecoin-silver: #A6B0C3;
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -78,39 +78,6 @@
   --sidebar-ring: #345D9D;
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-}
 
 @layer base {
   * {
@@ -119,8 +86,37 @@
   body {
     @apply bg-background text-foreground text-[16px];
     font-feature-settings: "rlig" 1, "calt" 1;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+    font-family: var(--font-inter), system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+    position: relative;
   }
+  
+  /* Subtle Litecoin background pattern */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image: 
+      repeating-linear-gradient(
+        45deg,
+        transparent,
+        transparent 2px,
+        rgba(166, 176, 195, 0.03) 2px,
+        rgba(166, 176, 195, 0.03) 4px
+      ),
+      repeating-linear-gradient(
+        -45deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 102, 204, 0.02) 2px,
+        rgba(0, 102, 204, 0.02) 4px
+      );
+    pointer-events: none;
+    z-index: 0;
+  }
+  
 }
 
 /* Enhanced prose and markdown styling */
@@ -273,4 +269,55 @@ textarea::-webkit-scrollbar-thumb:hover {
   50% {
     opacity: 0.97;
   }
+}
+
+@keyframes sparkle {
+  0%, 100% {
+    opacity: 0;
+    transform: scale(0) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1) rotate(180deg);
+  }
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(0, 102, 204, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(0, 102, 204, 0.6), 0 0 30px rgba(0, 102, 204, 0.4);
+  }
+}
+
+@keyframes fire-burst {
+  0%, 100% {
+    transform: scale(1);
+    filter: hue-rotate(0deg);
+  }
+  25% {
+    transform: scale(1.05);
+    filter: hue-rotate(15deg);
+  }
+  50% {
+    transform: scale(1.1);
+    filter: hue-rotate(30deg);
+  }
+  75% {
+    transform: scale(1.05);
+    filter: hue-rotate(15deg);
+  }
+}
+
+.animate-sparkle {
+  animation: sparkle 2s ease-in-out infinite;
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+.animate-fire-burst {
+  animation: fire-burst 0.6s ease-in-out;
 }

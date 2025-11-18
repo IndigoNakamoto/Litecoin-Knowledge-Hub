@@ -23,7 +23,7 @@ const Message: React.FC<MessageProps> = ({ role, content, sources, messageId }) 
     // AI messages take full width
     return (
       <div ref={messageRef} id={messageId} className="w-full">
-        <div className="prose prose-lg max-w-none dark:prose-invert prose-p:my-6 prose-headings:my-4 leading-relaxed">
+        <div className="prose prose-lg max-w-none prose-p:my-6 prose-headings:my-4 leading-relaxed">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
@@ -92,7 +92,7 @@ const Message: React.FC<MessageProps> = ({ role, content, sources, messageId }) 
   return (
     <div ref={messageRef} id={messageId} className="flex items-start gap-4 justify-end">
       <div className="flex flex-col gap-2 p-5 my-8 rounded-tl-3xl rounded-br-3xl rounded-tr-none rounded-bl-none max-w-[70%] bg-[#222222] text-white">
-        <div className="prose prose-lg max-w-none dark:prose-invert prose-p:my-6 prose-headings:my-4 leading-relaxed">
+        <div className="prose prose-lg max-w-none prose-p:my-6 prose-headings:my-4 leading-relaxed">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{

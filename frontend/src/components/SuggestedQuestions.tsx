@@ -2,6 +2,10 @@
 
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { 
+  ChevronRight,
+  Flame
+} from "lucide-react";
 
 const useIsMobile = () => {
   const [isMobile, setIsMobile] = useState(false);
@@ -20,7 +24,8 @@ const useIsMobile = () => {
 };
 
 interface SuggestedQuestionsProps {
-  onQuestionClick: (question: string) => void;
+  onQuestionClick: (question: string, metadata?: { fromFeelingLit?: boolean; originalQuestion?: string }) => void;
+  onQuestionsLoaded?: (questions: SuggestedQuestion[]) => void;
 }
 
 interface SuggestedQuestion {
@@ -188,6 +193,7 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({ onQuestionClick
     });
   };
 
+
   const QUESTIONS_PER_PAGE = isMobile ? 3 : 7;
   const startIndex = currentPage * QUESTIONS_PER_PAGE;
   const endIndex = startIndex + QUESTIONS_PER_PAGE;
@@ -225,41 +231,48 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({ onQuestionClick
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 py-8">
-      <div className="text-center mb-6">
-        <h2 className="font-space-grotesk text-[30px] font-semibold text-foreground mb-2">Get started with Litecoin</h2>
+    <div className="w-full max-w-4xl mx-auto px-4 py-8 relative z-10">
+      <div className="text-center mb-8">
+        <h2 className="font-space-grotesk text-[32px] md:text-[36px] font-bold mb-3 bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text text-transparent">
+          Get started with Litecoin
+        </h2>
         <p className="text-lg text-muted-foreground">Choose a question below or ask your own</p>
         {error && (
           <p className="text-sm text-destructive mt-2">{error}</p>
         )}
       </div>
       <motion.div
-        className="grid grid-cols-1 md:grid-cols-2 gap-3 auto-rows-fr"
+        className="grid grid-cols-1 md:grid-cols-2 gap-4 auto-rows-fr"
         variants={containerVariants}
         initial="hidden"
         animate="visible"
       >
         <AnimatePresence mode="popLayout">
-          {visibleQuestions.map((item) => (
-            <motion.div
-              key={item.id}
-              variants={itemVariants}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              layout
-              className="flex"
-            >
-              <button
-                onClick={() => onQuestionClick(item.question)}
-                className="p-4 text-left bg-card border border-border rounded-lg hover:bg-accent hover:border-accent-foreground/20 transition-colors duration-200 group w-full h-full flex items-center"
+          {visibleQuestions.map((item) => {
+            return (
+              <motion.div
+                key={item.id}
+                variants={itemVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+                layout
+                className="flex"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
               >
-                <span className="text-lg text-card-foreground group-hover:text-accent-foreground leading-relaxed">
-                  {item.question}
-                </span>
-              </button>
-            </motion.div>
-          ))}
+                <button
+                  onClick={() => onQuestionClick(item.question)}
+                  className="p-5 text-left bg-card border border-border rounded-xl hover:bg-accent/5 hover:border-primary/60 hover:shadow-xl hover:shadow-primary/10 transition-all duration-300 group w-full h-full flex items-start shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2"
+                  aria-label={`Ask: ${item.question}`}
+                >
+                  <span className="text-base font-semibold text-card-foreground group-hover:text-primary leading-relaxed">
+                    {item.question}
+                  </span>
+                </button>
+              </motion.div>
+            );
+          })}
           {hasMoreQuestions && (
             <motion.div
               key="show-more"
@@ -269,14 +282,18 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({ onQuestionClick
               exit="exit"
               layout
               className="flex"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
             >
               <button
                 onClick={handleShowMore}
-                className="p-4 text-center bg-card border border-ring/30 rounded-lg hover:bg-accent hover:border-ring/50 transition-colors duration-200 group w-full h-full flex items-center justify-center"
+                className="p-5 text-center bg-card/50 border border-border/50 rounded-xl hover:bg-accent/30 hover:border-primary/30 transition-all duration-300 group w-full h-full flex items-center justify-center gap-2 shadow-sm hover:shadow-xl hover:shadow-primary/10 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2"
+                aria-label="Show more questions"
               >
-                <span className="text-lg text-card-foreground group-hover:text-accent-foreground leading-relaxed">
+                <span className="text-base font-medium text-muted-foreground group-hover:text-primary leading-relaxed">
                   Show me more
                 </span>
+                <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-transform duration-300" />
               </button>
             </motion.div>
           )}
@@ -284,19 +301,23 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({ onQuestionClick
       </motion.div>
       {allQuestions.length > 0 && (
         <motion.div
-          className="mt-6 flex justify-center"
+          className="mt-8 flex justify-center"
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2, duration: 0.3 }}
         >
-          <button
+          <motion.button
             onClick={handleFeelingLit}
-            className="p-4 text-center bg-card border border-ring/30 rounded-lg hover:bg-accent hover:border-ring/50 transition-colors duration-200 group max-w-md w-full"
+            className="p-3 text-center bg-gradient-to-r from-primary to-primary/80 border border-primary/20 rounded-xl transition-all duration-300 group max-w-xs w-full shadow-lg hover:shadow-xl hover:shadow-primary/10 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 relative overflow-hidden"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onHoverStart={() => {}}
           >
-            <span className="text-lg text-card-foreground group-hover:text-accent-foreground leading-relaxed">
+            <span className="text-base font-semibold text-white leading-relaxed flex items-center justify-center gap-2 relative z-10">
+              <Flame className="h-4 w-4 group-hover:animate-fire-burst" />
               I&apos;m Feeling Lit
             </span>
-          </button>
+          </motion.button>
         </motion.div>
       )}
     </div>

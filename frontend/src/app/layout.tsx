@@ -1,7 +1,7 @@
 import Navigation from '@/components/Navigation';
 import { AuthProvider } from '@/contexts/AuthContext';
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono, Space_Grotesk } from 'next/font/google';
+import { Geist, Geist_Mono, Space_Grotesk, Inter } from 'next/font/google';
 import './globals.css';
 
 const geistSans = Geist({
@@ -22,6 +22,12 @@ const spaceGrotesk = Space_Grotesk({
   display: 'swap',
 });
 
+const inter = Inter({
+  variable: '--font-inter',
+  subsets: ['latin'],
+  display: 'swap',
+});
+
 export const metadata: Metadata = {
   title: "Litecoin Knowledge Hub",
   description: "Litecoin Knowledge Hub",
@@ -35,7 +41,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} antialiased font-sans`}
+        className={`${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} ${inter.variable} antialiased font-sans`}
       >
         <AuthProvider>
           <Navigation />

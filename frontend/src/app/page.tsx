@@ -27,7 +27,7 @@ export default function Home() {
 
   const MAX_QUERY_LENGTH = 1000;
 
-  const handleSendMessage = async (message: string) => {
+  const handleSendMessage = async (message: string, metadata?: { fromFeelingLit?: boolean; originalQuestion?: string }) => {
     // Validate message length
     if (message.length > MAX_QUERY_LENGTH) {
       alert(`Message is too long. Maximum length is ${MAX_QUERY_LENGTH} characters. Your message is ${message.length} characters.`);
@@ -368,10 +368,10 @@ export default function Home() {
   }, [streamingMessage]);
 
   return (
-    <div className="flex flex-col h-screen max-h-screen bg-background">
-      <div className="flex-1 min-h-0 overflow-hidden">
+    <div className="flex flex-col h-screen max-h-screen bg-background relative z-10">
+      <div className="flex-1 min-h-0 overflow-hidden relative z-10">
         {messages.length === 0 && !streamingMessage && !isLoading ? (
-          <div className="flex items-center justify-center h-full">
+          <div className="flex items-center justify-center h-full relative z-10">
             <SuggestedQuestions onQuestionClick={handleSendMessage} />
           </div>
         ) : (
