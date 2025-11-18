@@ -6,9 +6,11 @@ This red team assessment evaluates the Litecoin Knowledge Hub application's secu
 
 **Overall Security Score: 5.0/10** - NOT READY FOR PRODUCTION (Improved from 4.5/10)
 
-**Update:** CRIT-1 (Unauthenticated Webhook Endpoint) has been **RESOLVED** with HMAC-SHA256 signature verification implementation.
+**Update:** 
+- CRIT-1 (Unauthenticated Webhook Endpoint) has been **RESOLVED** with HMAC-SHA256 signature verification implementation.
+- CRIT-2 (Unauthenticated Sources API Endpoints) has been **RESOLVED** by removing unused endpoints.
 
-The application demonstrates good security practices in input validation and rate limiting. Webhook authentication has been implemented. Remaining critical gaps include authentication for Sources API, secrets management, and infrastructure hardening.
+The application demonstrates good security practices in input validation and rate limiting. Webhook authentication has been implemented. Unused Sources API endpoints have been removed to eliminate attack surface. Remaining critical gaps include secrets management and infrastructure hardening.
 
 ---
 
@@ -77,14 +79,17 @@ The application demonstrates good security practices in input validation and rat
 
 **Severity:** CRITICAL
 
-**Location:** `backend/api/v1/sources.py`
+**Status:** ✅ **RESOLVED** (2025-01-XX)
+
+**Location:** `backend/api/v1/sources.py` (removed)
 
 **Risk:** Unauthorized users can create, update, or delete data sources
 
-**Current State:**
+**Original State:**
 
-- All CRUD operations (`POST /`, `GET /`, `GET /{id}`, `PUT /{id}`, `DELETE /{id}`) are publicly accessible
+- All CRUD operations (`POST /`, `GET /`, `GET /{id}`, `PUT /{id}`, `DELETE /{id}`) were publicly accessible
 - No authentication or authorization checks
+- Endpoints were not used by the application (only in tests)
 
 **Impact:**
 
@@ -92,11 +97,21 @@ The application demonstrates good security practices in input validation and rat
 - Knowledge base corruption
 - Service disruption
 
-**Recommendation:**
+**Resolution Implemented:**
 
-1. Implement API key or JWT authentication
-2. Add role-based access control (admin-only for write operations)
-3. Log all data source modifications for audit trail
+1. ✅ **Removed unused Sources API endpoints** - The endpoints were not used by the frontend or production code
+   - Deleted `backend/api/v1/sources.py`
+   - Removed router registration from `backend/main.py`
+   - Removed MongoDB client cleanup for Sources API
+   - Deleted `backend/tests/test_sources_api.py`
+   - Removed unused `DataSource` and `DataSourceUpdate` models from `backend/data_models.py`
+
+**Rationale:**
+
+- Endpoints were only used in test files
+- No frontend components or production code accessed these endpoints
+- Webhook sync directly manages vector store without using Sources API
+- Removing unused code eliminates the attack vector entirely
 
 ---
 
@@ -634,7 +649,7 @@ allow_credentials=True,
 ### Immediate (Before Production - Critical)
 
 1. ✅ **Implement webhook authentication** - Add HMAC signature verification for Payload CMS webhooks **[COMPLETED]**
-2. **Secure Sources API** - Add authentication/authorization to all Sources API endpoints
+2. ✅ **Remove unused Sources API** - Removed unused Sources API endpoints that were publicly accessible **[COMPLETED]**
 3. **Enable MongoDB authentication** - Configure MongoDB with username/password and SSL/TLS
 4. **Enable Redis authentication** - Add password protection to Redis
 5. **Implement security headers** - Add CSP, HSTS, X-Frame-Options, X-Content-Type-Options
@@ -669,9 +684,10 @@ allow_credentials=True,
 
 ## Security Checklist for Production
 
-- [ ] All critical vulnerabilities addressed (1 of 12 resolved)
+- [ ] All critical vulnerabilities addressed (2 of 12 resolved)
 - [x] Webhook authentication implemented ✅
-- [ ] API authentication implemented
+- [x] Unused Sources API removed ✅
+- [ ] API authentication implemented (if needed for remaining endpoints)
 - [ ] Database authentication enabled
 - [ ] Redis authentication enabled
 - [ ] Security headers configured
@@ -719,22 +735,24 @@ allow_credentials=True,
 
 ## Conclusion
 
-The Litecoin Knowledge Hub application has a solid foundation with good input validation and rate limiting. **CRIT-1 (Webhook Authentication) has been successfully resolved** with HMAC-SHA256 signature verification. However, **remaining critical security vulnerabilities must be addressed before production deployment**, particularly around Sources API authentication, secrets management, and infrastructure hardening.
+The Litecoin Knowledge Hub application has a solid foundation with good input validation and rate limiting. **CRIT-1 (Webhook Authentication) and CRIT-2 (Unauthenticated Sources API) have been successfully resolved**. However, **remaining critical security vulnerabilities must be addressed before production deployment**, particularly around secrets management and infrastructure hardening.
 
 **Progress Update:**
-- ✅ CRIT-1: Webhook authentication - **RESOLVED**
-- ⏳ CRIT-2 through CRIT-12: **PENDING**
+- ✅ CRIT-1: Webhook authentication - **RESOLVED** (HMAC-SHA256 signature verification)
+- ✅ CRIT-2: Unauthenticated Sources API - **RESOLVED** (removed unused endpoints)
+- ⏳ CRIT-3 through CRIT-12: **PENDING**
 
-**Estimated time to production readiness: 2-3 weeks** with dedicated security focus (reduced from 2-4 weeks due to CRIT-1 resolution).
+**Estimated time to production readiness: 2-3 weeks** with dedicated security focus (reduced from 2-4 weeks due to CRIT-1 and CRIT-2 resolution).
 
 **Recommended next steps:**
 
 1. ✅ ~~Prioritize critical vulnerabilities (webhook security, authentication)~~ **[COMPLETED for webhooks]**
-2. **Secure Sources API** - Implement authentication/authorization (CRIT-2)
-3. Implement secrets management solution
-4. Harden infrastructure (database, Redis, Docker)
-5. Conduct penetration testing before launch
-6. Establish ongoing security monitoring and processes
+2. ✅ ~~Secure Sources API~~ **[COMPLETED - removed unused endpoints]**
+3. **Implement secrets management solution** - Move to secure storage (CRIT-5)
+4. **Harden infrastructure** - Enable MongoDB and Redis authentication (CRIT-3, CRIT-4)
+5. **Implement security headers** - Add CSP, HSTS, X-Frame-Options (CRIT-6)
+6. Conduct penetration testing before launch
+7. Establish ongoing security monitoring and processes
 
 ---
 
@@ -746,5 +764,6 @@ The Litecoin Knowledge Hub application has a solid foundation with good input va
 
 **Status Updates:**
 - 2025-11-18: CRIT-1 (Unauthenticated Webhook Endpoint) - **RESOLVED** with HMAC-SHA256 signature verification
+- 2025-01-XX: CRIT-2 (Unauthenticated Sources API Endpoints) - **RESOLVED** by removing unused endpoints
 
 **Next Review:** After remaining critical fixes implementation

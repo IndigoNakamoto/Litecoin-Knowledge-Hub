@@ -21,7 +21,6 @@ load_dotenv()
 # Import the RAG chain constructor and data models
 from backend.rag_pipeline import RAGPipeline
 from backend.data_models import ChatRequest, ChatMessage, UserQuestion
-from backend.api.v1.sources import router as sources_router
 from backend.api.v1.sync.payload import router as payload_sync_router
 from backend.api.v1.questions import router as questions_router
 from backend.dependencies import get_user_questions_collection
@@ -136,13 +135,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error closing Redis client: {e}", exc_info=True)
     
-    try:
-        # Close Sources API PyMongo client
-        from backend.api.v1.sources import close_mongo_client
-        close_mongo_client()
-    except Exception as e:
-        logger.error(f"Error closing Sources API MongoDB client: {e}", exc_info=True)
-    
     logger.info("MongoDB connection cleanup completed")
 
 app = FastAPI(
@@ -192,7 +184,6 @@ except (ImportError, AttributeError) as e:
     logger.warning(f"Could not set global VectorStoreManager for health checker: {e}")
 
 # Include API routers
-app.include_router(sources_router, prefix="/api/v1/sources", tags=["Data Sources"])
 app.include_router(payload_sync_router, prefix="/api/v1/sync", tags=["Payload Sync"])
 app.include_router(questions_router, prefix="/api/v1/questions", tags=["User Questions"])
 
