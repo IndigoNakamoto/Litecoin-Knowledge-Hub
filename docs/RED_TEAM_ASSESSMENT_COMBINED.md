@@ -1107,7 +1107,7 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 11. **Post-tweet:** Implement secrets management (CRIT-5) - **2 hours**
 12. **Post-launch:** Everything else (Docker security, dependency scanning, backups, etc.) - **1-2 weeks**
 
-**Knock out the two remaining blockers above → push → tell the Foundation "green for tweet".**
+**Knock out the remaining blocker above → push → tell the Foundation "green for tweet".**
 
 **You've already done the hard 95%. This is the last 5% that decides whether the project is remembered as "legendary" or "that Litecoin bot that leaked everything".**
 
