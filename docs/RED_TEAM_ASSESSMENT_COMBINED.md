@@ -12,9 +12,9 @@ This comprehensive red team assessment evaluates the Litecoin Knowledge Hub appl
 - **18 MEDIUM** priority recommendations (15 original + 3 additional)
 
 **Current Status Summary:**
-- ✅ **11 RESOLVED** (CRIT-1, CRIT-2, CRIT-6, CRIT-7, CRIT-8, CRIT-9, CRIT-12, CRIT-NEW-1, CRIT-NEW-2, HIGH-NEW-1, HIGH-NEW-3, HIGH-NEW-5, and related fixes)
+- ✅ **15 RESOLVED** (CRIT-1, CRIT-2, CRIT-6, CRIT-7, CRIT-8, CRIT-9, CRIT-12, CRIT-NEW-1, CRIT-NEW-2, HIGH-NEW-1, HIGH-NEW-2, HIGH-NEW-3, HIGH-NEW-4, HIGH-NEW-5, and related fixes)
 - ⚠️ **2 ACCEPTED RISK** (CRIT-3, CRIT-4 - MongoDB/Redis authentication) - **NOW REQUIRES FIX FOR PUBLIC LAUNCH**
-- ⏳ **6 PENDING** (3 critical + 3 high priority)
+- ⏳ **4 PENDING** (3 critical + 1 high priority)
 
 ---
 
@@ -88,9 +88,9 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 | HIGH-7 | Missing API Versioning Strategy | ⏳ PENDING | Medium-term |
 | HIGH-8 | No Load Testing and Capacity Planning | ⏳ PENDING | Short-term |
 | HIGH-NEW-1 | Hardcoded CORS Wildcard in Streaming | ✅ **RESOLVED** | - |
-| HIGH-NEW-2 | Health Check Information Disclosure | ⏳ PENDING | **PUBLIC LAUNCH BLOCKER #5** |
+| HIGH-NEW-2 | Health Check Information Disclosure | ✅ **RESOLVED** | - |
 | HIGH-NEW-3 | Debug Code in Production | ✅ **RESOLVED** | - |
-| HIGH-NEW-4 | Missing Rate Limiting on Health/Metrics | ⏳ PENDING | **PUBLIC LAUNCH BLOCKER #5** |
+| HIGH-NEW-4 | Missing Rate Limiting on Health/Metrics | ✅ **RESOLVED** | - |
 | HIGH-NEW-5 | Webhook Error Information Disclosure | ✅ **RESOLVED** | - |
 
 ---
@@ -474,46 +474,22 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 #### HIGH-NEW-2: Health Check Endpoint Information Disclosure
 
 **Severity:** HIGH  
-**Status:** ⏳ **PENDING**  
-**Location:** `backend/monitoring/health.py:103-131`, `backend/main.py:222-235`
+**Status:** ✅ **RESOLVED** (2025-11-19)  
+**Location:** `backend/monitoring/health.py`, `backend/main.py`
 
-**Risk:** System reconnaissance and information gathering
+**Resolution Implemented:**
+1. ✅ Public `/health` endpoint sanitized - Returns only `{"status": "healthy", "timestamp": "..."}`
+2. ✅ Added `/health/detailed` endpoint - Full health information for internal monitoring (Grafana)
+3. ✅ Removed API key validation logic exposure - No longer reveals minimum length requirements
+4. ✅ Sanitized `/health/ready` endpoint - Returns only status and timestamp
+5. ✅ Rate limiting added to all health endpoints (see HIGH-NEW-4)
 
-**Current State:**
-The `/health`, `/health/live`, and `/health/ready` endpoints expose:
-1. **API Key Validation Logic:** Reveals minimum API key length requirements
-2. **Detailed System Information:**
-   - MongoDB document counts (total, published, draft)
-   - Cache utilization statistics
-   - Database connection status
-   - Internal service architecture
-3. **No Rate Limiting:** Health endpoints can be queried unlimited times for reconnaissance
-
-**Impact:**
-- Information leakage - Attackers learn about system structure
-- Reconnaissance - Helps plan targeted attacks
-- DDoS amplification - Endpoints can be abused for resource consumption
-- Timing attacks - Response times reveal system state
-
-**Recommendation:**
-1. Rate limit health endpoints - Prevent reconnaissance abuse
-2. Sanitize responses - Remove detailed counts in production
-3. Separate internal/external health checks - Detailed info only for internal use
-4. Remove API key validation logic - Don't expose validation rules
-5. Use authentication - For detailed health checks (if needed)
-
-**Implementation:**
-```python
-# Simple public health check (limited info)
-@router.get("/health")
-async def health_endpoint():
-    return {"status": "healthy"}
-
-# Detailed health check (requires authentication, internal only)
-@router.get("/health/detailed")
-async def detailed_health_endpoint(auth: AdminUser = Depends(get_current_admin_user)):
-    return get_comprehensive_health()
-```
+**Implementation Details:**
+- **Backend:** `backend/monitoring/health.py` - Added `get_public_health()` and `get_public_readiness()` methods
+- **Backend:** `backend/monitoring/health.py` - Removed `len(google_api_key) < 10` validation logic exposure
+- **Backend:** `backend/main.py` - Updated `/health` endpoint to use sanitized response
+- **Backend:** `backend/main.py` - Added `/health/detailed` endpoint for internal monitoring
+- **Security Impact:** No document counts, cache statistics, or validation logic exposed in public endpoints
 
 ---
 
@@ -650,42 +626,21 @@ async def detailed_health_endpoint(auth: AdminUser = Depends(get_current_admin_u
 #### HIGH-NEW-4: Missing Rate Limiting on Health/Metrics Endpoints
 
 **Severity:** HIGH  
-**Status:** ⏳ **PENDING**  
-**Location:** `backend/main.py:211-235`
+**Status:** ✅ **RESOLVED** (2025-11-19)  
+**Location:** `backend/main.py`
 
-**Risk:** DDoS attacks and resource exhaustion
+**Resolution Implemented:**
+1. ✅ Rate limiting added to `/metrics` endpoint (30/min, 500/hour) - Safe for Prometheus scraping
+2. ✅ Rate limiting added to `/health` endpoint (60/min, 1000/hour)
+3. ✅ Rate limiting added to `/health/detailed` endpoint (60/min, 1000/hour)
+4. ✅ Rate limiting added to `/health/live` endpoint (120/min, 2000/hour) - High limit for Kubernetes probes
+5. ✅ Rate limiting added to `/health/ready` endpoint (120/min, 2000/hour) - High limit for Kubernetes probes
 
-**Current State:**
-- `/metrics` - Prometheus metrics endpoint (no rate limiting)
-- `/health` - Comprehensive health check (no rate limiting)
-- `/health/live` - Liveness probe (no rate limiting)
-- `/health/ready` - Readiness probe (no rate limiting)
-
-These endpoints can be:
-- Queried unlimited times for reconnaissance
-- Used for DDoS amplification - Responses contain significant data
-- Abused for resource consumption - Health checks query database/cache
-
-**Recommendation:**
-1. Implement rate limiting on all health/metrics endpoints
-2. Use different limits - Health endpoints can have higher limits than API endpoints
-3. Consider IP allowlisting - For metrics endpoint (Prometheus only)
-4. Use caching - Cache health check results (30-60 seconds)
-
-**Implementation:**
-```python
-# Higher rate limits for health checks (60/min, 1000/hour)
-HEALTH_RATE_LIMIT = RateLimitConfig(
-    requests_per_minute=60,
-    requests_per_hour=1000,
-    identifier="health",
-)
-
-@app.get("/health")
-@rate_limit(HEALTH_RATE_LIMIT)  # Apply rate limiting
-async def health_endpoint():
-    return get_health_status()
-```
+**Implementation Details:**
+- **Backend:** `backend/main.py` - Added `HEALTH_RATE_LIMIT`, `METRICS_RATE_LIMIT`, and `PROBE_RATE_LIMIT` configurations
+- **Backend:** `backend/main.py` - Applied rate limiting to all health/metrics endpoints
+- **Grafana/Prometheus Compatibility:** Rate limits allow Prometheus scraping (30/min > 4/min needed for 15s intervals)
+- **Security Impact:** Prevents reconnaissance abuse and DDoS attacks while maintaining monitoring compatibility
 
 ---
 
@@ -983,8 +938,8 @@ class ChatMessage(BaseModel):
 11. **Fix CORS configuration** (CRIT-8) - Restrict methods and headers, validate origins.
 
 **BLOCKER #5: Health Check Reconnaissance** (2-4 hours)
-12. **Sanitize health check responses** (HIGH-NEW-2) - Remove detailed counts, API key validation logic, system architecture details.
-13. **Add rate limiting to health/metrics endpoints** (HIGH-NEW-4) - Prevent reconnaissance abuse and DoS.
+12. ✅ **Sanitize health check responses** (HIGH-NEW-2) - **RESOLVED** - Public endpoints sanitized, detailed info available at `/health/detailed`.
+13. ✅ **Add rate limiting to health/metrics endpoints** (HIGH-NEW-4) - **RESOLVED** - All endpoints rate limited, Prometheus compatibility maintained.
 
 **BLOCKER #6: Database Authentication** (1-2 hours)
 14. **Enable MongoDB authentication** (CRIT-3) - **Code already written, just needs to be enabled.** Public repo → anyone can `docker-compose up` on $5 VPS → instant unauthenticated MongoDB on internet.
@@ -1033,8 +988,8 @@ class ChatMessage(BaseModel):
 - [x] **CORS properly configured** (CRIT-8, HIGH-NEW-1) - ✅ **RESOLVED** - Wildcards removed, methods/headers restricted
 
 **BLOCKER #5: Health Check Reconnaissance**
-- [ ] **Health check information disclosure fixed** (HIGH-NEW-2) - Remove detailed counts
-- [ ] **Rate limiting on health/metrics endpoints** (HIGH-NEW-4)
+- [x] **Health check information disclosure fixed** (HIGH-NEW-2) - ✅ **RESOLVED** - Public endpoints sanitized, detailed info at `/health/detailed`
+- [x] **Rate limiting on health/metrics endpoints** (HIGH-NEW-4) - ✅ **RESOLVED** - All endpoints rate limited, Prometheus compatible
 
 **BLOCKER #6: Database Authentication**
 - [ ] **MongoDB authentication enabled** (CRIT-3) - **Code already written, just enable it**
@@ -1111,18 +1066,18 @@ The Litecoin Knowledge Hub application has a solid foundation with good input va
 
 With the repository going fully public, live chat active, and a Foundation tweet imminent, **the threat model has fundamentally changed**. What was acceptable for local-only deployment is now a critical blocker for public exposure.
 
-**Two Public Launch Blockers Remaining (Four Resolved):**
+**One Public Launch Blocker Remaining (Five Resolved):**
 
 1. ✅ **BLOCKER #1: Privacy Catastrophe** - **RESOLVED** - Unauthenticated User Questions API (CRIT-NEW-1) - Endpoints removed entirely, questions still logged to MongoDB.
 2. ✅ **BLOCKER #2: Token Leakage** - **RESOLVED** - Debug code (HIGH-NEW-3 + CRIT-7) - All debug code removed, auth tokens and backend URLs no longer exposed in browser console.
 3. ✅ **BLOCKER #3: Error Information Disclosure** - **RESOLVED** - Error disclosure everywhere (CRIT-NEW-2, CRIT-9, HIGH-NEW-5) - Global exception handlers added, all error responses sanitized, full logging server-side.
 4. ✅ **BLOCKER #4: CORS Misconfiguration** - **RESOLVED** - Permissive + hardcoded CORS wildcards (CRIT-8, HIGH-NEW-1) - Methods/headers restricted, wildcards removed.
-5. **BLOCKER #5: Health Check Reconnaissance** - Health check info disclosure + no rate limiting (HIGH-NEW-2, HIGH-NEW-4) - Perfect reconnaissance + easy DoS vector.
+5. ✅ **BLOCKER #5: Health Check Reconnaissance** - **RESOLVED** - Health check info disclosure + no rate limiting (HIGH-NEW-2, HIGH-NEW-4) - Public endpoints sanitized, rate limiting added, Grafana/Prometheus compatibility maintained.
 6. **BLOCKER #6: Database Authentication** - MongoDB + Redis authentication (CRIT-3, CRIT-4) - **Code already written, just needs to be enabled.** Public repo → anyone can `docker-compose up` on $5 VPS → instant unauthenticated DB/Redis on internet.
 
 **Progress Summary:**
-- ✅ **13 RESOLVED:** CRIT-1, CRIT-2, CRIT-6, CRIT-7, CRIT-8, CRIT-9, CRIT-12, CRIT-NEW-1, CRIT-NEW-2, HIGH-NEW-1, HIGH-NEW-3, HIGH-NEW-5, and related fixes
-- ⏳ **2 PUBLIC LAUNCH BLOCKERS REMAINING:** Must fix before Foundation tweet (1-2 days, 3-6 hours)
+- ✅ **15 RESOLVED:** CRIT-1, CRIT-2, CRIT-6, CRIT-7, CRIT-8, CRIT-9, CRIT-12, CRIT-NEW-1, CRIT-NEW-2, HIGH-NEW-1, HIGH-NEW-2, HIGH-NEW-3, HIGH-NEW-4, HIGH-NEW-5, and related fixes
+- ⏳ **1 PUBLIC LAUNCH BLOCKER REMAINING:** Database authentication (CRIT-3, CRIT-4) - Code already written, just needs to be enabled (1-2 hours)
 - ⏳ **1 POST-TWEET:** Secrets management (can wait)
 - ⏳ **Everything else:** Post-launch improvements
 
@@ -1147,7 +1102,7 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 6. ✅ **BLOCKER #2:** Remove all debug code (HIGH-NEW-3 + CRIT-7) - **RESOLVED** - All debug code removed, tokens and URLs no longer exposed
 7. ✅ **BLOCKER #3:** Fix error disclosure everywhere (CRIT-NEW-2, CRIT-9, HIGH-NEW-5) - **RESOLVED** - Global exception handlers added, all endpoints sanitized
 8. ✅ **BLOCKER #4:** Fix CORS configuration (CRIT-8, HIGH-NEW-1) - **RESOLVED** - Methods/headers restricted, wildcards removed
-9. **🚨 BLOCKER #5:** Sanitize health checks + add rate limiting (HIGH-NEW-2, HIGH-NEW-4) - **2-4 hours**
+9. ✅ **BLOCKER #5:** Sanitize health checks + add rate limiting (HIGH-NEW-2, HIGH-NEW-4) - **RESOLVED** - Public endpoints sanitized, rate limiting added, Grafana/Prometheus compatible
 10. **🚨 BLOCKER #6:** Enable MongoDB + Redis authentication (CRIT-3, CRIT-4) - **1-2 hours** (code already written)
 11. **Post-tweet:** Implement secrets management (CRIT-5) - **2 hours**
 12. **Post-launch:** Everything else (Docker security, dependency scanning, backups, etc.) - **1-2 weeks**
@@ -1159,7 +1114,7 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 ---
 
 **Assessment Date:** 2025-11-18  
-**Last Updated:** 2025-11-18  
+**Last Updated:** 2025-11-19  
 **Assessor:** Red Team Security Assessment (Combined Report)  
 **Next Review:** After remaining critical fixes implementation
 

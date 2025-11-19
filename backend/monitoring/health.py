@@ -112,13 +112,8 @@ class HealthChecker:
                     "error": "GOOGLE_API_KEY not configured",
                 }
             
-            # Simple check - verify key is present and not empty
-            if len(google_api_key) < 10:  # Basic validation
-                return {
-                    "status": HealthStatus.DEGRADED,
-                    "error": "GOOGLE_API_KEY appears invalid",
-                }
-            
+            # Don't expose minimum length requirements or validation logic
+            # Just check if key exists
             return {
                 "status": HealthStatus.HEALTHY,
                 "api_key_configured": True,
@@ -225,6 +220,31 @@ class HealthChecker:
             "status": HealthStatus.HEALTHY.value if ready else HealthStatus.UNHEALTHY.value,
             "timestamp": datetime.utcnow().isoformat(),
             "ready": ready,
+        }
+    
+    def get_public_health(self) -> Dict[str, Any]:
+        """
+        Get sanitized public health status (no sensitive information).
+        For public access - does not expose document counts, cache stats, or validation logic.
+        """
+        comprehensive = self.get_comprehensive_health()
+        
+        # Return only status and timestamp - no internal details
+        return {
+            "status": comprehensive["status"],
+            "timestamp": comprehensive["timestamp"],
+        }
+    
+    def get_public_readiness(self) -> Dict[str, Any]:
+        """
+        Get sanitized readiness status (no sensitive information).
+        """
+        readiness = self.get_readiness()
+        
+        # Return only status and timestamp - no internal details
+        return {
+            "status": readiness["status"],
+            "timestamp": readiness["timestamp"],
         }
 
 

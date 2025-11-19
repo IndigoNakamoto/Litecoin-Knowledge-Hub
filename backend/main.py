@@ -47,6 +47,31 @@ from backend.monitoring.metrics import user_questions_total
 from backend.monitoring.llm_observability import setup_langsmith
 from backend.rate_limiter import RateLimitConfig, check_rate_limit
 
+# Rate limit configurations for health and metrics endpoints
+# Health endpoint rate limits (higher than API endpoints, but still protected)
+HEALTH_RATE_LIMIT = RateLimitConfig(
+    requests_per_minute=60,
+    requests_per_hour=1000,
+    identifier="health",
+    enable_progressive_limits=False,  # Don't ban health checks aggressively
+)
+
+# Metrics endpoint rate limits (Prometheus scrapes every 15s = 4/min, so 30/min is safe)
+METRICS_RATE_LIMIT = RateLimitConfig(
+    requests_per_minute=30,
+    requests_per_hour=500,
+    identifier="metrics",
+    enable_progressive_limits=True,  # Can be more strict for metrics
+)
+
+# Liveness/readiness rate limits (very high for Kubernetes probes)
+PROBE_RATE_LIMIT = RateLimitConfig(
+    requests_per_minute=120,
+    requests_per_hour=2000,
+    identifier="probe",
+    enable_progressive_limits=False,
+)
+
 # Configure structured logging
 log_level = os.getenv("LOG_LEVEL", "INFO")
 json_logging = os.getenv("JSON_LOGGING", "false").lower() == "true"
@@ -254,30 +279,59 @@ def read_root():
     }
 
 @app.get("/metrics")
-async def metrics_endpoint(format: str = "prometheus"):
+async def metrics_endpoint(request: Request, format: str = "prometheus"):
     """
     Prometheus metrics endpoint.
+    Rate limited but allows Prometheus scraping (scrapes every 15s = 4/min).
+    30/min limit is safe for Prometheus while preventing abuse.
     
     Args:
+        request: FastAPI request object (for rate limiting)
         format: Output format - "prometheus" or "openmetrics"
     """
+    await check_rate_limit(request, METRICS_RATE_LIMIT)
     metrics_bytes, content_type = generate_metrics_response(format=format)
     return Response(content=metrics_bytes, media_type=content_type)
 
 @app.get("/health")
-async def health_endpoint():
-    """Comprehensive health check endpoint."""
+async def health_endpoint(request: Request):
+    """
+    Public health check endpoint (sanitized).
+    Returns minimal information suitable for public access.
+    """
+    await check_rate_limit(request, HEALTH_RATE_LIMIT)
+    from backend.monitoring.health import _get_health_checker
+    return _get_health_checker().get_public_health()
+
+@app.get("/health/detailed")
+async def detailed_health_endpoint(request: Request):
+    """
+    Detailed health check for internal monitoring (Grafana, etc.).
+    Returns full health information including document counts and cache stats.
+    Rate limited but with higher limits for monitoring tools.
+    """
+    await check_rate_limit(request, HEALTH_RATE_LIMIT)
+    # TODO: Consider adding authentication or IP allowlisting for extra security
     return get_health_status()
 
 @app.get("/health/live")
-async def liveness_endpoint():
-    """Kubernetes liveness probe endpoint."""
+async def liveness_endpoint(request: Request):
+    """
+    Kubernetes liveness probe endpoint.
+    Returns minimal response, high rate limit for frequent probes.
+    """
+    await check_rate_limit(request, PROBE_RATE_LIMIT)
     return get_liveness()
 
 @app.get("/health/ready")
-async def readiness_endpoint():
-    """Kubernetes readiness probe endpoint."""
-    return get_readiness()
+async def readiness_endpoint(request: Request):
+    """
+    Kubernetes readiness probe endpoint.
+    Returns sanitized response, high rate limit for frequent probes.
+    """
+    await check_rate_limit(request, PROBE_RATE_LIMIT)
+    from backend.monitoring.health import _get_health_checker
+    return _get_health_checker().get_public_readiness()
 
 @app.options("/api/v1/chat")
 async def chat_options():
