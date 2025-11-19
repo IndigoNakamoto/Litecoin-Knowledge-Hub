@@ -12,9 +12,9 @@ This comprehensive red team assessment evaluates the Litecoin Knowledge Hub appl
 - **18 MEDIUM** priority recommendations (15 original + 3 additional)
 
 **Current Status Summary:**
-- ✅ **8 RESOLVED** (CRIT-1, CRIT-2, CRIT-6, CRIT-7, CRIT-12, CRIT-NEW-1, HIGH-NEW-3, and related fixes)
+- ✅ **11 RESOLVED** (CRIT-1, CRIT-2, CRIT-6, CRIT-7, CRIT-8, CRIT-9, CRIT-12, CRIT-NEW-1, CRIT-NEW-2, HIGH-NEW-1, HIGH-NEW-3, HIGH-NEW-5, and related fixes)
 - ⚠️ **2 ACCEPTED RISK** (CRIT-3, CRIT-4 - MongoDB/Redis authentication) - **NOW REQUIRES FIX FOR PUBLIC LAUNCH**
-- ⏳ **9 PENDING** (4 critical + 5 high priority)
+- ⏳ **6 PENDING** (3 critical + 3 high priority)
 
 ---
 
@@ -30,7 +30,7 @@ This comprehensive red team assessment evaluates the Litecoin Knowledge Hub appl
 |------|-------|-------------------|--------|--------|
 | **1** | **CRIT-NEW-1: Unauthenticated User Questions API** (`GET /api/v1/questions/` + `/stats`) | **Privacy catastrophe** - Every user question is publicly downloadable. Risk: "Litecoin AI leaks all user prompts" viral Twitter thread. | 2-4 hours | ✅ **RESOLVED** |
 | **2** | **HIGH-NEW-3 + CRIT-7: Debug code** (print/console.log, especially auth tokens in frontend) | Browser console leaks backend URLs + tokens + internal state. Script kiddie opens devtools → full reconnaissance. | 3-6 hours | ✅ **RESOLVED** |
-| **3** | **CRIT-NEW-2 + CRIT-9 + HIGH-NEW-5: Error information disclosure** (streaming, webhook, general) | 500 errors leak file paths, exception details, sometimes secrets. Information disclosure enables targeted attacks. | 4-8 hours | ⏳ PENDING |
+| **3** | **CRIT-NEW-2 + CRIT-9 + HIGH-NEW-5: Error information disclosure** (streaming, webhook, general) | 500 errors leak file paths, exception details, sometimes secrets. Information disclosure enables targeted attacks. | 4-8 hours | ✅ **RESOLVED** |
 | **4** | **CRIT-8 + HIGH-NEW-1: Permissive + hardcoded CORS wildcards** | Combined with public frontend, enables CSRF on future authenticated features + makes project look unprofessional. | 1-2 hours | ✅ **RESOLVED** |
 | **5** | **HIGH-NEW-2 + HIGH-NEW-4: Health check info disclosure + no rate limiting** | Public health endpoint leaks DB counts + cache stats. No rate limit = perfect reconnaissance + easy DoS vector. | 2-4 hours | ⏳ PENDING |
 | **6** | **CRIT-3 + CRIT-4: MongoDB + Redis authentication** | Repo is public → anyone can `docker-compose up` on $5 VPS and instantly have unauthenticated DB/Redis on internet. Happens constantly. **Code already written, just needs to be enabled.** | 1-2 hours | ⚠️ ACCEPTED RISK → **NOW REQUIRED** |
@@ -44,11 +44,11 @@ This comprehensive red team assessment evaluates the Litecoin Knowledge Hub appl
 
 ### Realistic "Safe-to-Tweet" Timeline
 
-**Do items 1-6 above = 2-4 days of focused work (20-30 hours max).**
+**Do items 5-6 above = 1-2 days of focused work (3-6 hours max).**
 
 After that, the bot is **public-hardened enough** that even a hostile Twitter thread can't do real damage.
 
-**Do only 1-3** and you risk the Foundation tweet turning into a security PR nightmare.
+**Do only 1-4** and you risk the Foundation tweet turning into a security PR nightmare.
 
 **Do all 6** → push → tell the Foundation "green for tweet".
 
@@ -68,12 +68,12 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 | CRIT-6 | Missing Security Headers | ✅ RESOLVED | - |
 | CRIT-7 | Test/Debug Endpoints in Production | ✅ **RESOLVED** | - |
 | CRIT-8 | Permissive CORS Configuration | ✅ **RESOLVED** | - |
-| CRIT-9 | Error Information Disclosure | ⏳ PENDING | **PUBLIC LAUNCH BLOCKER #3** |
+| CRIT-9 | Error Information Disclosure | ✅ **RESOLVED** | - |
 | CRIT-10 | Docker Security Issues | ⏳ PENDING | Short-term |
 | CRIT-11 | No Dependency Vulnerability Scanning | ⏳ PENDING | Short-term |
 | CRIT-12 | Insecure Rate Limiting Implementation | ✅ RESOLVED | - |
 | CRIT-NEW-1 | Unauthenticated User Questions API | ✅ **RESOLVED** | - |
-| CRIT-NEW-2 | Error Disclosure in Streaming Endpoint | ⏳ PENDING | **PUBLIC LAUNCH BLOCKER #3** |
+| CRIT-NEW-2 | Error Disclosure in Streaming Endpoint | ✅ **RESOLVED** | - |
 
 ### High Priority Issues Status
 
@@ -91,7 +91,7 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 | HIGH-NEW-2 | Health Check Information Disclosure | ⏳ PENDING | **PUBLIC LAUNCH BLOCKER #5** |
 | HIGH-NEW-3 | Debug Code in Production | ✅ **RESOLVED** | - |
 | HIGH-NEW-4 | Missing Rate Limiting on Health/Metrics | ⏳ PENDING | **PUBLIC LAUNCH BLOCKER #5** |
-| HIGH-NEW-5 | Webhook Error Information Disclosure | ⏳ PENDING | **PUBLIC LAUNCH BLOCKER #3** |
+| HIGH-NEW-5 | Webhook Error Information Disclosure | ✅ **RESOLVED** | - |
 
 ---
 
@@ -329,23 +329,24 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 #### CRIT-9: Error Information Disclosure
 
 **Severity:** HIGH  
-**Status:** ⏳ **PENDING**  
-**Location:** `backend/api/v1/sync/payload.py:295`, error handlers throughout backend
+**Status:** ✅ **RESOLVED** (2025-11-18)  
+**Location:** `backend/main.py`, error handlers throughout backend
 
-**Risk:** Internal system information leakage
+**Resolution Implemented:**
+1. ✅ Added global FastAPI exception handlers for comprehensive error sanitization:
+   - `RequestValidationError` handler - Sanitizes FastAPI request validation errors
+   - `ValidationError` handler - Sanitizes Pydantic model validation errors
+   - `HTTPException` handler - Ensures HTTP exceptions don't leak internal details
+   - `Exception` handler - Catch-all for unhandled exceptions
+2. ✅ All exception handlers log full error details server-side with `exc_info=True`
+3. ✅ All exception handlers return generic error messages to clients
+4. ✅ Added error handling wrapper to chat endpoint to prevent unhandled exceptions
+5. ✅ Error messages checked for internal details (file paths, stack traces) and sanitized
 
-**Current State:**
-- Stack traces may be exposed in error responses
-- Detailed error messages reveal system internals
-- Exception messages passed directly to HTTP responses in some cases
-
-**Recommendation:**
-1. Ensure all exceptions return generic error messages in production
-2. Log detailed errors server-side only
-3. Use FastAPI exception handlers to sanitize responses
-4. Set `NODE_ENV=production` to disable Next.js error pages
-
-**Note:** Also see CRIT-NEW-2 for specific error disclosure in streaming endpoint.
+**Implementation Details:**
+- **Backend:** `backend/main.py:171-205` - Global exception handlers added
+- **Backend:** `backend/main.py:308-369` - Chat endpoint error handling wrapper
+- **Security Impact:** No internal system details, file paths, or stack traces exposed to clients
 
 ---
 
@@ -378,50 +379,18 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 #### CRIT-NEW-2: Error Information Disclosure in Streaming Endpoint
 
 **Severity:** CRITICAL  
-**Status:** ⏳ **PENDING**  
-**Location:** `backend/main.py:408-415`
+**Status:** ✅ **RESOLVED** (2025-11-18)  
+**Location:** `backend/main.py:406-413`
 
-**Risk:** Internal system details exposed to attackers
+**Resolution Implemented:**
+1. ✅ Replaced `str(e)` with generic error message matching chat endpoint pattern
+2. ✅ Added `exc_info=True` to logger.error call for server-side debugging
+3. ✅ Standardized error handling pattern across all endpoints
 
-**Current State:**
-```python
-except Exception as e:
-    logger.error(f"Error in streaming response: {e}")
-    payload = {
-        "status": "error",
-        "error": str(e),  # ⚠️ Direct exception exposure
-        "isComplete": True
-    }
-    yield f"data: {json.dumps(payload)}\n\n"
-```
-
-The streaming endpoint (`/api/v1/chat/stream`) directly exposes exception messages to clients, which may include:
-- Database connection strings
-- File paths
-- Internal API errors
-- Stack trace information
-- System architecture details
-
-**Comparison:**
-- Chat endpoint (`/api/v1/chat`) properly sanitizes errors: `"I encountered an error while processing your query. Please try again or rephrase your question."`
-- Streaming endpoint does NOT sanitize errors
-
-**Recommendation:**
-1. **Immediate:** Replace `str(e)` with generic error message
-2. **Standardize:** Use same error handling pattern as chat endpoint
-3. **Logging:** Ensure full exception details are logged server-side only
-
-**Fix:**
-```python
-except Exception as e:
-    logger.error(f"Error in streaming response: {e}", exc_info=True)
-    payload = {
-        "status": "error",
-        "error": "An error occurred while processing your query. Please try again or rephrase your question.",
-        "isComplete": True
-    }
-    yield f"data: {json.dumps(payload)}\n\n"
-```
+**Implementation Details:**
+- **Backend:** `backend/main.py:406-413` - Streaming endpoint error handling updated
+- **Error Message:** "An error occurred while processing your query. Please try again or rephrase your question."
+- **Security Impact:** No internal system details, file paths, or exception messages exposed to clients
 
 ---
 
@@ -723,45 +692,19 @@ async def health_endpoint():
 #### HIGH-NEW-5: Webhook Error Information Disclosure
 
 **Severity:** HIGH  
-**Status:** ⏳ **PENDING**  
-**Location:** `backend/api/v1/sync/payload.py:332-337`
+**Status:** ✅ **RESOLVED** (2025-11-18)  
+**Location:** `backend/api/v1/sync/payload.py:332-343`
 
-**Risk:** Information leakage about webhook processing
+**Resolution Implemented:**
+1. ✅ Sanitized validation errors - Removed `e.errors()` details from response
+2. ✅ Sanitized exception messages - Replaced `str(e)` with generic error message
+3. ✅ Maintained full error logging server-side with `exc_info=True`
+4. ✅ Fixed webhook health check endpoint error disclosure (removed `str(e)` from response)
 
-**Current State:**
-```python
-except ValidationError as e:
-    logger.error(f"❌ Payload webhook validation error: {e.errors()}", exc_info=True)
-    raise HTTPException(status_code=422, detail={"error": "Validation failed", "details": e.errors()})
-except Exception as e:
-    logger.error(f"💥 Unexpected error in Payload webhook: {e}", exc_info=True)
-    raise HTTPException(status_code=500, detail={"error": "Internal server error", "message": str(e)})
-```
-
-The webhook endpoint exposes:
-- Validation error details - May reveal expected payload structure
-- Exception messages - Internal error details in production
-
-**Recommendation:**
-1. Sanitize validation errors - Don't expose field-level validation details
-2. Generic error messages - Use same pattern as other endpoints
-3. Log detailed errors server-side only
-
-**Fix:**
-```python
-except ValidationError as e:
-    logger.error(f"Payload webhook validation error: {e.errors()}", exc_info=True)
-    raise HTTPException(
-        status_code=422,
-        detail={"error": "Validation failed", "message": "Invalid webhook payload"}
-    )
-except Exception as e:
-    logger.error(f"Unexpected error in Payload webhook: {e}", exc_info=True)
-    raise HTTPException(
-        status_code=500,
-        detail={"error": "Internal server error", "message": "An error occurred processing the webhook"}
-    )
-```
+**Implementation Details:**
+- **Backend:** `backend/api/v1/sync/payload.py:332-343` - Webhook error handling sanitized
+- **Backend:** `backend/api/v1/sync/payload.py:383-389` - Health check error handling sanitized
+- **Security Impact:** No validation details or exception messages exposed to clients
 
 ---
 
@@ -1017,7 +960,7 @@ class ChatMessage(BaseModel):
 
 ### 🚨 PUBLIC LAUNCH BLOCKERS (Must Fix Before Foundation Tweet)
 
-**Timeline: 2-4 days of focused work (20-30 hours)**
+**Timeline: 1-2 days of focused work (3-6 hours)**
 
 1. ✅ **Implement webhook authentication** - Add HMAC signature verification for Payload CMS webhooks **[COMPLETED]**
 2. ✅ **Remove unused Sources API** - Removed unused Sources API endpoints that were publicly accessible **[COMPLETED]**
@@ -1031,9 +974,9 @@ class ChatMessage(BaseModel):
 6. ✅ **Remove all debug code** (HIGH-NEW-3 + CRIT-7) - **RESOLVED** - All debug print statements and console.log removed. Auth tokens and backend URLs no longer exposed.
 
 **BLOCKER #3: Error Information Disclosure** (4-8 hours)
-7. **Fix error disclosure in streaming endpoint** (CRIT-NEW-2) - 500 errors leak file paths, exception details, sometimes secrets.
-8. **Error sanitization everywhere** (CRIT-9) - Ensure no stack traces or internal errors leak to clients.
-9. **Sanitize webhook error messages** (HIGH-NEW-5) - Don't expose validation details or exception messages.
+7. ✅ **Fix error disclosure in streaming endpoint** (CRIT-NEW-2) - **RESOLVED** - Replaced `str(e)` with generic error message, added `exc_info=True` for server-side logging.
+8. ✅ **Error sanitization everywhere** (CRIT-9) - **RESOLVED** - Added global FastAPI exception handlers (RequestValidationError, ValidationError, HTTPException, Exception), sanitized all error responses.
+9. ✅ **Sanitize webhook error messages** (HIGH-NEW-5) - **RESOLVED** - Removed validation error details and exception messages from responses, fixed health check error disclosure.
 
 **BLOCKER #4: CORS Misconfiguration** (1-2 hours)
 10. **Remove hardcoded CORS wildcard** (HIGH-NEW-1) - Streaming endpoint bypasses CORS middleware.
@@ -1083,8 +1026,8 @@ class ChatMessage(BaseModel):
 - [x] **Debug code removed** (CRIT-7, HIGH-NEW-3) - ✅ **RESOLVED** - All debug code removed, tokens and URLs no longer exposed
 
 **BLOCKER #3: Error Information Disclosure**
-- [ ] **Error disclosure in streaming endpoint fixed** (CRIT-NEW-2)
-- [ ] **Error handling sanitized everywhere** (CRIT-9, HIGH-NEW-5)
+- [x] **Error disclosure in streaming endpoint fixed** (CRIT-NEW-2) - ✅ **RESOLVED** - Generic error messages, full logging server-side
+- [x] **Error handling sanitized everywhere** (CRIT-9, HIGH-NEW-5) - ✅ **RESOLVED** - Global exception handlers added, all endpoints sanitized
 
 **BLOCKER #4: CORS Misconfiguration**
 - [x] **CORS properly configured** (CRIT-8, HIGH-NEW-1) - ✅ **RESOLVED** - Wildcards removed, methods/headers restricted
@@ -1168,30 +1111,30 @@ The Litecoin Knowledge Hub application has a solid foundation with good input va
 
 With the repository going fully public, live chat active, and a Foundation tweet imminent, **the threat model has fundamentally changed**. What was acceptable for local-only deployment is now a critical blocker for public exposure.
 
-**Four Public Launch Blockers Remaining (Two Resolved):**
+**Two Public Launch Blockers Remaining (Four Resolved):**
 
 1. ✅ **BLOCKER #1: Privacy Catastrophe** - **RESOLVED** - Unauthenticated User Questions API (CRIT-NEW-1) - Endpoints removed entirely, questions still logged to MongoDB.
 2. ✅ **BLOCKER #2: Token Leakage** - **RESOLVED** - Debug code (HIGH-NEW-3 + CRIT-7) - All debug code removed, auth tokens and backend URLs no longer exposed in browser console.
-3. **BLOCKER #3: Error Information Disclosure** - Error disclosure everywhere (CRIT-NEW-2, CRIT-9, HIGH-NEW-5) - 500 errors leak file paths, exception details, sometimes secrets.
-4. **BLOCKER #4: CORS Misconfiguration** - Permissive + hardcoded CORS wildcards (CRIT-8, HIGH-NEW-1) - Enables CSRF on future authenticated features.
+3. ✅ **BLOCKER #3: Error Information Disclosure** - **RESOLVED** - Error disclosure everywhere (CRIT-NEW-2, CRIT-9, HIGH-NEW-5) - Global exception handlers added, all error responses sanitized, full logging server-side.
+4. ✅ **BLOCKER #4: CORS Misconfiguration** - **RESOLVED** - Permissive + hardcoded CORS wildcards (CRIT-8, HIGH-NEW-1) - Methods/headers restricted, wildcards removed.
 5. **BLOCKER #5: Health Check Reconnaissance** - Health check info disclosure + no rate limiting (HIGH-NEW-2, HIGH-NEW-4) - Perfect reconnaissance + easy DoS vector.
 6. **BLOCKER #6: Database Authentication** - MongoDB + Redis authentication (CRIT-3, CRIT-4) - **Code already written, just needs to be enabled.** Public repo → anyone can `docker-compose up` on $5 VPS → instant unauthenticated DB/Redis on internet.
 
 **Progress Summary:**
-- ✅ **10 RESOLVED:** CRIT-1, CRIT-2, CRIT-6, CRIT-7, CRIT-8, CRIT-12, CRIT-NEW-1, HIGH-NEW-1, HIGH-NEW-3, and related fixes
-- ⏳ **3 PUBLIC LAUNCH BLOCKERS REMAINING:** Must fix before Foundation tweet (1-2 days, 8-15 hours)
+- ✅ **13 RESOLVED:** CRIT-1, CRIT-2, CRIT-6, CRIT-7, CRIT-8, CRIT-9, CRIT-12, CRIT-NEW-1, CRIT-NEW-2, HIGH-NEW-1, HIGH-NEW-3, HIGH-NEW-5, and related fixes
+- ⏳ **2 PUBLIC LAUNCH BLOCKERS REMAINING:** Must fix before Foundation tweet (1-2 days, 3-6 hours)
 - ⏳ **1 POST-TWEET:** Secrets management (can wait)
 - ⏳ **Everything else:** Post-launch improvements
 
 **Realistic "Safe-to-Tweet" Timeline:**
 
-**Do items 3, 5, and 6 above = 1-2 days of focused work (8-15 hours max).**
+**Do items 5 and 6 above = 1-2 days of focused work (3-6 hours max).**
 
 After that, the bot is **public-hardened enough** that even a hostile Twitter thread can't do real damage.
 
-**Do only 2-3** and you risk the Foundation tweet turning into a security PR nightmare.
+**Do only 1-4** and you risk the Foundation tweet turning into a security PR nightmare.
 
-**Do all 3 remaining blockers** → push → tell the Foundation "green for tweet".
+**Do all 6 blockers** → push → tell the Foundation "green for tweet".
 
 **You are one short sprint (literally the same length as your original 3-week build) away from having the cleanest, most bulletproof open-source RAG agent in crypto.**
 
@@ -1202,14 +1145,14 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 4. ✅ ~~Implement security headers~~ **[COMPLETED - comprehensive security headers and CSP]**
 5. ✅ **BLOCKER #1:** Remove User Questions API endpoints (CRIT-NEW-1) - **RESOLVED** - Endpoints removed, questions still logged
 6. ✅ **BLOCKER #2:** Remove all debug code (HIGH-NEW-3 + CRIT-7) - **RESOLVED** - All debug code removed, tokens and URLs no longer exposed
-7. **🚨 BLOCKER #3:** Fix error disclosure everywhere (CRIT-NEW-2, CRIT-9, HIGH-NEW-5) - **4-8 hours**
+7. ✅ **BLOCKER #3:** Fix error disclosure everywhere (CRIT-NEW-2, CRIT-9, HIGH-NEW-5) - **RESOLVED** - Global exception handlers added, all endpoints sanitized
 8. ✅ **BLOCKER #4:** Fix CORS configuration (CRIT-8, HIGH-NEW-1) - **RESOLVED** - Methods/headers restricted, wildcards removed
 9. **🚨 BLOCKER #5:** Sanitize health checks + add rate limiting (HIGH-NEW-2, HIGH-NEW-4) - **2-4 hours**
 10. **🚨 BLOCKER #6:** Enable MongoDB + Redis authentication (CRIT-3, CRIT-4) - **1-2 hours** (code already written)
 11. **Post-tweet:** Implement secrets management (CRIT-5) - **2 hours**
 12. **Post-launch:** Everything else (Docker security, dependency scanning, backups, etc.) - **1-2 weeks**
 
-**Knock out the three remaining blockers above → push → tell the Foundation "green for tweet".**
+**Knock out the two remaining blockers above → push → tell the Foundation "green for tweet".**
 
 **You've already done the hard 95%. This is the last 5% that decides whether the project is remembered as "legendary" or "that Litecoin bot that leaked everything".**
 
@@ -1236,4 +1179,7 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 - **2025-11-18:** HIGH-NEW-3 (Debug Code in Production) - **RESOLVED** - All debug code removed, sensitive data (auth tokens, backend URLs) no longer exposed in browser console
 - **2025-11-18:** CRIT-8 (Permissive CORS Configuration) - **RESOLVED** - Methods restricted to GET/POST/OPTIONS, headers restricted to Content-Type/Authorization/Cache-Control, CORS middleware properly configured
 - **2025-11-18:** HIGH-NEW-1 (Hardcoded CORS Wildcard in Streaming Endpoint) - **RESOLVED** - Removed hardcoded CORS headers from streaming endpoint, middleware now handles all CORS headers consistently
+- **2025-11-18:** CRIT-NEW-2 (Error Disclosure in Streaming Endpoint) - **RESOLVED** - Replaced `str(e)` with generic error message, added `exc_info=True` for server-side logging
+- **2025-11-18:** CRIT-9 (Error Information Disclosure) - **RESOLVED** - Added global FastAPI exception handlers (RequestValidationError, ValidationError, HTTPException, Exception), sanitized all error responses, added error handling wrapper to chat endpoint
+- **2025-11-18:** HIGH-NEW-5 (Webhook Error Information Disclosure) - **RESOLVED** - Sanitized validation errors and exception messages in webhook endpoint, fixed health check error disclosure
 

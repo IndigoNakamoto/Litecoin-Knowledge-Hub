@@ -8,9 +8,10 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, BackgroundTasks, Request
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field # Re-add BaseModel and Field
+from fastapi import FastAPI, BackgroundTasks, Request, HTTPException
+from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, Field, ValidationError # Re-add BaseModel and Field
 from typing import List, Dict, Any, Tuple
 import asyncio
 from contextlib import asynccontextmanager
@@ -167,6 +168,52 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization", "Cache-Control"],  # Only required headers
 )
 
+# Global exception handlers for error sanitization
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle FastAPI request validation errors with sanitized responses."""
+    logger.error(f"Request validation error: {exc.errors()}", exc_info=True)
+    return JSONResponse(
+        status_code=422,
+        content={"error": "Validation failed", "message": "Invalid request data. Please check your input and try again."}
+    )
+
+@app.exception_handler(ValidationError)
+async def validation_exception_handler(request: Request, exc: ValidationError):
+    """Handle Pydantic validation errors with sanitized responses."""
+    logger.error(f"Validation error: {exc.errors()}", exc_info=True)
+    return JSONResponse(
+        status_code=422,
+        content={"error": "Validation failed", "message": "Invalid request data. Please check your input and try again."}
+    )
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Handle HTTP exceptions - ensure detail is properly formatted and sanitized."""
+    # If detail is already a dict with sanitized message, use it
+    if isinstance(exc.detail, dict):
+        # Check if it contains internal error details that need sanitization
+        detail = exc.detail.copy()
+        if "message" in detail and isinstance(detail["message"], str):
+            # Check if message contains internal details (file paths, stack traces, etc.)
+            if any(indicator in detail["message"] for indicator in ["/", "\\", "Traceback", "File", "line"]):
+                detail["message"] = "An error occurred while processing your request. Please try again."
+        return JSONResponse(status_code=exc.status_code, content=detail)
+    # If detail is a string, wrap it in a sanitized format
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": "Request failed", "message": "An error occurred while processing your request. Please try again."}
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Catch-all exception handler for unhandled exceptions."""
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal server error", "message": "An error occurred while processing your request. Please try again."}
+    )
+
 # Initialize RAGPipeline globally or as a dependency
 # For simplicity, initializing globally for now. Consider dependency injection for better testability.
 rag_pipeline_instance = RAGPipeline()
@@ -278,46 +325,58 @@ async def chat_endpoint(request: ChatRequest, background_tasks: BackgroundTasks,
     # Rate limiting
     await check_rate_limit(http_request, CHAT_RATE_LIMIT)
 
-    # Log the user question in the background
-    background_tasks.add_task(
-        log_user_question,
-        question=request.query,
-        chat_history_length=len(request.chat_history),
-        endpoint_type="chat"
-    )
-    
-    # Convert ChatMessage list to the (human_message, ai_message) tuple format expected by RAGPipeline
-    # The frontend now sends only complete exchanges, so we can simply pair consecutive human-AI messages
+    try:
+        # Log the user question in the background
+        background_tasks.add_task(
+            log_user_question,
+            question=request.query,
+            chat_history_length=len(request.chat_history),
+            endpoint_type="chat"
+        )
+        
+        # Convert ChatMessage list to the (human_message, ai_message) tuple format expected by RAGPipeline
+        # The frontend now sends only complete exchanges, so we can simply pair consecutive human-AI messages
 
-    paired_chat_history: List[Tuple[str, str]] = []
-    i = 0
-    while i < len(request.chat_history) - 1:  # Ensure we have pairs to process
-        human_msg = request.chat_history[i]
-        ai_msg = request.chat_history[i + 1]
+        paired_chat_history: List[Tuple[str, str]] = []
+        i = 0
+        while i < len(request.chat_history) - 1:  # Ensure we have pairs to process
+            human_msg = request.chat_history[i]
+            ai_msg = request.chat_history[i + 1]
 
-        if human_msg.role == "human" and ai_msg.role == "ai":
-            paired_chat_history.append((human_msg.content, ai_msg.content))
-            i += 2
-        else:
-            # Skip malformed pairs and continue
-            logger.warning(f"Skipping malformed chat history pair at index {i}")
-            i += 1
-            
-    # Use the globally initialized RAG pipeline instance with async processing
-    answer, sources = await rag_pipeline_instance.aquery(request.query, paired_chat_history)
-    
-    # Transform Langchain Document objects to our Pydantic SourceDocument model
-    # Additional filtering to ensure only published documents are returned (backup to RAG pipeline filtering)
-    source_documents = [
-        SourceDocument(page_content=doc.page_content, metadata=doc.metadata)
-        for doc in sources
-        if doc.metadata.get('status') == 'published'
-    ]
-    
-    return ChatResponse(
-        answer=answer,
-        sources=source_documents
-    )
+            if human_msg.role == "human" and ai_msg.role == "ai":
+                paired_chat_history.append((human_msg.content, ai_msg.content))
+                i += 2
+            else:
+                # Skip malformed pairs and continue
+                logger.warning(f"Skipping malformed chat history pair at index {i}")
+                i += 1
+                
+        # Use the globally initialized RAG pipeline instance with async processing
+        answer, sources = await rag_pipeline_instance.aquery(request.query, paired_chat_history)
+        
+        # Transform Langchain Document objects to our Pydantic SourceDocument model
+        # Additional filtering to ensure only published documents are returned (backup to RAG pipeline filtering)
+        source_documents = [
+            SourceDocument(page_content=doc.page_content, metadata=doc.metadata)
+            for doc in sources
+            if doc.metadata.get('status') == 'published'
+        ]
+        
+        return ChatResponse(
+            answer=answer,
+            sources=source_documents
+        )
+    except HTTPException:
+        # Re-raise HTTP exceptions (rate limiting, etc.) - they're already properly formatted
+        raise
+    except Exception as e:
+        # Log full error details server-side
+        logger.error(f"Error in chat endpoint: {e}", exc_info=True)
+        # Raise HTTPException which will be handled by global exception handler
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Internal server error", "message": "An error occurred while processing your query. Please try again or rephrase your question."}
+        )
 
 STREAM_RATE_LIMIT = RateLimitConfig(
     requests_per_minute=int(os.getenv("RATE_LIMIT_PER_MINUTE", "60")),
@@ -404,10 +463,10 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
                     break
 
         except Exception as e:
-            logger.error(f"Error in streaming response: {e}")
+            logger.error(f"Error in streaming response: {e}", exc_info=True)
             payload = {
                 "status": "error",
-                "error": str(e),
+                "error": "An error occurred while processing your query. Please try again or rephrase your question.",
                 "isComplete": True
             }
             yield f"data: {json.dumps(payload)}\n\n"

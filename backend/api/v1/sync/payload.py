@@ -331,10 +331,16 @@ async def receive_payload_webhook(request: Request, background_tasks: Background
             return {"status": "processing_triggered", "message": msg, "document_id": payload_doc.id}
     except ValidationError as e:
         logger.error(f"❌ Payload webhook validation error: {e.errors()}", exc_info=True)
-        raise HTTPException(status_code=422, detail={"error": "Validation failed", "details": e.errors()})
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "Validation failed", "message": "Invalid webhook payload"}
+        )
     except Exception as e:
         logger.error(f"💥 Unexpected error in Payload webhook: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail={"error": "Internal server error", "message": str(e)})
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Internal server error", "message": "An error occurred processing the webhook"}
+        )
 
 
 @router.get("/health")
@@ -379,7 +385,6 @@ async def webhook_health_check():
         return {
             "status": "unhealthy",
             "timestamp": datetime.utcnow().isoformat(),
-            "error": str(e),
             "message": "Webhook service has issues"
         }
 
