@@ -14,6 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, ValidationError # Re-add BaseModel and Field
 from typing import List, Dict, Any, Tuple
 import asyncio
+import time
 from contextlib import asynccontextmanager
 
 # Load environment variables from .env file
@@ -130,6 +131,19 @@ async def lifespan(app: FastAPI):
     # Startup: Start background task for metrics updates
     metrics_task = asyncio.create_task(update_metrics_periodically())
     logger.info("Started background metrics update task")
+    
+    # Startup: Refresh suggested question cache in background (non-blocking)
+    async def refresh_cache_background():
+        try:
+            logger.info("Starting background suggested question cache refresh...")
+            result = await refresh_suggested_question_cache()
+            logger.info(f"Background cache refresh completed: {result}")
+        except Exception as e:
+            logger.error(f"Error in background cache refresh: {e}", exc_info=True)
+    
+    cache_refresh_task = asyncio.create_task(refresh_cache_background())
+    logger.info("Started background suggested question cache refresh task")
+    
     yield
     # Shutdown: Cancel the background task
     metrics_task.cancel()
@@ -260,6 +274,117 @@ except (ImportError, AttributeError) as e:
 
 # Include API routers
 app.include_router(payload_sync_router, prefix="/api/v1/sync", tags=["Payload Sync"])
+
+# Import cache utilities and suggested questions utility
+from backend.cache_utils import suggested_question_cache
+from backend.utils.suggested_questions import fetch_suggested_questions
+from backend.monitoring.metrics import (
+    suggested_question_cache_refresh_duration_seconds,
+    suggested_question_cache_refresh_errors_total,
+    suggested_question_cache_size,
+    suggested_question_cache_hits_total,
+    suggested_question_cache_misses_total,
+    suggested_question_cache_lookup_duration_seconds,
+)
+
+async def refresh_suggested_question_cache():
+    """
+    Refresh the suggested question cache by pre-generating responses for all active questions.
+    This function fetches active questions from Payload CMS and generates responses via RAG pipeline.
+    """
+    start_time = time.time()
+    cached_count = 0
+    skipped_count = 0
+    error_count = 0
+    
+    try:
+        logger.info("Starting suggested question cache refresh...")
+        
+        # Fetch active questions from Payload CMS
+        questions = await fetch_suggested_questions(active_only=True)
+        total_questions = len(questions)
+        
+        if total_questions == 0:
+            logger.warning("No active suggested questions found in Payload CMS")
+            return {
+                "status": "success",
+                "cached": 0,
+                "skipped": 0,
+                "errors": 0,
+                "total": 0,
+                "duration_seconds": time.time() - start_time
+            }
+        
+        logger.info(f"Fetched {total_questions} active suggested questions from Payload CMS")
+        
+        # Process each question
+        for question_data in questions:
+            question_text = question_data.get("question", "").strip()
+            if not question_text:
+                logger.warning(f"Skipping question with empty text (ID: {question_data.get('id', 'unknown')})")
+                skipped_count += 1
+                continue
+            
+            try:
+                # Check if already cached
+                is_cached = await suggested_question_cache.is_cached(question_text)
+                if is_cached:
+                    logger.debug(f"Question already cached, skipping: {question_text[:50]}...")
+                    skipped_count += 1
+                    continue
+                
+                # Generate response via RAG pipeline (empty chat history for suggested questions)
+                logger.info(f"Generating response for question: {question_text[:50]}...")
+                answer, sources = await rag_pipeline_instance.aquery(question_text, [])
+                
+                # Store in Suggested Question Cache
+                await suggested_question_cache.set(question_text, answer, sources)
+                cached_count += 1
+                logger.debug(f"Cached response for question: {question_text[:50]}...")
+                
+            except Exception as e:
+                error_count += 1
+                logger.error(f"Error processing question '{question_text[:50]}...': {e}", exc_info=True)
+                suggested_question_cache_refresh_errors_total.inc()
+        
+        # Update cache size metric
+        cache_size = await suggested_question_cache.get_cache_size()
+        suggested_question_cache_size.set(cache_size)
+        
+        duration = time.time() - start_time
+        suggested_question_cache_refresh_duration_seconds.observe(duration)
+        
+        logger.info(
+            f"Suggested question cache refresh complete. "
+            f"Cached: {cached_count}, Skipped: {skipped_count}, Errors: {error_count}, Total: {total_questions}, "
+            f"Duration: {duration:.2f}s"
+        )
+        
+        return {
+            "status": "success",
+            "cached": cached_count,
+            "skipped": skipped_count,
+            "errors": error_count,
+            "total": total_questions,
+            "duration_seconds": duration
+        }
+        
+    except Exception as e:
+        error_count += 1
+        duration = time.time() - start_time
+        logger.error(f"Error during suggested question cache refresh: {e}", exc_info=True)
+        suggested_question_cache_refresh_errors_total.inc()
+        suggested_question_cache_refresh_duration_seconds.observe(duration)
+        
+        return {
+            "status": "error",
+            "cached": cached_count,
+            "skipped": skipped_count,
+            "errors": error_count,
+            "total": 0,
+            "duration_seconds": duration,
+            "error": str(e)
+        }
 
 class SourceDocument(BaseModel):
     page_content: str
@@ -404,8 +529,38 @@ async def chat_endpoint(request: ChatRequest, background_tasks: BackgroundTasks,
                 # Skip malformed pairs and continue
                 logger.warning(f"Skipping malformed chat history pair at index {i}")
                 i += 1
+        
+        # Check Suggested Question Cache FIRST (for empty chat history)
+        if len(paired_chat_history) == 0:
+            lookup_start = time.time()
+            cached_result = await suggested_question_cache.get(request.query)
+            lookup_duration = time.time() - lookup_start
+            suggested_question_cache_lookup_duration_seconds.observe(lookup_duration)
+            
+            if cached_result:
+                # Cache hit - return immediately
+                logger.debug(f"Suggested Question Cache hit for: {request.query[:50]}...")
+                suggested_question_cache_hits_total.labels(cache_type="suggested_question").inc()
+                answer, sources = cached_result
+                
+                # Transform Langchain Document objects to our Pydantic SourceDocument model
+                source_documents = [
+                    SourceDocument(page_content=doc.page_content, metadata=doc.metadata)
+                    for doc in sources
+                    if doc.metadata.get('status') == 'published'
+                ]
+                
+                return ChatResponse(
+                    answer=answer,
+                    sources=source_documents
+                )
+            else:
+                # Cache miss - fall through to QueryCache → RAG pipeline
+                suggested_question_cache_misses_total.labels(cache_type="suggested_question").inc()
+                logger.debug(f"Suggested Question Cache miss for: {request.query[:50]}...")
                 
         # Use the globally initialized RAG pipeline instance with async processing
+        # This will check QueryCache internally, then run RAG pipeline if needed
         answer, sources = await rag_pipeline_instance.aquery(request.query, paired_chat_history)
         
         # Transform Langchain Document objects to our Pydantic SourceDocument model
@@ -481,8 +636,66 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
             }
             yield f"data: {json.dumps(payload)}\n\n"
 
-            # Get streaming response from RAG pipeline
+            # Check Suggested Question Cache FIRST (for empty chat history)
             from_cache = False
+            if len(paired_chat_history) == 0:
+                lookup_start = time.time()
+                cached_result = await suggested_question_cache.get(request.query)
+                lookup_duration = time.time() - lookup_start
+                suggested_question_cache_lookup_duration_seconds.observe(lookup_duration)
+                
+                if cached_result:
+                    # Cache hit - stream cached response
+                    logger.debug(f"Suggested Question Cache hit for: {request.query[:50]}...")
+                    suggested_question_cache_hits_total.labels(cache_type="suggested_question").inc()
+                    answer, sources = cached_result
+                    
+                    # Filter published sources
+                    published_sources = [
+                        doc for doc in sources
+                        if doc.metadata.get('status') == 'published'
+                    ]
+                    
+                    # Send sources first
+                    sources_json = jsonable_encoder([
+                        SourceDocument(page_content=doc.page_content, metadata=doc.metadata)
+                        for doc in published_sources
+                    ])
+                    payload = {
+                        "status": "sources",
+                        "sources": sources_json,
+                        "isComplete": False
+                    }
+                    yield f"data: {json.dumps(payload)}\n\n"
+                    
+                    # Stream cached response character by character for consistent UX
+                    for i, char in enumerate(answer):
+                        payload = {
+                            "status": "streaming",
+                            "chunk": char,
+                            "isComplete": False
+                        }
+                        yield f"data: {json.dumps(payload)}\n\n"
+                        # Small delay to control streaming speed
+                        if i % 10 == 0:  # Yield control every 10 characters
+                            await asyncio.sleep(0.001)
+                    
+                    # Signal completion with cache flag
+                    payload = {
+                        "status": "complete",
+                        "chunk": "",
+                        "isComplete": True,
+                        "fromCache": "suggested_question"
+                    }
+                    yield f"data: {json.dumps(payload)}\n\n"
+                    return
+                else:
+                    # Cache miss - fall through to QueryCache → RAG pipeline
+                    suggested_question_cache_misses_total.labels(cache_type="suggested_question").inc()
+                    logger.debug(f"Suggested Question Cache miss for: {request.query[:50]}...")
+
+            # Get streaming response from RAG pipeline
+            # This will check QueryCache internally, then run RAG pipeline if needed
             async for chunk_data in rag_pipeline_instance.astream_query(request.query, paired_chat_history):
                 if chunk_data["type"] == "chunk":
                     # Use proper JSON encoding for the chunk content
@@ -534,3 +747,81 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
             # CORS headers handled by middleware - removed hardcoded wildcards
         }
     )
+
+
+# Admin endpoint for cache refresh
+ADMIN_CACHE_REFRESH_RATE_LIMIT = RateLimitConfig(
+    requests_per_minute=5,
+    requests_per_hour=20,
+    identifier="admin_cache_refresh",
+)
+
+def verify_admin_token(authorization: str = None) -> bool:
+    """
+    Verify admin token from Authorization header.
+    
+    Args:
+        authorization: Authorization header value (e.g., "Bearer <token>")
+        
+    Returns:
+        True if token is valid, False otherwise
+    """
+    if not authorization:
+        return False
+    
+    # Extract token from "Bearer <token>" format
+    try:
+        scheme, token = authorization.split(" ", 1)
+        if scheme.lower() != "bearer":
+            return False
+    except ValueError:
+        return False
+    
+    # Get expected token from environment
+    expected_token = os.getenv("ADMIN_TOKEN")
+    if not expected_token:
+        logger.warning("ADMIN_TOKEN not set, admin endpoint authentication disabled")
+        return False
+    
+    # Use constant-time comparison to prevent timing attacks
+    import hmac
+    return hmac.compare_digest(token, expected_token)
+
+
+@app.post("/api/v1/admin/refresh-suggested-cache")
+async def refresh_suggested_cache_endpoint(request: Request):
+    """
+    Admin endpoint to manually refresh the suggested question cache.
+    
+    Requires Bearer token authentication via Authorization header.
+    Example: Authorization: Bearer <ADMIN_TOKEN>
+    
+    Returns:
+        JSON response with refresh statistics
+    """
+    # Rate limiting
+    await check_rate_limit(request, ADMIN_CACHE_REFRESH_RATE_LIMIT)
+    
+    # Get Authorization header
+    auth_header = request.headers.get("Authorization")
+    
+    # Verify authentication
+    if not verify_admin_token(auth_header):
+        logger.warning(
+            f"Unauthorized cache refresh attempt from IP: {request.client.host if request.client else 'unknown'}"
+        )
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "Unauthorized", "message": "Invalid or missing admin token"}
+        )
+    
+    # Refresh cache
+    try:
+        result = await refresh_suggested_question_cache()
+        return JSONResponse(content=result)
+    except Exception as e:
+        logger.error(f"Error refreshing suggested question cache: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Internal server error", "message": "Failed to refresh cache"}
+        )

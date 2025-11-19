@@ -1,0 +1,62 @@
+"""
+Utility functions for fetching suggested questions from Payload CMS.
+"""
+
+import os
+import logging
+from typing import List, Dict, Optional
+import httpx
+
+logger = logging.getLogger(__name__)
+
+
+async def fetch_suggested_questions(
+    payload_url: Optional[str] = None,
+    active_only: bool = True
+) -> List[Dict]:
+    """
+    Fetch suggested questions from Payload CMS.
+    
+    Args:
+        payload_url: Payload CMS URL (defaults to PAYLOAD_URL env var or https://cms.lite.space)
+        active_only: If True, only fetch active questions (isActive=true)
+        
+    Returns:
+        List of question dictionaries with id, question, order, isActive fields
+    """
+    if payload_url is None:
+        payload_url = os.getenv("PAYLOAD_URL", "https://cms.lite.space")
+    
+    # Build query parameters
+    query_params = {
+        "sort": "order",
+        "limit": "100"
+    }
+    
+    if active_only:
+        query_params["where"] = '{"isActive":{"equals":true}}'
+    
+    # Construct URL
+    url = f"{payload_url}/api/suggested-questions"
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url, params=query_params)
+            response.raise_for_status()
+            
+            data = response.json()
+            questions = data.get("docs", [])
+            
+            logger.info(f"Fetched {len(questions)} suggested questions from Payload CMS")
+            return questions
+            
+    except httpx.TimeoutException:
+        logger.error(f"Timeout fetching suggested questions from {url}")
+        return []
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP error fetching suggested questions: {e.response.status_code} - {e.response.text}")
+        return []
+    except Exception as e:
+        logger.error(f"Error fetching suggested questions from Payload CMS: {e}", exc_info=True)
+        return []
+
