@@ -68,6 +68,41 @@ rag_documents_retrieved_total = Histogram(
     buckets=[1, 5, 10, 15, 20, 25, 30],
 )
 
+# Suggested Question Cache Metrics
+suggested_question_cache_hits_total = Counter(
+    "suggested_question_cache_hits_total",
+    "Total number of suggested question cache hits",
+    ["cache_type"],
+)
+
+suggested_question_cache_misses_total = Counter(
+    "suggested_question_cache_misses_total",
+    "Total number of suggested question cache misses",
+    ["cache_type"],
+)
+
+suggested_question_cache_lookup_duration_seconds = Histogram(
+    "suggested_question_cache_lookup_duration_seconds",
+    "Suggested question cache lookup duration in seconds",
+    buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5],
+)
+
+suggested_question_cache_size = Gauge(
+    "suggested_question_cache_size",
+    "Number of cached suggested questions",
+)
+
+suggested_question_cache_refresh_duration_seconds = Histogram(
+    "suggested_question_cache_refresh_duration_seconds",
+    "Suggested question cache refresh duration in seconds",
+    buckets=[1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0],
+)
+
+suggested_question_cache_refresh_errors_total = Counter(
+    "suggested_question_cache_refresh_errors_total",
+    "Total number of errors during suggested question cache refresh",
+)
+
 # LLM Observability Metrics
 llm_requests_total = Counter(
     "llm_requests_total",
