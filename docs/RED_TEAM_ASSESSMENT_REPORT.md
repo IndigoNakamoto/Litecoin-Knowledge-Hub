@@ -6,6 +6,10 @@ This red team assessment evaluates the Litecoin Knowledge Hub application's secu
 
 **Overall Security Score: 6.5/10** - NOT READY FOR PRODUCTION (Improved from 4.5/10)
 
+**⚠️ IMPORTANT:** An additional security review has identified **2 additional CRITICAL vulnerabilities** and **5 additional HIGH-priority issues**. See `RED_TEAM_ASSESSMENT_ADDENDUM.md` for details.
+
+**Updated Overall Security Score: 5.5/10** - NOT READY FOR PRODUCTION (Adjusted down due to additional findings)
+
 **Update:** 
 - CRIT-1 (Unauthenticated Webhook Endpoint) has been **RESOLVED** with HMAC-SHA256 signature verification implementation.
 - CRIT-2 (Unauthenticated Sources API Endpoints) has been **RESOLVED** by removing unused endpoints.
@@ -935,3 +939,24 @@ The Litecoin Knowledge Hub application has a solid foundation with good input va
 - 2025-11-18: CRIT-12 (Insecure Rate Limiting Implementation) - **RESOLVED** - Implemented sliding window rate limiting using Redis sorted sets and progressive bans with exponential backoff
 
 **Next Review:** After remaining critical fixes implementation
+
+---
+
+## Additional Findings
+
+**IMPORTANT:** A comprehensive additional security review has been conducted and identified critical issues not covered in the original assessment. **Please review `RED_TEAM_ASSESSMENT_ADDENDUM.md`** for:
+
+- **2 additional CRITICAL vulnerabilities:**
+  - CRIT-NEW-1: Unauthenticated User Questions API endpoints
+  - CRIT-NEW-2: Error information disclosure in streaming endpoint
+
+- **5 additional HIGH-priority issues:**
+  - HIGH-NEW-1: Hardcoded CORS wildcard in streaming endpoint
+  - HIGH-NEW-2: Health check endpoint information disclosure
+  - HIGH-NEW-3: Debug code in production (print/console.log exposing tokens)
+  - HIGH-NEW-4: Missing rate limiting on health/metrics endpoints
+  - HIGH-NEW-5: Webhook error information disclosure
+
+- **3 additional MEDIUM-priority issues**
+
+**All additional findings must be addressed before production deployment.**
