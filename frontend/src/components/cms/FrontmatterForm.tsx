@@ -25,7 +25,6 @@ const FrontmatterForm = ({ onSubmit, defaultValues }: FrontmatterFormProps) => {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit((data) => {
-        console.log('FrontmatterForm onSubmit triggered with data:', data);
         onSubmit(data);
       })} className="space-y-8">
         <FormField

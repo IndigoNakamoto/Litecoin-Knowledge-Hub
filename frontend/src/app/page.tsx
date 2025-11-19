@@ -256,10 +256,8 @@ export default function Home() {
                   await processData(data);
                   if (shouldBreak) break;
                 } catch (parseError) {
-                  // Log the problematic JSON string for debugging
-                  const jsonStr = line.slice(6).trim();
+                  // Log parse error without exposing potentially sensitive data
                   console.error('Error parsing SSE data:', parseError);
-                  console.error('Problematic JSON string:', jsonStr.substring(0, 100));
                   // Continue processing other lines instead of breaking
                 }
               }
@@ -302,9 +300,7 @@ export default function Home() {
       // Function to attempt scrolling
       const attemptScroll = (retryCount = 0) => {
         const messageElement = document.getElementById(messageId);
-        console.log('Attempting scroll, retry:', retryCount, 'element found:', !!messageElement, 'messageId:', messageId);
         if (messageElement && chatWindowRef.current) {
-          console.log('Scrolling to element');
           chatWindowRef.current.scrollToElement(messageElement);
           // Don't clear the ref yet - we'll clear it after streaming message appears
           return true;

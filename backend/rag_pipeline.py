@@ -154,15 +154,15 @@ class RAGPipeline:
         
         if vector_store_manager:
             self.vector_store_manager = vector_store_manager
-            print(f"RAGPipeline using provided VectorStoreManager for collection: {vector_store_manager.collection_name}")
+            logger.info(f"RAGPipeline using provided VectorStoreManager for collection: {vector_store_manager.collection_name}")
         else:
             # Initialize VectorStoreManager with local embeddings
             self.vector_store_manager = VectorStoreManager(
                 db_name=self.db_name,
                 collection_name=self.collection_name
             )
-            print(f"RAGPipeline initialized with VectorStoreManager for collection: {self.collection_name} (MongoDB: {'available' if self.vector_store_manager.mongodb_available else 'unavailable'})")
-            print(f"📊 Chat history context limit: {MAX_CHAT_HISTORY_PAIRS} pairs (configure via MAX_CHAT_HISTORY_PAIRS env var)")
+            logger.info(f"RAGPipeline initialized with VectorStoreManager for collection: {self.collection_name} (MongoDB: {'available' if self.vector_store_manager.mongodb_available else 'unavailable'})")
+            logger.info(f"Chat history context limit: {MAX_CHAT_HISTORY_PAIRS} pairs (configure via MAX_CHAT_HISTORY_PAIRS env var)")
 
         # Initialize LLM with Google Flash 2.5
         self.llm = ChatGoogleGenerativeAI(
@@ -246,7 +246,7 @@ class RAGPipeline:
         
         # Keep only the most recent N pairs
         truncated = chat_history[-MAX_CHAT_HISTORY_PAIRS:]
-        print(f"⚠️ Chat history truncated from {len(chat_history)} to {len(truncated)} pairs (max: {MAX_CHAT_HISTORY_PAIRS})")
+        logger.warning(f"Chat history truncated from {len(chat_history)} to {len(truncated)} pairs (max: {MAX_CHAT_HISTORY_PAIRS})")
         return truncated
 
     def _build_prompt_text(self, query_text: str, context_text: str) -> str:
@@ -289,23 +289,21 @@ class RAGPipeline:
         This should be called after new documents are added to ensure queries use the latest content.
         """
         try:
-            print("🔄 Refreshing RAG pipeline vector store...")
+            logger.info("Refreshing RAG pipeline vector store...")
 
             # Reload the vector store from disk
             if hasattr(self, 'vector_store_manager') and self.vector_store_manager:
                 # Rebuild FAISS from MongoDB
                 self.vector_store_manager.vector_store = self.vector_store_manager._create_faiss_from_mongodb()
-                print("✅ Vector store reloaded from disk")
+                logger.info("Vector store reloaded from disk")
 
             # Recreate the RAG chain with the updated vector store
             self._setup_rag_chain()
             self._setup_async_rag_chain()
-            print("🎯 RAG pipeline refreshed successfully")
+            logger.info("RAG pipeline refreshed successfully")
 
         except Exception as e:
-            print(f"❌ Error refreshing vector store: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Error refreshing vector store: {e}", exc_info=True)
 
     def query(self, query_text: str, chat_history: List[Tuple[str, str]]) -> Tuple[str, List[Document]]:
         """
@@ -340,7 +338,7 @@ class RAGPipeline:
         # Check cache first (using truncated history for cache key)
         cached_result = query_cache.get(query_text, truncated_history)
         if cached_result:
-            print(f"🔍 Cache hit for query: '{query_text}'")
+            logger.debug(f"Cache hit for query: '{query_text}'")
             if MONITORING_ENABLED:
                 rag_cache_hits_total.labels(cache_type="query").inc()
                 rag_query_duration_seconds.labels(
@@ -482,7 +480,7 @@ class RAGPipeline:
         # Check cache first (using truncated history for cache key)
         cached_result = query_cache.get(query_text, truncated_history)
         if cached_result:
-            print(f"🔍 Cache hit for query: '{query_text}'")
+            logger.debug(f"Cache hit for query: '{query_text}'")
             if MONITORING_ENABLED:
                 rag_cache_hits_total.labels(cache_type="query").inc()
                 rag_query_duration_seconds.labels(
@@ -633,7 +631,7 @@ class RAGPipeline:
             # Check cache first (using truncated history for cache key)
             cached_result = query_cache.get(query_text, truncated_history)
             if cached_result:
-                print(f"🔍 Cache hit for query: '{query_text}'")
+                logger.debug(f"Cache hit for query: '{query_text}'")
                 cached_answer, cached_sources = cached_result
                 
                 # Track cache hit metrics

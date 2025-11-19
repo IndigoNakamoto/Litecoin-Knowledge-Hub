@@ -11,9 +11,6 @@ const ArticleEditor = () => {
   const { token } = useAuthContext();
 
   const handleFormSubmit = async (data: ArticleFormData) => {
-    console.log('Attempting to save article...');
-    console.log('Auth Token:', token);
-
     if (!token) {
       console.error('Authentication token is missing. Cannot save article.');
       alert('You must be logged in to create an article.');
@@ -25,9 +22,7 @@ const ArticleEditor = () => {
       content_markdown: content,
     };
     
-    console.log('Article Data:', articleData);
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
-    console.log('Backend URL:', backendUrl);
 
     try {
       const response = await fetch(`${backendUrl}/api/v1/articles`, {
@@ -40,7 +35,6 @@ const ArticleEditor = () => {
       });
 
       if (response.ok) {
-        console.log('Article saved successfully');
         alert('Article saved successfully!');
         // Optionally, redirect or clear the form
       } else {

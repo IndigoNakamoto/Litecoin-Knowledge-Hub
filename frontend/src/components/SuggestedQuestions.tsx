@@ -102,9 +102,7 @@ const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({ onQuestionClick
           }
           console.error("API Error:", {
             status: activeResponse.status,
-            statusText: activeResponse.statusText,
-            url: activeResponse.url,
-            error: errorText
+            statusText: activeResponse.statusText
           });
           throw new Error(errorMessage);
         }

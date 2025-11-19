@@ -49,20 +49,6 @@ const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(
             const maxScroll = container.scrollHeight - container.clientHeight;
             const clampedScroll = Math.min(Math.max(0, targetScroll), maxScroll);
             
-            console.log('scrollToElement - performing scroll:', {
-              elementTop: elementRect.top,
-              containerTop: containerRect.top,
-              paddingTop,
-              elementOffsetFromContainerTop,
-              currentScrollTop: container.scrollTop,
-              absoluteElementPosition,
-              targetScroll,
-              clampedScroll,
-              scrollHeight: container.scrollHeight,
-              clientHeight: container.clientHeight,
-              maxScroll
-            });
-            
             // Set flag to prevent scroll handler from interfering
             isProgrammaticScrollRef.current = true;
             
@@ -79,17 +65,13 @@ const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(
               const finalOffset = newElementRect.top - newContainerRect.top;
               const offsetFromTarget = Math.abs(finalOffset - paddingTop);
               
-              console.log('After scroll, scrollTop:', actualScrollTop, 'expected:', clampedScroll, 'elementOffsetFromTop:', finalOffset, 'paddingTop:', paddingTop, 'offsetFromTarget:', offsetFromTarget);
-              
               // If element is not at the top (accounting for padding), retry with corrected calculation
               if (offsetFromTarget > 2 && container.scrollHeight > container.clientHeight) {
-                console.log('Element not at top, retrying...');
                 // Recalculate: current offset + current scroll = absolute position
                 // We want: scrollTop = absolutePosition - paddingTop
                 const retryAbsolute = finalOffset + actualScrollTop;
                 const retryTarget = retryAbsolute - paddingTop;
                 const retryClamped = Math.min(Math.max(0, retryTarget), maxScroll);
-                console.log('Retry calculation:', { retryAbsolute, retryTarget, retryClamped });
                 container.scrollTop = retryClamped;
               }
               
