@@ -4,16 +4,17 @@
 
 This red team assessment evaluates the Litecoin Knowledge Hub application's security posture prior to production deployment. The assessment identifies **12 critical vulnerabilities**, **8 high-priority issues**, and **15 medium-priority recommendations** that must be addressed before going live.
 
-**Overall Security Score: 5.5/10** - NOT READY FOR PRODUCTION (Improved from 4.5/10)
+**Overall Security Score: 6.5/10** - NOT READY FOR PRODUCTION (Improved from 4.5/10)
 
 **Update:** 
 - CRIT-1 (Unauthenticated Webhook Endpoint) has been **RESOLVED** with HMAC-SHA256 signature verification implementation.
 - CRIT-2 (Unauthenticated Sources API Endpoints) has been **RESOLVED** by removing unused endpoints.
 - CRIT-3 (MongoDB Without Authentication) has been **ACCEPTED RISK** - Decision made not to implement authentication due to local-only deployment and network isolation.
 - CRIT-4 (Redis Without Authentication) has been **ACCEPTED RISK** - Decision made not to implement authentication due to local-only deployment and network isolation.
+- CRIT-6 (Missing Security Headers) has been **RESOLVED** with comprehensive security headers and CSP implementation.
 - CRIT-12 (Insecure Rate Limiting Implementation) has been **RESOLVED** with sliding window rate limiting and progressive bans.
 
-The application demonstrates good security practices in input validation and rate limiting. Webhook authentication has been implemented. Unused Sources API endpoints have been removed to eliminate attack surface. MongoDB and Redis authentication were assessed but not implemented based on risk acceptance decision for local-only deployment with network isolation. Rate limiting has been hardened with sliding windows and progressive penalties. Remaining critical gaps include secrets management.
+The application demonstrates good security practices in input validation and rate limiting. Webhook authentication has been implemented. Unused Sources API endpoints have been removed to eliminate attack surface. Security headers including CSP, HSTS, X-Frame-Options, and X-Content-Type-Options have been implemented for both backend and frontend. MongoDB and Redis authentication were assessed but not implemented based on risk acceptance decision for local-only deployment with network isolation. Rate limiting has been hardened with sliding windows and progressive penalties. Remaining critical gaps include secrets management.
 
 ---
 
@@ -259,11 +260,13 @@ The application demonstrates good security practices in input validation and rat
 
 **Severity:** CRITICAL
 
+**Status:** ✅ **RESOLVED** (2025-11-18)
+
 **Location:** `backend/main.py`, `frontend/next.config.ts`
 
 **Risk:** XSS, clickjacking, and man-in-the-middle attacks
 
-**Current State:**
+**Original State:**
 
 - No Content-Security-Policy (CSP) headers
 - No X-Frame-Options header
@@ -277,13 +280,53 @@ The application demonstrates good security practices in input validation and rat
 - MIME type sniffing attacks
 - HTTP downgrade attacks
 
-**Recommendation:**
+**Resolution Implemented:**
 
-1. Implement security headers middleware in FastAPI
-2. Configure CSP policy in Next.js
-3. Set HSTS with long max-age for production
-4. Add X-Frame-Options: DENY or SAMEORIGIN
-5. Set X-Content-Type-Options: nosniff
+1. ✅ **Backend Security Headers Middleware** - Created `SecurityHeadersMiddleware` in `backend/middleware/security_headers.py`
+   - Adds `X-Content-Type-Options: nosniff` to all responses
+   - Adds `X-Frame-Options: DENY` to prevent clickjacking
+   - Adds `Strict-Transport-Security` header (production only, max-age=31536000; includeSubDomains)
+   - Adds `Referrer-Policy: strict-origin-when-cross-origin`
+   - Adds `Permissions-Policy: geolocation=(), microphone=(), camera=()`
+   - Environment-aware: HSTS only enabled in production (checks `NODE_ENV` or `ENVIRONMENT`)
+   - Registered in `backend/main.py` after `MetricsMiddleware` and before `CORSMiddleware`
+
+2. ✅ **Frontend Security Headers** - Configured in `frontend/next.config.ts` via `headers()` function
+   - Adds all standard security headers to all routes
+   - HSTS only enabled in production (checks `NODE_ENV=production`)
+   - Headers applied to all routes via `/:path*` pattern
+
+3. ✅ **Content Security Policy (CSP)** - Implemented comprehensive CSP in frontend
+   - `default-src 'self'` - Default to same origin
+   - `script-src 'self' 'unsafe-inline' 'unsafe-eval'` - Allows Next.js scripts (can be tightened with nonces later)
+   - `style-src 'self' 'unsafe-inline' fonts.googleapis.com` - Allows inline styles and Google Fonts
+   - `font-src 'self' fonts.gstatic.com data:` - Allows Google Fonts and data URIs
+   - `img-src 'self' data: https:` - Allows images from same origin, data URIs, and HTTPS
+   - `connect-src 'self'` + backend API URL + Payload CMS URL - Allows API connections
+   - `frame-ancestors 'none'` - Prevents embedding (redundant with X-Frame-Options but good practice)
+   - `base-uri 'self'` - Restricts base tag URLs
+   - `form-action 'self'` - Restricts form submissions
+   - CSP dynamically includes backend and Payload CMS URLs from environment variables
+
+**Implementation Details:**
+
+- **Backend:** `backend/middleware/security_headers.py` - Security headers middleware
+- **Backend:** `backend/main.py` - Middleware registration
+- **Frontend:** `frontend/next.config.ts` - Security headers and CSP configuration
+- **Environment-aware:** HSTS only in production, CSP adapts to environment variables
+
+**Cloudflare Considerations:**
+
+- Production uses Cloudflare Tunnel (cloudflared) which may set some headers at the edge
+- Application-level headers provide defense in depth
+- Headers set by both Cloudflare and application will use the most restrictive value
+- CSP is set at application level (Cloudflare doesn't set CSP by default)
+
+**Remaining Recommendations:**
+
+- Consider tightening CSP by removing `'unsafe-inline'` and `'unsafe-eval'` and using nonces/hashes (requires Next.js configuration changes)
+- Monitor CSP violations in browser console and adjust policy as needed
+- Consider adding CSP report-uri for violation reporting (optional)
 
 ---
 
@@ -762,7 +805,7 @@ allow_credentials=True,
 2. ✅ **Remove unused Sources API** - Removed unused Sources API endpoints that were publicly accessible **[COMPLETED]**
 3. ⚠️ **MongoDB authentication** - Assessed but not implemented due to local-only deployment and network isolation **[ACCEPTED RISK]**
 4. ⚠️ **Redis authentication** - Assessed but not implemented due to local-only deployment and network isolation **[ACCEPTED RISK]**
-5. **Implement security headers** - Add CSP, HSTS, X-Frame-Options, X-Content-Type-Options
+5. ✅ **Implement security headers** - Added CSP, HSTS, X-Frame-Options, X-Content-Type-Options for both backend and frontend **[COMPLETED]**
 6. ⚠️ **Remove debug/test endpoints** - Test-webhook disabled in production, but audit needed for remaining debug code **[PARTIALLY COMPLETED - test-webhook disabled in production]**
 7. **Fix CORS configuration** - Restrict methods and headers, validate origins
 8. **Implement secrets management** - Move secrets to secure storage (Vault, Secrets Manager)
@@ -795,7 +838,7 @@ allow_credentials=True,
 
 ## Security Checklist for Production
 
-- [ ] All critical vulnerabilities addressed (2 of 12 resolved, 2 accepted risks, 1 partially resolved)
+- [ ] All critical vulnerabilities addressed (4 of 12 resolved, 2 accepted risks, 1 partially resolved)
 - [x] Webhook authentication implemented ✅
 - [x] Unused Sources API removed ✅
 - [ ] MongoDB authentication - **ACCEPTED RISK** (local-only deployment, not exposed externally) ⚠️
@@ -803,7 +846,7 @@ allow_credentials=True,
 - [ ] API authentication implemented (if needed for remaining endpoints)
 - [ ] Database authentication enabled (MongoDB - ACCEPTED RISK)
 - [ ] Redis authentication enabled (ACCEPTED RISK)
-- [ ] Security headers configured
+- [x] Security headers configured ✅
 - [ ] HTTPS enforced
 - [ ] Secrets managed securely
 - [ ] Dependencies scanned and updated
@@ -848,18 +891,19 @@ allow_credentials=True,
 
 ## Conclusion
 
-The Litecoin Knowledge Hub application has a solid foundation with good input validation and rate limiting. **CRIT-1 (Webhook Authentication), CRIT-2 (Unauthenticated Sources API), and CRIT-12 (Insecure Rate Limiting) have been successfully resolved**. **CRIT-3 (MongoDB Authentication) and CRIT-4 (Redis Authentication) have been assessed and accepted as risks** due to local-only deployment with network isolation. However, **remaining critical security vulnerabilities must be addressed before production deployment**, particularly around secrets management and infrastructure hardening.
+The Litecoin Knowledge Hub application has a solid foundation with good input validation and rate limiting. **CRIT-1 (Webhook Authentication), CRIT-2 (Unauthenticated Sources API), CRIT-6 (Missing Security Headers), and CRIT-12 (Insecure Rate Limiting) have been successfully resolved**. **CRIT-3 (MongoDB Authentication) and CRIT-4 (Redis Authentication) have been assessed and accepted as risks** due to local-only deployment with network isolation. However, **remaining critical security vulnerabilities must be addressed before production deployment**, particularly around secrets management and infrastructure hardening.
 
 **Progress Update:**
 - ✅ CRIT-1: Webhook authentication - **RESOLVED** (HMAC-SHA256 signature verification)
 - ✅ CRIT-2: Unauthenticated Sources API - **RESOLVED** (removed unused endpoints)
 - ⚠️ CRIT-3: MongoDB authentication - **ACCEPTED RISK** (local-only deployment, network isolation)
 - ⚠️ CRIT-4: Redis authentication - **ACCEPTED RISK** (local-only deployment, network isolation)
+- ✅ CRIT-6: Missing Security Headers - **RESOLVED** (comprehensive security headers and CSP)
 - ⚠️ CRIT-7: Test/Debug endpoints - **PARTIALLY RESOLVED** (test-webhook disabled in production)
 - ✅ CRIT-12: Insecure Rate Limiting - **RESOLVED** (sliding window + progressive bans)
-- ⏳ CRIT-5, CRIT-6, CRIT-8 through CRIT-11: **PENDING**
+- ⏳ CRIT-5, CRIT-8 through CRIT-11: **PENDING**
 
-**Estimated time to production readiness: 2-3 weeks** with dedicated security focus (reduced from 2-4 weeks due to CRIT-1, CRIT-2, CRIT-12 resolution, and CRIT-3/CRIT-4 risk acceptance).
+**Estimated time to production readiness: 2-3 weeks** with dedicated security focus (reduced from 2-4 weeks due to CRIT-1, CRIT-2, CRIT-6, CRIT-12 resolution, and CRIT-3/CRIT-4 risk acceptance).
 
 **Recommended next steps:**
 
@@ -869,7 +913,7 @@ The Litecoin Knowledge Hub application has a solid foundation with good input va
 4. ⚠️ ~~Redis authentication~~ **[ACCEPTED RISK - local-only deployment, network isolation]**
 5. ✅ ~~Fix rate limiting implementation~~ **[COMPLETED - sliding window + progressive bans]**
 6. **Implement secrets management solution** - Move to secure storage (CRIT-5)
-7. **Implement security headers** - Add CSP, HSTS, X-Frame-Options (CRIT-6)
+7. ✅ ~~Implement security headers~~ **[COMPLETED - comprehensive security headers and CSP for backend and frontend]** (CRIT-6)
 8. Conduct penetration testing before launch
 9. Establish ongoing security monitoring and processes
 
@@ -886,6 +930,7 @@ The Litecoin Knowledge Hub application has a solid foundation with good input va
 - 2025-11-18: CRIT-2 (Unauthenticated Sources API Endpoints) - **RESOLVED** by removing unused endpoints
 - 2025-11-18: CRIT-3 (MongoDB Without Authentication) - **ACCEPTED RISK** - Decision made not to implement authentication due to local-only deployment, network isolation, and no external exposure
 - 2025-11-18: CRIT-4 (Redis Without Authentication) - **ACCEPTED RISK** - Decision made not to implement authentication due to local-only deployment, network isolation, and no external exposure
+- 2025-11-18: CRIT-6 (Missing Security Headers) - **RESOLVED** - Implemented comprehensive security headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy) for both backend (FastAPI middleware) and frontend (Next.js headers configuration)
 - 2025-11-18: CRIT-7 (Test/Debug Endpoints) - **PARTIALLY RESOLVED** - Test webhook endpoint disabled in production
 - 2025-11-18: CRIT-12 (Insecure Rate Limiting Implementation) - **RESOLVED** - Implemented sliding window rate limiting using Redis sorted sets and progressive bans with exponential backoff
 

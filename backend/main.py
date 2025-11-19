@@ -42,6 +42,7 @@ from backend.monitoring import (
     get_readiness,
     generate_metrics_response,
 )
+from backend.middleware.security_headers import SecurityHeadersMiddleware
 from backend.monitoring.metrics import user_questions_total
 from backend.monitoring.llm_observability import setup_langsmith
 from backend.rate_limiter import RateLimitConfig, check_rate_limit
@@ -155,6 +156,9 @@ origins = [origin.strip() for origin in cors_origins_env.split(",")]
 
 # Add monitoring middleware (before CORS to capture all requests)
 app.add_middleware(MetricsMiddleware)
+
+# Add security headers middleware (after metrics, before CORS)
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.add_middleware(
     CORSMiddleware, 
