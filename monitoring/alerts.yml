@@ -121,6 +121,57 @@ groups:
           summary: "Slow LLM responses detected"
           description: "P95 LLM response time is {{ $value }}s (threshold: 30s)"
 
+  - name: llm_spend_limit_alerts
+    interval: 30s
+    rules:
+      # Daily Spend Limit Warning (80% threshold)
+      - alert: DailySpendLimitWarning
+        expr: |
+          (llm_daily_cost_usd / llm_daily_limit_usd) * 100 >= 80
+        for: 1m
+        labels:
+          severity: warning
+          component: llm
+        annotations:
+          summary: "Daily LLM spend limit warning (80% threshold)"
+          description: "Daily LLM cost is {{ $value | printf \"%.2f\" }}% of limit"
+
+      # Daily Spend Limit Exceeded
+      - alert: DailySpendLimitExceeded
+        expr: |
+          llm_daily_cost_usd >= llm_daily_limit_usd
+        for: 1m
+        labels:
+          severity: critical
+          component: llm
+        annotations:
+          summary: "Daily LLM spend limit EXCEEDED"
+          description: "Daily LLM cost (${{ $value }}) has exceeded the limit"
+
+      # Hourly Spend Limit Warning (80% threshold)
+      - alert: HourlySpendLimitWarning
+        expr: |
+          (llm_hourly_cost_usd / llm_hourly_limit_usd) * 100 >= 80
+        for: 1m
+        labels:
+          severity: warning
+          component: llm
+        annotations:
+          summary: "Hourly LLM spend limit warning (80% threshold)"
+          description: "Hourly LLM cost is {{ $value | printf \"%.2f\" }}% of limit"
+
+      # Hourly Spend Limit Exceeded
+      - alert: HourlySpendLimitExceeded
+        expr: |
+          llm_hourly_cost_usd >= llm_hourly_limit_usd
+        for: 1m
+        labels:
+          severity: critical
+          component: llm
+        annotations:
+          summary: "Hourly LLM spend limit EXCEEDED"
+          description: "Hourly LLM cost (${{ $value }}) has exceeded the limit"
+
   - name: infrastructure_alerts
     interval: 30s
     rules:

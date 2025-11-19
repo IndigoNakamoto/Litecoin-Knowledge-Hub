@@ -17,15 +17,49 @@ interface Message {
   id?: string;
 }
 
+interface UsageStatus {
+  status: string;
+  warning_level: "error" | "warning" | "info" | null;
+  daily_percentage: number;
+  hourly_percentage: number;
+  daily_remaining: number;
+  hourly_remaining: number;
+}
+
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState<Message | null>(null);
+  const [usageWarning, setUsageWarning] = useState<UsageStatus | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const chatWindowRef = useRef<ChatWindowRef>(null);
   const lastUserMessageIdRef = useRef<string | null>(null);
 
   const MAX_QUERY_LENGTH = 400;
+
+  // Check usage status periodically
+  useEffect(() => {
+    const checkUsageStatus = async () => {
+      try {
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+        const response = await fetch(`${backendUrl}/api/v1/admin/usage/status`);
+        if (response.ok) {
+          const status: UsageStatus = await response.json();
+          setUsageWarning(status.warning_level ? status : null);
+        }
+      } catch (error) {
+        // Silently fail - don't show errors for usage checks
+        console.debug("Failed to check usage status:", error);
+      }
+    };
+
+    // Check immediately and then every 30 seconds
+    checkUsageStatus();
+    const interval = setInterval(checkUsageStatus, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
+
 
   const handleSendMessage = async (message: string, _metadata?: { fromFeelingLit?: boolean; originalQuestion?: string }) => {
     // Validate message length
@@ -92,9 +126,12 @@ export default function Home() {
           let serverMessage: string | null = null;
           try {
             const body = await response.json();
-            if (body && body.detail && typeof body.detail === "object") {
-              if (typeof body.detail.message === "string") {
+            if (body && body.detail) {
+              // Handle both object and string detail formats
+              if (typeof body.detail === "object" && typeof body.detail.message === "string") {
                 serverMessage = body.detail.message;
+              } else if (typeof body.detail === "string") {
+                serverMessage = body.detail;
               }
             }
           } catch {
@@ -365,6 +402,33 @@ export default function Home() {
 
   return (
     <div className="flex flex-col h-screen max-h-screen bg-background relative z-10">
+      {/* Usage Warning Banner */}
+      {usageWarning && usageWarning.warning_level && (
+        <div
+          className={`px-4 py-2 text-sm text-center ${
+            usageWarning.warning_level === "error"
+              ? "bg-red-100 text-red-800 border-b border-red-200"
+              : usageWarning.warning_level === "warning"
+              ? "bg-yellow-100 text-yellow-800 border-b border-yellow-200"
+              : "bg-blue-100 text-blue-800 border-b border-blue-200"
+          }`}
+        >
+          {usageWarning.warning_level === "error" ? (
+            <span>
+              ⚠️ Service temporarily unavailable due to high usage. Please try again later.
+            </span>
+          ) : usageWarning.warning_level === "warning" ? (
+            <span>
+              ⚠️ High usage detected ({Math.round(Math.max(usageWarning.daily_percentage, usageWarning.hourly_percentage))}% of limit). 
+              Service may be limited soon.
+            </span>
+          ) : (
+            <span>
+              ℹ️ Usage at {Math.round(Math.max(usageWarning.daily_percentage, usageWarning.hourly_percentage))}% of limit.
+            </span>
+          )}
+        </div>
+      )}
       <div className="flex-1 min-h-0 overflow-hidden relative z-10">
         {messages.length === 0 && !streamingMessage && !isLoading ? (
           <div className="flex items-center justify-center h-full relative z-10">

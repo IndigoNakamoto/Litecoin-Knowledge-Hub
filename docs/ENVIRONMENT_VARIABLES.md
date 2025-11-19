@@ -101,8 +101,11 @@ These variables are usually the same across environments but can be overridden.
 | `LOG_LEVEL` | `INFO` | Logging level |
 | `JSON_LOGGING` | `false` | Enable JSON logging format |
 | `NODE_ENV` | `development` | Node.js environment |
+| `DAILY_SPEND_LIMIT_USD` | `5.00` | Daily LLM spend limit in USD |
+| `HOURLY_SPEND_LIMIT_USD` | `1.00` | Hourly LLM spend limit in USD |
+| `DISCORD_WEBHOOK_URL` | (none) | Discord webhook URL for spend limit alerts (optional) |
 
-**Where to set:** Root-level `.env.*` files
+**Where to set:** Root-level `.env.*` files (for spend limits, set in `backend/.env`)
 
 ### 5. Monitoring (Optional)
 

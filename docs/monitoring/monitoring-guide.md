@@ -108,6 +108,16 @@ Readiness check indicating if the service is ready to accept traffic. Checks cri
 - `llm_cost_usd_total`: Total cost in USD (by model, operation)
 - `llm_request_duration_seconds`: LLM API request duration
 
+### LLM Spend Limit Metrics
+
+- `llm_daily_cost_usd`: Current daily LLM cost in USD (Gauge)
+- `llm_hourly_cost_usd`: Current hourly LLM cost in USD (Gauge)
+- `llm_daily_limit_usd`: Daily LLM spend limit in USD (Gauge)
+- `llm_hourly_limit_usd`: Hourly LLM spend limit in USD (Gauge)
+- `llm_spend_limit_rejections_total`: Total requests rejected due to spend limits (by limit_type: "daily" or "hourly")
+
+These metrics track real-time LLM spending against configurable daily and hourly limits. The system automatically blocks requests that would exceed limits and sends Discord alerts at 80% and 100% thresholds.
+
 ### Vector Store Metrics
 
 - `vector_store_documents_total`: Total documents in vector store (by status)

@@ -12,6 +12,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from data_ingestion.vector_store_manager import VectorStoreManager
 from cache_utils import query_cache
 from backend.utils.input_sanitizer import sanitize_query_input, detect_prompt_injection
+from fastapi import HTTPException
 # --- Environment Variable Checks ---
 google_api_key = os.getenv("GOOGLE_API_KEY")
 if not google_api_key:
@@ -32,8 +33,10 @@ try:
         rag_cache_misses_total,
         rag_retrieval_duration_seconds,
         rag_documents_retrieved_total,
+        llm_spend_limit_rejections_total,
     )
     from backend.monitoring.llm_observability import track_llm_metrics, estimate_gemini_cost
+    from backend.monitoring.spend_limit import check_spend_limit, record_spend
     MONITORING_ENABLED = True
 except ImportError:
     # Monitoring not available, use no-op functions
@@ -42,6 +45,10 @@ except ImportError:
         pass
     def estimate_gemini_cost(*args, **kwargs):
         return 0.0
+    async def check_spend_limit(*args, **kwargs):
+        return True, None, {}
+    async def record_spend(*args, **kwargs):
+        return {}
 
 # --- Environment Variable Checks ---
 google_api_key = os.getenv("GOOGLE_API_KEY")
@@ -361,6 +368,57 @@ class RAGPipeline:
             # Track retrieval time
             retrieval_start = time.time()
             
+            # Get source documents first for pre-flight cost estimation
+            retriever = self.vector_store_manager.get_retriever(
+                search_type="similarity",
+                search_kwargs={"k": 15}
+            )
+            context_docs = retriever.get_relevant_documents(query_text)
+            context_text = format_docs(context_docs)
+            
+            # Pre-flight spend limit check (before LLM API call)
+            # Note: For sync method, we run async check in a new event loop
+            if MONITORING_ENABLED:
+                try:
+                    # Estimate cost before making API call
+                    prompt_text = self._build_prompt_text(query_text, context_text)
+                    input_tokens_est, _ = self._estimate_token_usage(prompt_text, "")
+                    # Use max expected output tokens for worst-case estimation (2048 tokens)
+                    max_output_tokens = 2048
+                    estimated_cost = estimate_gemini_cost(
+                        input_tokens_est,
+                        max_output_tokens,
+                        LLM_MODEL_NAME,
+                    )
+                    # Check spend limit with 10% buffer (run async in new event loop for sync method)
+                    try:
+                        loop = asyncio.get_running_loop()
+                        # Event loop is running, skip check in sync method (will be checked in async method)
+                        logger.debug("Skipping spend limit check in sync method (event loop running)")
+                    except RuntimeError:
+                        # No event loop, can use asyncio.run()
+                        allowed, error_msg, _ = asyncio.run(check_spend_limit(estimated_cost, LLM_MODEL_NAME))
+                        if not allowed:
+                            # Increment rejection counter
+                            if "daily" in error_msg.lower():
+                                llm_spend_limit_rejections_total.labels(limit_type="daily").inc()
+                            elif "hourly" in error_msg.lower():
+                                llm_spend_limit_rejections_total.labels(limit_type="hourly").inc()
+                            # Return user-friendly error message
+                        raise HTTPException(
+                            status_code=429,
+                            detail={
+                                "error": "spend_limit_exceeded",
+                                "message": "We've reached our daily usage limit. Please try again later.",
+                                "type": "daily" if "daily" in error_msg.lower() else "hourly"
+                            }
+                        )
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    # Log error but allow request (graceful degradation)
+                    logger.warning(f"Error in spend limit check: {e}", exc_info=True)
+            
             # Invoke the conversational retrieval chain with chat history
             result = self.rag_chain.invoke({
                 "input": query_text,
@@ -370,9 +428,6 @@ class RAGPipeline:
             retrieval_duration = time.time() - retrieval_start
             
             answer = result.get("answer", "Error: Could not generate answer.")
-            # Get source documents from the chain result
-            context_docs = result.get("context", [])
-            context_text = format_docs(context_docs)
 
             # Filter out draft/unpublished documents from sources
             published_sources = [
@@ -422,6 +477,18 @@ class RAGPipeline:
                     duration_seconds=total_duration,
                     status="success",
                 )
+                
+                # Record actual spend in Redis (run async in new event loop for sync method)
+                try:
+                    try:
+                        loop = asyncio.get_running_loop()
+                        # Event loop is running, skip recording in sync method
+                        logger.debug("Skipping spend recording in sync method (event loop running)")
+                    except RuntimeError:
+                        # No event loop, can use asyncio.run()
+                        asyncio.run(record_spend(estimated_cost, input_tokens, output_tokens, LLM_MODEL_NAME))
+                except Exception as e:
+                    logger.warning(f"Error recording spend: {e}", exc_info=True)
 
             # Cache the result (using truncated history)
             query_cache.set(query_text, truncated_history, answer, published_sources)
@@ -531,6 +598,42 @@ class RAGPipeline:
                     ).observe(total_duration)
                 return NO_KB_MATCH_RESPONSE, []
 
+            # Pre-flight spend limit check (before LLM API call)
+            if MONITORING_ENABLED:
+                try:
+                    # Estimate cost before making API call
+                    prompt_text = self._build_prompt_text(query_text, context_text)
+                    input_tokens_est, _ = self._estimate_token_usage(prompt_text, "")
+                    # Use max expected output tokens for worst-case estimation (2048 tokens)
+                    max_output_tokens = 2048
+                    estimated_cost = estimate_gemini_cost(
+                        input_tokens_est,
+                        max_output_tokens,
+                        LLM_MODEL_NAME,
+                    )
+                    # Check spend limit with 10% buffer
+                    allowed, error_msg, _ = await check_spend_limit(estimated_cost, LLM_MODEL_NAME)
+                    if not allowed:
+                        # Increment rejection counter
+                        if "daily" in error_msg.lower():
+                            llm_spend_limit_rejections_total.labels(limit_type="daily").inc()
+                        elif "hourly" in error_msg.lower():
+                            llm_spend_limit_rejections_total.labels(limit_type="hourly").inc()
+                        # Return user-friendly error message
+                        raise HTTPException(
+                            status_code=429,
+                            detail={
+                                "error": "spend_limit_exceeded",
+                                "message": "We've reached our daily usage limit. Please try again later.",
+                                "type": "daily" if "daily" in error_msg.lower() else "hourly"
+                            }
+                        )
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    # Log error but allow request (graceful degradation)
+                    logger.warning(f"Error in spend limit check: {e}", exc_info=True)
+
             # Generate answer using LLM with retrieved context
             llm_start = time.time()
             chain = rag_prompt | self.llm | StrOutputParser()
@@ -573,6 +676,12 @@ class RAGPipeline:
                     duration_seconds=llm_duration,
                     status="success",
                 )
+                
+                # Record actual spend in Redis
+                try:
+                    await record_spend(estimated_cost, input_tokens, output_tokens, LLM_MODEL_NAME)
+                except Exception as e:
+                    logger.warning(f"Error recording spend: {e}", exc_info=True)
 
             # Cache the result (using truncated history)
             query_cache.set(query_text, truncated_history, answer, published_sources)
@@ -669,6 +778,48 @@ class RAGPipeline:
                 converted_chat_history.append(HumanMessage(content=human_msg))
                 converted_chat_history.append(AIMessage(content=ai_msg))
 
+            # Get context for pre-flight cost estimation
+            retriever = self.vector_store_manager.get_retriever(
+                search_type="similarity",
+                search_kwargs={"k": 15}
+            )
+            context_docs_pre = retriever.get_relevant_documents(query_text)
+            context_text_pre = format_docs(context_docs_pre)
+            
+            # Pre-flight spend limit check (before LLM API call)
+            if MONITORING_ENABLED:
+                try:
+                    # Estimate cost before making API call
+                    prompt_text = self._build_prompt_text(query_text, context_text_pre)
+                    input_tokens_est, _ = self._estimate_token_usage(prompt_text, "")
+                    # Use max expected output tokens for worst-case estimation (2048 tokens)
+                    max_output_tokens = 2048
+                    estimated_cost = estimate_gemini_cost(
+                        input_tokens_est,
+                        max_output_tokens,
+                        LLM_MODEL_NAME,
+                    )
+                    # Check spend limit with 10% buffer
+                    allowed, error_msg, _ = await check_spend_limit(estimated_cost, LLM_MODEL_NAME)
+                    if not allowed:
+                        # Increment rejection counter
+                        error_type = "daily" if "daily" in error_msg.lower() else "hourly"
+                        if error_type == "daily":
+                            llm_spend_limit_rejections_total.labels(limit_type="daily").inc()
+                        else:
+                            llm_spend_limit_rejections_total.labels(limit_type="hourly").inc()
+                        # Yield user-friendly error message and complete
+                        yield {
+                            "type": "error",
+                            "message": "We've reached our daily usage limit. Please try again later.",
+                            "error_type": error_type
+                        }
+                        yield {"type": "complete", "error": True}
+                        return
+                except Exception as e:
+                    # Log error but allow request (graceful degradation)
+                    logger.warning(f"Error in spend limit check: {e}", exc_info=True)
+
             # Invoke the async conversational retrieval chain with chat history
             result = await self.async_rag_chain.ainvoke({
                 "input": query_text,
@@ -734,6 +885,12 @@ class RAGPipeline:
                     duration_seconds=total_duration,
                     status="success",
                 )
+                
+                # Record actual spend in Redis
+                try:
+                    await record_spend(estimated_cost, input_tokens, output_tokens, LLM_MODEL_NAME)
+                except Exception as e:
+                    logger.warning(f"Error recording spend: {e}", exc_info=True)
 
             # Send sources first
             yield {"type": "sources", "sources": published_sources}

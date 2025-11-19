@@ -24,6 +24,7 @@ load_dotenv()
 from backend.rag_pipeline import RAGPipeline
 from backend.data_models import ChatRequest, ChatMessage, UserQuestion
 from backend.api.v1.sync.payload import router as payload_sync_router
+from backend.api.v1.admin.usage import router as admin_router
 from backend.dependencies import get_user_questions_collection
 from bson import ObjectId
 from fastapi.encoders import jsonable_encoder # Import jsonable_encoder
@@ -110,13 +111,117 @@ async def update_question_metrics_from_db():
 async def update_metrics_periodically():
     """Periodically update metrics that need regular refreshing."""
     from backend.monitoring.health import _health_checker
+    from backend.monitoring.spend_limit import get_current_usage
+    from backend.monitoring.metrics import (
+        llm_daily_cost_usd,
+        llm_hourly_cost_usd,
+        llm_daily_limit_usd,
+        llm_hourly_limit_usd,
+    )
+    from backend.monitoring.discord_alerts import send_spend_limit_alert
+    from backend.redis_client import get_redis_client
+    import os
+    
+    # Get spend limits from environment
+    daily_limit = float(os.getenv("DAILY_SPEND_LIMIT_USD", "5.00"))
+    hourly_limit = float(os.getenv("HOURLY_SPEND_LIMIT_USD", "1.00"))
+    
     while True:
         try:
             # Update vector store metrics every 60 seconds
             _health_checker.check_vector_store()
             # Update question metrics from MongoDB every 60 seconds
             await update_question_metrics_from_db()
-            await asyncio.sleep(60)
+            
+            # Update spend limit metrics every 30 seconds
+            try:
+                usage_info = await get_current_usage()
+                
+                # Update Prometheus gauges
+                llm_daily_cost_usd.set(usage_info["daily"]["cost_usd"])
+                llm_hourly_cost_usd.set(usage_info["hourly"]["cost_usd"])
+                llm_daily_limit_usd.set(daily_limit)
+                llm_hourly_limit_usd.set(hourly_limit)
+                
+                # Check thresholds and send Discord alerts
+                redis_client = get_redis_client()
+                
+                # Check daily limit
+                daily_cost = usage_info["daily"]["cost_usd"]
+                daily_percentage = usage_info["daily"]["percentage_used"]
+                
+                # 80% warning threshold
+                if daily_percentage >= 80:
+                    alert_key_80 = "llm:alert:daily:80"
+                    alert_sent = await redis_client.get(alert_key_80)
+                    if not alert_sent:
+                        # Send warning alert
+                        await send_spend_limit_alert(
+                            "daily",
+                            daily_cost,
+                            daily_limit,
+                            daily_percentage,
+                            is_exceeded=False
+                        )
+                        # Mark alert as sent (expire after 1 hour)
+                        await redis_client.setex(alert_key_80, 3600, "1")
+                
+                # 100% critical threshold
+                if daily_percentage >= 100:
+                    alert_key_100 = "llm:alert:daily:100"
+                    alert_sent = await redis_client.get(alert_key_100)
+                    if not alert_sent:
+                        # Send critical alert
+                        await send_spend_limit_alert(
+                            "daily",
+                            daily_cost,
+                            daily_limit,
+                            daily_percentage,
+                            is_exceeded=True
+                        )
+                        # Mark alert as sent (expire after 1 hour)
+                        await redis_client.setex(alert_key_100, 3600, "1")
+                
+                # Check hourly limit
+                hourly_cost = usage_info["hourly"]["cost_usd"]
+                hourly_percentage = usage_info["hourly"]["percentage_used"]
+                
+                # 80% warning threshold
+                if hourly_percentage >= 80:
+                    alert_key_80 = "llm:alert:hourly:80"
+                    alert_sent = await redis_client.get(alert_key_80)
+                    if not alert_sent:
+                        # Send warning alert
+                        await send_spend_limit_alert(
+                            "hourly",
+                            hourly_cost,
+                            hourly_limit,
+                            hourly_percentage,
+                            is_exceeded=False
+                        )
+                        # Mark alert as sent (expire after 1 hour)
+                        await redis_client.setex(alert_key_80, 3600, "1")
+                
+                # 100% critical threshold
+                if hourly_percentage >= 100:
+                    alert_key_100 = "llm:alert:hourly:100"
+                    alert_sent = await redis_client.get(alert_key_100)
+                    if not alert_sent:
+                        # Send critical alert
+                        await send_spend_limit_alert(
+                            "hourly",
+                            hourly_cost,
+                            hourly_limit,
+                            hourly_percentage,
+                            is_exceeded=True
+                        )
+                        # Mark alert as sent (expire after 1 hour)
+                        await redis_client.setex(alert_key_100, 3600, "1")
+                
+            except Exception as e:
+                logger.error(f"Error updating spend limit metrics: {e}", exc_info=True)
+            
+            await asyncio.sleep(30)  # Run every 30 seconds for spend limit monitoring
         except Exception as e:
             logger.error(f"Error updating metrics: {e}", exc_info=True)
             await asyncio.sleep(60)
@@ -274,6 +379,7 @@ except (ImportError, AttributeError) as e:
 
 # Include API routers
 app.include_router(payload_sync_router, prefix="/api/v1/sync", tags=["Payload Sync"])
+app.include_router(admin_router, prefix="/api/v1/admin", tags=["Admin"])
 
 # Import cache utilities and suggested questions utility
 from backend.cache_utils import suggested_question_cache

@@ -129,6 +129,33 @@ llm_request_duration_seconds = Histogram(
     buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0],
 )
 
+# LLM Spend Limit Metrics
+llm_daily_cost_usd = Gauge(
+    "llm_daily_cost_usd",
+    "Current daily LLM cost in USD"
+)
+
+llm_hourly_cost_usd = Gauge(
+    "llm_hourly_cost_usd",
+    "Current hourly LLM cost in USD"
+)
+
+llm_daily_limit_usd = Gauge(
+    "llm_daily_limit_usd",
+    "Daily LLM spend limit in USD"
+)
+
+llm_hourly_limit_usd = Gauge(
+    "llm_hourly_limit_usd",
+    "Hourly LLM spend limit in USD"
+)
+
+llm_spend_limit_rejections_total = Counter(
+    "llm_spend_limit_rejections_total",
+    "Total number of requests rejected due to spend limits",
+    ["limit_type"],  # "daily" or "hourly"
+)
+
 # Vector Store Metrics
 vector_store_documents_total = Gauge(
     "vector_store_documents_total",
