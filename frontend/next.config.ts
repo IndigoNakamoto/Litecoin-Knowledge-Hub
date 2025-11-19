@@ -6,7 +6,8 @@ const nextConfig: NextConfig = {
   
   async rewrites() {
     // Use environment variable for backend URL, fallback to localhost for development
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    // Handle empty strings as missing (empty string from Docker build args)
+    const backendUrl = (process.env.NEXT_PUBLIC_BACKEND_URL?.trim() || 'http://localhost:8000');
     
     return [
       {
@@ -19,13 +20,27 @@ const nextConfig: NextConfig = {
   async headers() {
     const isProduction = process.env.NODE_ENV === 'production';
     
-    // Get API URLs from environment variables
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
-    const payloadUrl = process.env.NEXT_PUBLIC_PAYLOAD_URL || 'https://cms.lite.space';
+    // Get API URLs from environment variables (handle empty strings as missing)
+    const backendUrl = (process.env.NEXT_PUBLIC_BACKEND_URL?.trim() || 'http://localhost:8000');
+    const payloadUrl = (process.env.NEXT_PUBLIC_PAYLOAD_URL?.trim() || 'https://cms.lite.space');
     
-    // Extract hostnames from URLs for CSP
-    const backendHost = new URL(backendUrl).origin;
-    const payloadHost = new URL(payloadUrl).origin;
+    // Extract hostnames from URLs for CSP with error handling
+    let backendHost: string;
+    let payloadHost: string;
+    
+    try {
+      backendHost = new URL(backendUrl).origin;
+    } catch (error) {
+      console.warn(`Invalid NEXT_PUBLIC_BACKEND_URL: ${backendUrl}, using default`);
+      backendHost = 'http://localhost:8000';
+    }
+    
+    try {
+      payloadHost = new URL(payloadUrl).origin;
+    } catch (error) {
+      console.warn(`Invalid NEXT_PUBLIC_PAYLOAD_URL: ${payloadUrl}, using default`);
+      payloadHost = 'https://cms.lite.space';
+    }
     
     // Build Content Security Policy
     // Note: Next.js requires 'unsafe-inline' and 'unsafe-eval' for scripts in some cases
