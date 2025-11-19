@@ -4,7 +4,7 @@
 
 This feature implements **an additional caching layer** specifically for suggested question responses from Payload CMS. This specialized cache works **in addition to** the existing `QueryCache` system, providing pre-generated responses for suggested questions with a longer TTL and persistent storage.
 
-**Status**: 🚧 **In Development**
+**Status**: ✅ **Implemented**
 
 **Priority**: High - Improves user experience and reduces costs
 
@@ -375,6 +375,36 @@ Background Task: refresh_suggested_question_cache()
 
 **Note**: This runs independently of QueryCache. QueryCache continues to populate on-demand as before.
 
+**Scheduled Refresh (Cron Job - Every 48 Hours)**:
+
+```
+Cron Job Trigger (2:00 AM UTC every 2 days)
+    │
+    ▼
+POST /api/v1/admin/refresh-suggested-cache
+    │
+    ▼
+refresh_suggested_question_cache()
+    │
+    ├─→ Fetch all active questions from Payload CMS
+    │
+    ├─→ For each question:
+    │   ├─→ Generate response via RAG (empty history)
+    │   ├─→ Overwrite existing cache entry (if any)
+    │   └─→ Store in Suggested Question Cache (Redis)
+    │       └─→ Set TTL to 24 hours (resets expiration)
+    │
+    └─→ Log statistics (cached, errors, duration)
+```
+
+**Key Points**:
+- Runs every 48 hours via cron job (scheduled at 2:00 AM UTC every 2 days by default)
+- **Overwrites** all existing cache entries (ensures freshness)
+- Resets TTL to 24 hours for all entries (cache refreshed every 48h, TTL is 24h for safety margin)
+- Prevents cache expiration by refreshing before TTL expires
+- Runs independently of QueryCache (which continues normal operation)
+- Can be triggered manually via admin endpoint if needed
+
 ### Error Handling
 
 **Redis Unavailable**:
@@ -394,6 +424,14 @@ Background Task: refresh_suggested_question_cache()
 - Continue processing other questions
 - Track error count in logs
 - QueryCache continues to work normally
+
+**Cron Job Failures**:
+- Cron job failures are logged to configured log file
+- Failed refresh attempts don't affect existing cache entries
+- Cache continues to serve existing entries until next successful refresh
+- Consider alerting/monitoring for consecutive cron job failures
+- Manual refresh can be triggered if cron job fails
+- QueryCache continues to work normally (independent system)
 
 ---
 
@@ -425,8 +463,8 @@ SUGGESTED_QUESTION_CACHE_TTL=86400
 | Environment | Suggested Cache TTL | Query Cache TTL | Refresh Strategy |
 |-------------|-------------------|-----------------|------------------|
 | Development | 1 hour | 1 hour (existing) | Manual only |
-| Staging | 24 hours | 1 hour (existing) | On startup + manual |
-| Production | 24 hours | 1 hour (existing) | On startup + webhook |
+| Staging | 24 hours | 1 hour (existing) | On startup + cron (24h) + manual |
+| Production | 24 hours | 1 hour (existing) | On startup + cron (24h) + webhook |
 
 ---
 
@@ -441,11 +479,17 @@ SUGGESTED_QUESTION_CACHE_TTL=86400
 - Logs progress and statistics
 - **Independent of QueryCache** (which continues to work on-demand)
 
-**Scheduled Refresh** (Future Enhancement):
-- Cron job or background task
-- Runs every 6-12 hours
-- Refreshes expired or soon-to-expire entries
-- QueryCache continues its normal operation
+**Scheduled Refresh (Cron Job)**:
+- **Frequency**: Runs every 24 hours via cron job
+- **Purpose**: Refreshes all cached entries before they expire (24-hour TTL, refreshed every 48 hours)
+- **Implementation**: Cron job triggers cache refresh endpoint or direct function call
+- **Timing**: Recommended to run at off-peak hours (e.g., 2:00 AM UTC)
+- **Behavior**: 
+  - Fetches all active questions from Payload CMS
+  - Regenerates responses for all questions (overwrites existing cache)
+  - Ensures cache is always fresh and never expires
+  - Logs progress and statistics
+- **Independence**: QueryCache continues its normal operation (unaffected)
 
 ### Manual Refresh
 
@@ -466,22 +510,57 @@ Response:
 
 **Note**: This only refreshes the Suggested Question Cache. QueryCache continues to operate independently.
 
+### Grafana Quick Reference
+
+**Common Queries for Troubleshooting**:
+
+1. **Check if cache is being used**:
+   ```promql
+   sum(rate(suggested_question_cache_hits_total[5m])) + sum(rate(suggested_question_cache_misses_total[5m]))
+   ```
+   Should be > 0 if cache is being queried
+
+2. **Check current cache size**:
+   ```promql
+   suggested_question_cache_size
+   ```
+   Should match number of active suggested questions
+
+3. **Check last cache refresh time**:
+   ```promql
+   time() - suggested_question_cache_refresh_duration_seconds_count
+   ```
+   Should show when last refresh occurred
+
+4. **Compare cache performance**:
+   ```promql
+   # Suggested Cache Hit Rate
+   ((sum(rate(suggested_question_cache_hits_total[5m])) or vector(0)) / clamp_min(((sum(rate(suggested_question_cache_hits_total[5m])) or vector(0)) + (sum(rate(suggested_question_cache_misses_total[5m])) or vector(0))), 1))
+   
+   # Query Cache Hit Rate
+   ((sum(rate(rag_cache_hits_total[5m])) or vector(0)) / clamp_min(((sum(rate(rag_cache_hits_total[5m])) or vector(0)) + (sum(rate(rag_cache_misses_total[5m])) or vector(0))), 1))
+   ```
+   Run both queries side-by-side to compare performance
+
 ### Cache Interaction
 
 **When Suggested Question is Asked**:
 
-1. **First Request** (after cache population):
+1. **Normal Operation** (cache refreshed by cron every 24h):
    - Suggested Question Cache: ✅ Hit → Return immediately
+   - Cache is refreshed daily before expiration, so hits are expected
 
-2. **After Suggested Cache Expires (24h)**:
-   - Suggested Question Cache: ❌ Miss
+2. **If Cron Job Fails** (cache expires after 24h):
+   - Suggested Question Cache: ❌ Miss (expired)
    - QueryCache: ✅ Hit (if within 1 hour) → Return
    - QueryCache: ❌ Miss → RAG Pipeline → Store in QueryCache
 
-3. **After Both Caches Expire**:
+3. **After Both Caches Expire** (rare, only if cron fails):
    - Suggested Question Cache: ❌ Miss
    - QueryCache: ❌ Miss
    - RAG Pipeline: Generate → Store in QueryCache
+
+**Note**: With the 48-hour cron job refresh, the cache is refreshed every 2 days, which is well before the 24-hour TTL expires. This provides a safety margin - even if the cron job is delayed by a day, the cache will still be valid. Expiration only occurs if the cron job fails for more than 24 hours.
 
 ---
 
@@ -512,22 +591,236 @@ rag_cache_misses_total{cache_type="query"}  # Counter (existing)
 - **QueryCache**: High hit rate for repeated queries within 1 hour (60-80%)
 - **Combined**: Very high overall cache hit rate (90%+)
 
+### Grafana Integration
+
+The Suggested Question Cache metrics are fully integrated with the existing Grafana monitoring infrastructure. Metrics are automatically collected by Prometheus and can be visualized in Grafana dashboards.
+
+#### Dashboard Panels
+
+Add the following panels to your Grafana dashboard (`monitoring/grafana/dashboards/litecoin-knowledge-hub.json`) to monitor Suggested Question Cache performance:
+
+**1. Suggested Question Cache Hit Rate** (Stat Panel):
+```promql
+((sum(rate(suggested_question_cache_hits_total[5m])) or vector(0)) / clamp_min(((sum(rate(suggested_question_cache_hits_total[5m])) or vector(0)) + (sum(rate(suggested_question_cache_misses_total[5m])) or vector(0))), 1))
+```
+- **Panel Type**: Stat
+- **Unit**: percentunit (0-1)
+- **Thresholds**: Green (>0.8), Yellow (0.5-0.8), Red (<0.5)
+- **Description**: Shows the percentage of cache hits vs misses for suggested questions
+
+**2. Cache Hit/Miss Rate Over Time** (Time Series):
+```promql
+# Hits
+sum(rate(suggested_question_cache_hits_total[5m])) by (cache_type)
+
+# Misses
+sum(rate(suggested_question_cache_misses_total[5m])) by (cache_type)
+```
+- **Panel Type**: Time Series
+- **Unit**: reqps (requests per second)
+- **Description**: Shows the rate of cache hits and misses over time
+
+**3. Combined Cache Hit Rate** (Time Series):
+```promql
+# Suggested Question Cache Hit Rate
+((sum(rate(suggested_question_cache_hits_total[5m])) or vector(0)) / clamp_min(((sum(rate(suggested_question_cache_hits_total[5m])) or vector(0)) + (sum(rate(suggested_question_cache_misses_total[5m])) or vector(0))), 1))
+
+# Query Cache Hit Rate (existing)
+((sum(rate(rag_cache_hits_total[5m])) or vector(0)) / clamp_min(((sum(rate(rag_cache_hits_total[5m])) or vector(0)) + (sum(rate(rag_cache_misses_total[5m])) or vector(0))), 1))
+```
+- **Panel Type**: Time Series
+- **Unit**: percentunit
+- **Legend**: "Suggested Cache" and "Query Cache"
+- **Description**: Compare hit rates between both cache layers
+
+**4. Cache Size** (Stat Panel):
+```promql
+suggested_question_cache_size
+```
+- **Panel Type**: Stat
+- **Unit**: short (number)
+- **Description**: Current number of cached suggested questions
+
+**5. Cache Lookup Duration** (Time Series):
+```promql
+histogram_quantile(0.95, rate(suggested_question_cache_lookup_duration_seconds_bucket[5m]))
+histogram_quantile(0.50, rate(suggested_question_cache_lookup_duration_seconds_bucket[5m]))
+```
+- **Panel Type**: Time Series
+- **Unit**: seconds
+- **Legend**: "P95" and "P50"
+- **Description**: Shows cache lookup performance (should be <100ms)
+
+**6. Cache Refresh Duration** (Time Series):
+```promql
+histogram_quantile(0.95, rate(suggested_question_cache_refresh_duration_seconds_bucket[5m]))
+histogram_quantile(0.50, rate(suggested_question_cache_refresh_duration_seconds_bucket[5m]))
+```
+- **Panel Type**: Time Series
+- **Unit**: seconds
+- **Legend**: "P95" and "P50"
+- **Description**: Shows how long cache refresh operations take (cron job performance)
+
+**7. Cache Refresh Errors** (Stat Panel):
+```promql
+sum(rate(suggested_question_cache_refresh_errors_total[5m]))
+```
+- **Panel Type**: Stat
+- **Unit**: reqps
+- **Thresholds**: Green (=0), Red (>0)
+- **Description**: Rate of errors during cache refresh operations
+
+**8. Cache Refresh Success Rate** (Time Series):
+```promql
+# Successful refreshes (inferred from refresh duration being recorded)
+sum(rate(suggested_question_cache_refresh_duration_seconds_count[5m]))
+
+# Errors
+sum(rate(suggested_question_cache_refresh_errors_total[5m]))
+```
+- **Panel Type**: Time Series
+- **Unit**: reqps
+- **Legend**: "Successful" and "Errors"
+- **Description**: Track successful vs failed cache refresh operations
+
+#### Recommended Dashboard Layout
+
+Add a new row section titled **"Suggested Question Cache Performance"** with the following panels:
+
+```
+Row: Suggested Question Cache Performance
+├── Panel 1: Suggested Question Cache Hit Rate (Stat, 6x4)
+├── Panel 2: Cache Size (Stat, 6x4)
+├── Panel 3: Cache Hit/Miss Rate Over Time (Time Series, 12x6)
+├── Panel 4: Combined Cache Hit Rate Comparison (Time Series, 12x6)
+├── Panel 5: Cache Lookup Duration (Time Series, 12x6)
+├── Panel 6: Cache Refresh Duration (Time Series, 12x6)
+└── Panel 7: Cache Refresh Errors (Stat, 6x4)
+```
+
+#### PromQL Query Examples
+
+**Cache Hit Rate (5-minute window)**:
+```promql
+((sum(rate(suggested_question_cache_hits_total[5m])) or vector(0)) / clamp_min(((sum(rate(suggested_question_cache_hits_total[5m])) or vector(0)) + (sum(rate(suggested_question_cache_misses_total[5m])) or vector(0))), 1))
+```
+
+**Total Cache Hits (last 24 hours)**:
+```promql
+sum(increase(suggested_question_cache_hits_total[24h]))
+```
+
+**Total Cache Misses (last 24 hours)**:
+```promql
+sum(increase(suggested_question_cache_misses_total[24h]))
+```
+
+**Average Cache Lookup Time**:
+```promql
+rate(suggested_question_cache_lookup_duration_seconds_sum[5m]) / rate(suggested_question_cache_lookup_duration_seconds_count[5m])
+```
+
+**Cache Refresh Frequency** (should show spikes every 24 hours):
+```promql
+sum(rate(suggested_question_cache_refresh_duration_seconds_count[1h]))
+```
+
+**Cost Savings Estimate** (cache hits that avoided LLM calls):
+```promql
+# Estimated cost saved per hour (assuming $0.001 per LLM call)
+sum(rate(suggested_question_cache_hits_total[1h])) * 3600 * 0.001
+```
+
+#### Alerting Rules
+
+Add to `monitoring/alerts.yml`:
+
+```yaml
+- alert: LowSuggestedQuestionCacheHitRate
+  expr: |
+    ((sum(rate(suggested_question_cache_hits_total[5m])) or vector(0)) / 
+     clamp_min(((sum(rate(suggested_question_cache_hits_total[5m])) or vector(0)) + 
+                (sum(rate(suggested_question_cache_misses_total[5m])) or vector(0))), 1)) < 0.5
+  for: 10m
+  labels:
+    severity: warning
+  annotations:
+    summary: "Suggested Question Cache hit rate is below 50%"
+    description: "Cache hit rate is {{ $value | humanizePercentage }}, expected >80%"
+
+- alert: SuggestedQuestionCacheRefreshFailed
+  expr: |
+    sum(rate(suggested_question_cache_refresh_errors_total[5m])) > 0
+  for: 5m
+  labels:
+    severity: critical
+  annotations:
+    summary: "Suggested Question Cache refresh is failing"
+    description: "Cache refresh errors detected at {{ $value }} errors/sec"
+
+- alert: SuggestedQuestionCacheSizeZero
+  expr: |
+    suggested_question_cache_size == 0
+  for: 15m
+  labels:
+    severity: warning
+  annotations:
+    summary: "Suggested Question Cache is empty"
+    description: "Cache size is 0, cache may not be populating correctly"
+```
+
+#### Accessing Grafana
+
+1. **Start Monitoring Stack**:
+   ```bash
+   docker-compose -f monitoring/docker-compose.monitoring.yml up -d
+   ```
+
+2. **Access Grafana**:
+   - URL: http://localhost:3002
+   - Default credentials: `admin` / `admin`
+
+3. **View Dashboard**:
+   - Navigate to: Dashboards → Litecoin Knowledge Hub - Monitoring Dashboard
+   - The Suggested Question Cache panels will appear once metrics are being collected
+
+4. **Verify Metrics Collection**:
+   - Check Prometheus: http://localhost:9090
+   - Query: `suggested_question_cache_hits_total`
+   - Should return metric data if cache is being used
+
 ### Logging
 
 **Cache Operations**:
 - INFO: Suggested Question Cache refresh started/completed
+- INFO: Cron job triggered cache refresh
 - DEBUG: Individual question cache operations
 - WARNING: Redis unavailable, falling back to QueryCache
+- WARNING: Cron job refresh failed (with error details)
 - ERROR: Cache generation failures
+- ERROR: Cron job execution errors
 
 **Example Log Messages**:
 ```
+# Startup refresh
 INFO: Starting suggested question cache refresh...
 INFO: Fetched 18 suggested questions from Payload CMS
 INFO: Cached response for question: What is Litecoin and how does it differ from Bitcoin?
 INFO: Suggested question cache refresh complete. Cached: 15, Skipped: 3, Errors: 0, Total: 18
+
+# Cron job refresh (every 24 hours)
+INFO: [Cron] Starting scheduled suggested question cache refresh...
+INFO: [Cron] Fetched 18 active questions from Payload CMS
+INFO: [Cron] Refreshing cache for 18 questions...
+INFO: [Cron] Suggested question cache refresh complete. Refreshed: 18, Errors: 0, Duration: 45.2s
+
+# Cache hits
 DEBUG: Suggested Question Cache hit for: "what is litecoin?"
 DEBUG: QueryCache miss (falling back to RAG pipeline)
+
+# Cron job failures
+WARNING: [Cron] Suggested question cache refresh failed: Connection timeout to Payload CMS
+ERROR: [Cron] Failed to refresh suggested question cache after 3 retries
 ```
 
 ---
@@ -647,12 +940,52 @@ data: {"status": "complete", "chunk": "", "isComplete": true, "fromCache": "sugg
    redis-cli KEYS "suggested_question:*"
    ```
 
-5. **Monitor Performance**:
+5. **Set Up Cron Job for Scheduled Refresh**:
+   ```bash
+   # Option 1: Using system cron (recommended for production)
+   # Edit crontab: crontab -e
+   # Add line to run every 2 days at 2:00 AM UTC:
+   0 2 */2 * * /path/to/Litecoin-Knowledge-Hub/scripts/refresh-suggested-cache.sh >> /var/log/suggested-cache-refresh.log 2>&1
+   
+   # Option 2: Using Docker container cron (if running in container)
+   # Add to Dockerfile or docker-compose.yml:
+   # Install cron in container and configure
+   
+   # Option 3: Using application-level scheduler (APScheduler, Celery Beat, etc.)
+   # Configure in main.py or separate scheduler service
+   ```
+
+   **Cron Job Configuration**:
+   - **Schedule**: `0 2 */2 * *` (runs every 2 days at 2:00 AM UTC)
+   - **Command**: HTTP POST to refresh endpoint or direct Python function call
+   - **Logging**: Redirect output to log file for monitoring
+   - **Error Handling**: Ensure failures are logged and alerting is configured
+   - **Alternative Times**: Adjust based on traffic patterns (e.g., `0 3 * * *` for 3 AM)
+
+6. **Monitor Performance**:
    ```bash
    # Check Suggested Question Cache hit rate
    # Check QueryCache hit rate (should remain similar)
    # Monitor overall response times
    # Verify cost reduction
+   # Check cron job logs for refresh status
+   tail -f /var/log/suggested-cache-refresh.log
+   ```
+
+7. **Verify Grafana Integration**:
+   ```bash
+   # Start monitoring stack (if not already running)
+   docker-compose -f monitoring/docker-compose.monitoring.yml up -d
+   
+   # Verify metrics are being collected
+   # Open Prometheus: http://localhost:9090
+   # Query: suggested_question_cache_hits_total
+   # Should show metric data if cache is being used
+   
+   # Access Grafana dashboard
+   # Open: http://localhost:3002
+   # Navigate to: Litecoin Knowledge Hub - Monitoring Dashboard
+   # Verify Suggested Question Cache panels are displaying data
    ```
 
 ### Rollback Plan
@@ -687,6 +1020,9 @@ If issues occur:
 - Compare Suggested Cache vs QueryCache hit rates
 - A/B testing for cache TTL values
 - Cost savings reporting
+- Enhanced Grafana dashboards with per-question analytics
+- Real-time cache performance alerts via Grafana
+- Historical trend analysis for cache effectiveness
 
 ---
 
@@ -721,6 +1057,17 @@ If issues occur:
 - Check Redis authentication (if enabled)
 - **QueryCache continues to work (in-memory)**
 
+**Cron Job Not Running**:
+- Verify cron job is installed and configured: `crontab -l`
+- Check cron service is running: `systemctl status cron` (Linux) or `service cron status`
+- Verify cron job log file exists and is writable: `ls -la /var/log/suggested-cache-refresh.log`
+- Check cron job permissions and user context
+- Test cron job manually: Run `./scripts/refresh-suggested-cache.sh` directly to verify it works
+- Check system logs for cron errors: `grep CRON /var/log/syslog` (Linux)
+- Verify timezone settings (cron uses system timezone)
+- Verify `ADMIN_TOKEN` is accessible to cron (may need to source from `backend/.env` in the script)
+- **Cache will still work but may expire if cron fails for >24 hours (TTL is 24h, refresh is every 48h)**
+
 ---
 
 ## Related Documentation
@@ -729,6 +1076,9 @@ If issues occur:
 - [Redis Client Implementation](../backend/redis_client.py)
 - [RAG Pipeline Documentation](../backend/rag_pipeline.py) - Contains QueryCache details
 - [Payload CMS Integration](./milestones/milestone_5_payload_cms_setup_integration.md)
+- [Monitoring Infrastructure](../monitoring/README.md) - Grafana and Prometheus setup
+- [Monitoring Guide](./monitoring/monitoring-guide.md) - Comprehensive monitoring documentation
+- [Grafana Dashboard](../monitoring/grafana/dashboards/litecoin-knowledge-hub.json) - Main monitoring dashboard
 
 ---
 
@@ -737,11 +1087,86 @@ If issues occur:
 ### 2025-01-XX - Initial Implementation
 - Added SuggestedQuestionCache class (Redis-based, 24h TTL)
 - Implemented cache refresh on startup
+- Added scheduled refresh via cron job (runs every 24 hours)
 - Updated chat endpoints to check Suggested Cache before QueryCache
 - Added Payload CMS integration utility
 - **Note**: Existing QueryCache (in-memory, 1h TTL) continues to work unchanged
 
 ---
 
-**Document Status**: Draft - Awaiting Implementation
+## Implementation Notes
+
+### Files Created
+- `backend/utils/suggested_questions.py` - Payload CMS integration utility
+- `backend/cache_utils.py` - Added `SuggestedQuestionCache` class
+
+### Files Modified
+- `backend/main.py` - Updated chat endpoints, added cache refresh function and admin endpoint
+- `backend/monitoring/metrics.py` - Added Prometheus metrics for suggested question cache
+- `backend/monitoring/__init__.py` - Exported new metrics
+- `docs/ENVIRONMENT_VARIABLES.md` - Documented new environment variables
+
+### Key Implementation Details
+- Cache uses Redis with 24-hour TTL (configurable via `SUGGESTED_QUESTION_CACHE_TTL`)
+- Cache refresh runs automatically on application startup (non-blocking)
+- Manual refresh available via `POST /api/v1/admin/refresh-suggested-cache` endpoint
+- Admin endpoint requires Bearer token authentication (`ADMIN_TOKEN` environment variable)
+- All cache operations are async and handle errors gracefully
+- Metrics are tracked for cache hits, misses, lookup duration, cache size, and refresh operations
+
+### Cron Job Setup (48-Hour Refresh)
+
+For scheduled cache refresh every 48 hours (every 2 days), set up a cron job using the provided script:
+
+#### Option 1: Using the Provided Script (Recommended)
+
+```bash
+# Edit crontab
+crontab -e
+
+# Add line to run every 2 days at 2:00 AM UTC
+# This runs on the 1st, 3rd, 5th, etc. of each month
+0 2 */2 * * /path/to/Litecoin-Knowledge-Hub/scripts/refresh-suggested-cache.sh >> /var/log/suggested-cache-refresh.log 2>&1
+```
+
+**Note:** The `*/2` pattern in the day-of-month field runs every 2 days, but it's not exactly 48 hours - it runs on odd-numbered days (1st, 3rd, 5th, etc.) at 2 AM.
+
+#### Option 2: Using a Loop Script (True 48-Hour Interval)
+
+For a true 48-hour interval, create a systemd service or use a loop script:
+
+```bash
+# Create a loop script that runs every 48 hours
+cat > /usr/local/bin/refresh-cache-loop.sh << 'EOF'
+#!/bin/bash
+while true; do
+    /path/to/Litecoin-Knowledge-Hub/scripts/refresh-suggested-cache.sh
+    sleep 172800  # 48 hours in seconds (48 * 60 * 60)
+done
+EOF
+
+chmod +x /usr/local/bin/refresh-cache-loop.sh
+
+# Run as a systemd service or in a screen/tmux session
+```
+
+#### Option 3: Manual Cron with curl (Simple)
+
+```bash
+# Edit crontab
+crontab -e
+
+# Add line to run every 2 days at 2:00 AM UTC
+0 2 */2 * * curl -X POST http://localhost:8000/api/v1/admin/refresh-suggested-cache -H "Authorization: Bearer $(grep ADMIN_TOKEN /path/to/backend/.env | cut -d '=' -f2)" >> /var/log/suggested-cache-refresh.log 2>&1
+```
+
+**Important:**
+- Ensure `ADMIN_TOKEN` is set in `backend/.env` or exported in the cron environment
+- Replace `localhost:8000` with your backend URL
+- The script automatically loads `ADMIN_TOKEN` from `backend/.env` if available
+- Logs are written to `/var/log/suggested-cache-refresh.log` by default (or `suggested-cache-refresh.log` in project root if log directory is not writable)
+
+---
+
+**Document Status**: ✅ Implemented
 

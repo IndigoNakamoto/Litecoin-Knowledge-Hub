@@ -48,7 +48,7 @@ These variables use different hostnames based on the environment.
 | `MONGODB_URI` | `mongodb://localhost:27017` | `mongodb://mongodb:27017` | MongoDB URI (alias) |
 | `TEST_MONGO_URI` | `mongodb://localhost:27017` | `mongodb://mongodb:27017` | Test MongoDB URI |
 | `DATABASE_URI` | `mongodb://localhost:27017/payload_cms` | `mongodb://mongodb:27017/payload_cms` | Payload CMS database URI |
-| `REDIS_URL` | `redis://localhost:6379/0` | `redis://redis:6379/0` | Redis connection URL |
+| `REDIS_URL` | `redis://localhost:6379/0` | `redis://redis:6379/0` | Redis connection URL (used for rate limiting and suggested question cache) |
 
 **Where to set:** Root-level `.env.*` files
 
@@ -61,10 +61,11 @@ These should be stored in service-specific `.env` files and never committed to g
 | `GOOGLE_API_KEY` | Backend | Google AI API key for Gemini |
 | `PAYLOAD_SECRET` | Payload CMS | Payload CMS secret key |
 | `WEBHOOK_SECRET` | Both | Shared secret for webhook HMAC signature verification (must be same in both services) |
+| `ADMIN_TOKEN` | Backend | Bearer token for admin endpoints (e.g., cache refresh) |
 | `CLOUDFLARE_TUNNEL_TOKEN` | Production | Cloudflare tunnel token (optional) |
 
 **Where to set:** 
-- `backend/.env` for `GOOGLE_API_KEY` and `WEBHOOK_SECRET`
+- `backend/.env` for `GOOGLE_API_KEY`, `WEBHOOK_SECRET`, and `ADMIN_TOKEN`
 - `payload_cms/.env` for `PAYLOAD_SECRET` and `WEBHOOK_SECRET`
 - Root `.env.docker.prod` or environment variables for `CLOUDFLARE_TUNNEL_TOKEN`
 
@@ -95,6 +96,8 @@ These variables are usually the same across environments but can be overridden.
 | `CORS_ORIGINS` | Varies by env | CORS allowed origins (comma-separated) |
 | `RATE_LIMIT_PER_MINUTE` | `20` | Rate limit per minute |
 | `RATE_LIMIT_PER_HOUR` | `300` | Rate limit per hour |
+| `PAYLOAD_URL` | `https://cms.lite.space` | Payload CMS URL for fetching suggested questions |
+| `SUGGESTED_QUESTION_CACHE_TTL` | `86400` | Suggested question cache TTL in seconds (24 hours) |
 | `LOG_LEVEL` | `INFO` | Logging level |
 | `JSON_LOGGING` | `false` | Enable JSON logging format |
 | `NODE_ENV` | `development` | Node.js environment |
@@ -135,9 +138,13 @@ These variables are usually the same across environments but can be overridden.
    # Generate a secure webhook secret (use the same value in both files)
    WEBHOOK_SECRET=$(openssl rand -base64 32)
    
+   # Generate admin token
+   ADMIN_TOKEN=$(openssl rand -base64 32)
+   
    # Backend secrets
    echo "GOOGLE_API_KEY=your-key-here" > backend/.env
    echo "WEBHOOK_SECRET=$WEBHOOK_SECRET" >> backend/.env
+   echo "ADMIN_TOKEN=$ADMIN_TOKEN" >> backend/.env
    
    # Payload CMS secrets
    echo "PAYLOAD_SECRET=your-secret-here" > payload_cms/.env
