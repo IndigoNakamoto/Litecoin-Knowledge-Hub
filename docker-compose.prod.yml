@@ -35,6 +35,8 @@ services:
       # Production-specific overrides
       # Note: GOOGLE_API_KEY is loaded from ./backend/.env via env_file above
       - NODE_ENV=production
+      # Internal Docker service URL for Payload CMS (for suggested questions cache)
+      - PAYLOAD_URL=http://payload_cms:3000
     depends_on:
       mongodb:
         condition: service_healthy

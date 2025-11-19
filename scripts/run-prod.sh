@@ -99,7 +99,88 @@ $DOCKER_COMPOSE -f docker-compose.prod.yml build --no-cache \
   --build-arg NEXT_PUBLIC_PAYLOAD_URL="$PROD_PAYLOAD_URL"
 
 echo ""
-echo "✅ Build complete! Starting services..."
+echo "✅ Build complete!"
+echo ""
+
+# Setup cron job for suggested question cache refresh (optional)
+setup_cron_job() {
+    # Skip if running inside Docker
+    if [ -f /.dockerenv ]; then
+        echo "⏭️  Skipping cron job setup (running inside Docker)"
+        return
+    fi
+    
+    # Check if cron is available
+    if ! command -v crontab &> /dev/null; then
+        echo "⚠️  Cron is not available, skipping cron job setup"
+        return
+    fi
+    
+    # Get absolute path to the refresh script
+    REFRESH_SCRIPT="$PROJECT_ROOT/scripts/refresh-suggested-cache.sh"
+    
+    # Check if refresh script exists
+    if [ ! -f "$REFRESH_SCRIPT" ]; then
+        echo "⚠️  Refresh script not found at $REFRESH_SCRIPT, skipping cron job setup"
+        return
+    fi
+    
+    # Check if ADMIN_TOKEN is set in backend/.env
+    if [ ! -f "$PROJECT_ROOT/backend/.env" ] || ! grep -q "ADMIN_TOKEN" "$PROJECT_ROOT/backend/.env"; then
+        echo "⚠️  ADMIN_TOKEN not found in backend/.env"
+        echo "   Cron job setup skipped. Set ADMIN_TOKEN to enable automatic cache refresh."
+        return
+    fi
+    
+    # Check if cron job already exists
+    CRON_CMD="0 2 */2 * * $REFRESH_SCRIPT"
+    if crontab -l 2>/dev/null | grep -qF "$REFRESH_SCRIPT"; then
+        echo "✅ Cron job for suggested question cache refresh already exists"
+        echo "   To view: crontab -l"
+        echo "   To remove: crontab -e (then delete the line)"
+        return
+    fi
+    
+    # Ask for confirmation
+    echo "📅 Suggested Question Cache Refresh Cron Job Setup"
+    echo ""
+    echo "   This will add a cron job to refresh the suggested question cache"
+    echo "   every 48 hours (every 2 days at 2:00 AM UTC)."
+    echo ""
+    echo "   Cron job command:"
+    echo "   $CRON_CMD"
+    echo ""
+    read -p "   Set up cron job? (y/N) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "⏭️  Skipping cron job setup"
+        return
+    fi
+    
+    # Create log directory if it doesn't exist
+    LOG_DIR="/var/log"
+    if [ ! -w "$LOG_DIR" ]; then
+        LOG_DIR="$PROJECT_ROOT"
+        echo "⚠️  Cannot write to /var/log, using project root for logs"
+    fi
+    
+    # Add cron job
+    (crontab -l 2>/dev/null; echo "$CRON_CMD >> $LOG_DIR/suggested-cache-refresh.log 2>&1") | crontab -
+    
+    if [ $? -eq 0 ]; then
+        echo "✅ Cron job added successfully!"
+        echo "   View with: crontab -l"
+        echo "   Logs will be written to: $LOG_DIR/suggested-cache-refresh.log"
+    else
+        echo "❌ Failed to add cron job. You may need to run with appropriate permissions."
+    fi
+}
+
+# Offer to set up cron job
+setup_cron_job
+
+echo ""
+echo "🚀 Starting services..."
 echo ""
 
 # Start services (pass through any additional arguments like -d for detached mode)
