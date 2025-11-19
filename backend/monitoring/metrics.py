@@ -165,6 +165,18 @@ rate_limit_rejections_total = Counter(
     ["endpoint_type"],  # e.g. "chat", "chat_stream"
 )
 
+rate_limit_bans_total = Counter(
+    "rate_limit_bans_total",
+    "Total number of progressive bans applied due to rate limit violations",
+    ["endpoint_type"],  # e.g. "chat", "chat_stream"
+)
+
+rate_limit_violations_total = Counter(
+    "rate_limit_violations_total",
+    "Total number of rate limit violations",
+    ["endpoint_type"],  # e.g. "chat", "chat_stream"
+)
+
 
 def setup_metrics():
     """Initialize metrics registry. Called at application startup."""
