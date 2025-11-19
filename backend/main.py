@@ -22,7 +22,6 @@ load_dotenv()
 from backend.rag_pipeline import RAGPipeline
 from backend.data_models import ChatRequest, ChatMessage, UserQuestion
 from backend.api.v1.sync.payload import router as payload_sync_router
-from backend.api.v1.questions import router as questions_router
 from backend.dependencies import get_user_questions_collection
 from bson import ObjectId
 from fastapi.encoders import jsonable_encoder # Import jsonable_encoder
@@ -189,7 +188,6 @@ except (ImportError, AttributeError) as e:
 
 # Include API routers
 app.include_router(payload_sync_router, prefix="/api/v1/sync", tags=["Payload Sync"])
-app.include_router(questions_router, prefix="/api/v1/questions", tags=["User Questions"])
 
 class SourceDocument(BaseModel):
     page_content: str
