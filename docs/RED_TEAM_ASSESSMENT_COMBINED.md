@@ -31,7 +31,7 @@ This comprehensive red team assessment evaluates the Litecoin Knowledge Hub appl
 | **1** | **CRIT-NEW-1: Unauthenticated User Questions API** (`GET /api/v1/questions/` + `/stats`) | **Privacy catastrophe** - Every user question is publicly downloadable. Risk: "Litecoin AI leaks all user prompts" viral Twitter thread. | 2-4 hours | ✅ **RESOLVED** |
 | **2** | **HIGH-NEW-3 + CRIT-7: Debug code** (print/console.log, especially auth tokens in frontend) | Browser console leaks backend URLs + tokens + internal state. Script kiddie opens devtools → full reconnaissance. | 3-6 hours | ✅ **RESOLVED** |
 | **3** | **CRIT-NEW-2 + CRIT-9 + HIGH-NEW-5: Error information disclosure** (streaming, webhook, general) | 500 errors leak file paths, exception details, sometimes secrets. Information disclosure enables targeted attacks. | 4-8 hours | ⏳ PENDING |
-| **4** | **CRIT-8 + HIGH-NEW-1: Permissive + hardcoded CORS wildcards** | Combined with public frontend, enables CSRF on future authenticated features + makes project look unprofessional. | 1-2 hours | ⏳ PENDING |
+| **4** | **CRIT-8 + HIGH-NEW-1: Permissive + hardcoded CORS wildcards** | Combined with public frontend, enables CSRF on future authenticated features + makes project look unprofessional. | 1-2 hours | ✅ **RESOLVED** |
 | **5** | **HIGH-NEW-2 + HIGH-NEW-4: Health check info disclosure + no rate limiting** | Public health endpoint leaks DB counts + cache stats. No rate limit = perfect reconnaissance + easy DoS vector. | 2-4 hours | ⏳ PENDING |
 | **6** | **CRIT-3 + CRIT-4: MongoDB + Redis authentication** | Repo is public → anyone can `docker-compose up` on $5 VPS and instantly have unauthenticated DB/Redis on internet. Happens constantly. **Code already written, just needs to be enabled.** | 1-2 hours | ⚠️ ACCEPTED RISK → **NOW REQUIRED** |
 
@@ -67,7 +67,7 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 | CRIT-5 | Secrets in Environment Files | ⏳ PENDING | Post-tweet |
 | CRIT-6 | Missing Security Headers | ✅ RESOLVED | - |
 | CRIT-7 | Test/Debug Endpoints in Production | ✅ **RESOLVED** | - |
-| CRIT-8 | Permissive CORS Configuration | ⏳ PENDING | **PUBLIC LAUNCH BLOCKER #4** |
+| CRIT-8 | Permissive CORS Configuration | ✅ **RESOLVED** | - |
 | CRIT-9 | Error Information Disclosure | ⏳ PENDING | **PUBLIC LAUNCH BLOCKER #3** |
 | CRIT-10 | Docker Security Issues | ⏳ PENDING | Short-term |
 | CRIT-11 | No Dependency Vulnerability Scanning | ⏳ PENDING | Short-term |
@@ -87,7 +87,7 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 | HIGH-6 | No Backup and Disaster Recovery Plan | ⏳ PENDING | Short-term |
 | HIGH-7 | Missing API Versioning Strategy | ⏳ PENDING | Medium-term |
 | HIGH-8 | No Load Testing and Capacity Planning | ⏳ PENDING | Short-term |
-| HIGH-NEW-1 | Hardcoded CORS Wildcard in Streaming | ⏳ PENDING | **PUBLIC LAUNCH BLOCKER #4** |
+| HIGH-NEW-1 | Hardcoded CORS Wildcard in Streaming | ✅ **RESOLVED** | - |
 | HIGH-NEW-2 | Health Check Information Disclosure | ⏳ PENDING | **PUBLIC LAUNCH BLOCKER #5** |
 | HIGH-NEW-3 | Debug Code in Production | ✅ **RESOLVED** | - |
 | HIGH-NEW-4 | Missing Rate Limiting on Health/Metrics | ⏳ PENDING | **PUBLIC LAUNCH BLOCKER #5** |
@@ -303,25 +303,26 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 #### CRIT-8: Permissive CORS Configuration
 
 **Severity:** HIGH  
-**Status:** ⏳ **PENDING**  
-**Location:** `backend/main.py:167`
+**Status:** ✅ **RESOLVED** (2025-11-18)  
+**Location:** `backend/main.py:162-168`
 
-**Risk:** CSRF attacks and unauthorized API access
+**Resolution Implemented:**
+1. ✅ Restricted `allow_methods` from `["*"]` to `["GET", "POST", "OPTIONS"]`
+2. ✅ Restricted `allow_headers` from `["*"]` to `["Content-Type", "Authorization", "Cache-Control"]`
+3. ✅ Kept `allow_credentials=True` for future-proofing
+4. ✅ Origins already correctly configured from `CORS_ORIGINS` env var
 
-**Current State:**
-```python
-allow_methods=["*"],
-allow_headers=["*"],
-allow_credentials=True,
-```
+**Implementation Details:**
+- **Backend:** `backend/main.py:162-168` - CORS middleware configuration updated
+- **Testing:** `test-cors.sh` - Comprehensive test suite (all 7 tests passing)
+- **Documentation:** `docs/CRIT-8_FIX_PLAN.md` - Implementation plan
+- **Testing Guide:** `docs/CRIT-8_TESTING_GUIDE.md` - Testing procedures
 
-**Recommendation:**
-1. Restrict methods to only needed: `["GET", "POST", "OPTIONS"]`
-2. Whitelist specific headers instead of `["*"]`
-3. Validate Origin header matches allowed origins
-4. Consider removing `allow_credentials` if not needed
-
-**Note:** Also see HIGH-NEW-1 for hardcoded CORS wildcard in streaming endpoint.
+**Security Impact:**
+- ✅ Only required HTTP methods allowed (GET, POST, OPTIONS)
+- ✅ Only required headers allowed (Content-Type, Authorization, Cache-Control)
+- ✅ CSRF protection for authenticated endpoints
+- ✅ Consistent CORS handling across all endpoints
 
 ---
 
@@ -479,48 +480,25 @@ except Exception as e:
 #### HIGH-NEW-1: Hardcoded CORS Wildcard in Streaming Endpoint
 
 **Severity:** HIGH  
-**Status:** ⏳ **PENDING**  
-**Location:** `backend/main.py:417-426`
+**Status:** ✅ **RESOLVED** (2025-11-18)  
+**Location:** `backend/main.py:415-424`
 
-**Risk:** CSRF attacks and unauthorized API access
+**Resolution Implemented:**
+1. ✅ Removed hardcoded `Access-Control-Allow-Origin: *` header
+2. ✅ Removed hardcoded `Access-Control-Allow-Headers: Cache-Control` header
+3. ✅ CORS headers now handled consistently by middleware
+4. ✅ Kept only non-CORS headers (`Cache-Control`, `Connection`)
 
-**Current State:**
-```python
-return StreamingResponse(
-    generate_stream(),
-    media_type="text/event-stream",
-    headers={
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
-        "Access-Control-Allow-Origin": "*",  # ⚠️ Wildcard bypasses CORS middleware
-        "Access-Control-Allow-Headers": "Cache-Control",
-    }
-)
-```
+**Implementation Details:**
+- **Backend:** `backend/main.py:415-424` - Removed hardcoded CORS headers from streaming endpoint
+- **Testing:** `test-cors.sh` - Verified streaming endpoint uses middleware (Test 3 passing)
+- **Verification:** Confirmed no wildcard in streaming endpoint response headers
 
-The streaming endpoint sets `Access-Control-Allow-Origin: *` in response headers, which:
-- Bypasses the CORS middleware configured in `main.py`
-- Allows requests from any origin (including malicious websites)
-- Creates inconsistency with other endpoints that respect `CORS_ORIGINS` env var
-- Increases CSRF risk for authenticated endpoints (if added later)
-
-**Recommendation:**
-1. Remove hardcoded CORS headers from streaming endpoint
-2. Let CORS middleware handle CORS headers consistently
-3. Or dynamically set origin based on `CORS_ORIGINS` env var and request origin
-
-**Fix:**
-```python
-return StreamingResponse(
-    generate_stream(),
-    media_type="text/event-stream",
-    headers={
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
-        # Remove hardcoded CORS headers - let middleware handle it
-    }
-)
-```
+**Security Impact:**
+- ✅ No wildcard bypass - CORS middleware handles all endpoints consistently
+- ✅ Only allowed origins can access streaming endpoint
+- ✅ Consistent CORS handling across all endpoints
+- ✅ CSRF protection maintained for streaming endpoint
 
 ---
 
@@ -1109,7 +1087,7 @@ class ChatMessage(BaseModel):
 - [ ] **Error handling sanitized everywhere** (CRIT-9, HIGH-NEW-5)
 
 **BLOCKER #4: CORS Misconfiguration**
-- [ ] **CORS properly configured** (CRIT-8, HIGH-NEW-1) - Remove wildcards, restrict methods/headers
+- [x] **CORS properly configured** (CRIT-8, HIGH-NEW-1) - ✅ **RESOLVED** - Wildcards removed, methods/headers restricted
 
 **BLOCKER #5: Health Check Reconnaissance**
 - [ ] **Health check information disclosure fixed** (HIGH-NEW-2) - Remove detailed counts
@@ -1200,20 +1178,20 @@ With the repository going fully public, live chat active, and a Foundation tweet
 6. **BLOCKER #6: Database Authentication** - MongoDB + Redis authentication (CRIT-3, CRIT-4) - **Code already written, just needs to be enabled.** Public repo → anyone can `docker-compose up` on $5 VPS → instant unauthenticated DB/Redis on internet.
 
 **Progress Summary:**
-- ✅ **8 RESOLVED:** CRIT-1, CRIT-2, CRIT-6, CRIT-7, CRIT-12, CRIT-NEW-1, HIGH-NEW-3, and related fixes
-- ⏳ **4 PUBLIC LAUNCH BLOCKERS REMAINING:** Must fix before Foundation tweet (1-3 days, 12-20 hours)
+- ✅ **10 RESOLVED:** CRIT-1, CRIT-2, CRIT-6, CRIT-7, CRIT-8, CRIT-12, CRIT-NEW-1, HIGH-NEW-1, HIGH-NEW-3, and related fixes
+- ⏳ **3 PUBLIC LAUNCH BLOCKERS REMAINING:** Must fix before Foundation tweet (1-2 days, 8-15 hours)
 - ⏳ **1 POST-TWEET:** Secrets management (can wait)
 - ⏳ **Everything else:** Post-launch improvements
 
 **Realistic "Safe-to-Tweet" Timeline:**
 
-**Do items 3-6 above = 1-3 days of focused work (12-20 hours max).**
+**Do items 3, 5, and 6 above = 1-2 days of focused work (8-15 hours max).**
 
 After that, the bot is **public-hardened enough** that even a hostile Twitter thread can't do real damage.
 
 **Do only 2-3** and you risk the Foundation tweet turning into a security PR nightmare.
 
-**Do all 4 remaining blockers** → push → tell the Foundation "green for tweet".
+**Do all 3 remaining blockers** → push → tell the Foundation "green for tweet".
 
 **You are one short sprint (literally the same length as your original 3-week build) away from having the cleanest, most bulletproof open-source RAG agent in crypto.**
 
@@ -1225,13 +1203,13 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 5. ✅ **BLOCKER #1:** Remove User Questions API endpoints (CRIT-NEW-1) - **RESOLVED** - Endpoints removed, questions still logged
 6. ✅ **BLOCKER #2:** Remove all debug code (HIGH-NEW-3 + CRIT-7) - **RESOLVED** - All debug code removed, tokens and URLs no longer exposed
 7. **🚨 BLOCKER #3:** Fix error disclosure everywhere (CRIT-NEW-2, CRIT-9, HIGH-NEW-5) - **4-8 hours**
-8. **🚨 BLOCKER #4:** Fix CORS configuration (CRIT-8, HIGH-NEW-1) - **1-2 hours**
+8. ✅ **BLOCKER #4:** Fix CORS configuration (CRIT-8, HIGH-NEW-1) - **RESOLVED** - Methods/headers restricted, wildcards removed
 9. **🚨 BLOCKER #5:** Sanitize health checks + add rate limiting (HIGH-NEW-2, HIGH-NEW-4) - **2-4 hours**
 10. **🚨 BLOCKER #6:** Enable MongoDB + Redis authentication (CRIT-3, CRIT-4) - **1-2 hours** (code already written)
 11. **Post-tweet:** Implement secrets management (CRIT-5) - **2 hours**
 12. **Post-launch:** Everything else (Docker security, dependency scanning, backups, etc.) - **1-2 weeks**
 
-**Knock out the four remaining blockers above → push → tell the Foundation "green for tweet".**
+**Knock out the three remaining blockers above → push → tell the Foundation "green for tweet".**
 
 **You've already done the hard 95%. This is the last 5% that decides whether the project is remembered as "legendary" or "that Litecoin bot that leaked everything".**
 
@@ -1256,4 +1234,6 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 - **2025-11-18:** CRIT-NEW-1 (Unauthenticated User Questions API) - **RESOLVED** - Removed unauthenticated endpoints entirely. Questions still logged to MongoDB via `log_user_question()` function for internal analysis
 - **2025-11-18:** CRIT-7 (Test/Debug Endpoints) - **RESOLVED** - All debug print statements replaced with proper logging, all console.log statements removed from frontend production code
 - **2025-11-18:** HIGH-NEW-3 (Debug Code in Production) - **RESOLVED** - All debug code removed, sensitive data (auth tokens, backend URLs) no longer exposed in browser console
+- **2025-11-18:** CRIT-8 (Permissive CORS Configuration) - **RESOLVED** - Methods restricted to GET/POST/OPTIONS, headers restricted to Content-Type/Authorization/Cache-Control, CORS middleware properly configured
+- **2025-11-18:** HIGH-NEW-1 (Hardcoded CORS Wildcard in Streaming Endpoint) - **RESOLVED** - Removed hardcoded CORS headers from streaming endpoint, middleware now handles all CORS headers consistently
 

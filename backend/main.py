@@ -161,10 +161,10 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 app.add_middleware(
     CORSMiddleware, 
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=origins,  # From CORS_ORIGINS env var
+    allow_credentials=True,  # Keep for future cookie-based auth
+    allow_methods=["GET", "POST", "OPTIONS"],  # Only required methods
+    allow_headers=["Content-Type", "Authorization", "Cache-Control"],  # Only required headers
 )
 
 # Initialize RAGPipeline globally or as a dependency
@@ -418,7 +418,6 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "Cache-Control",
+            # CORS headers handled by middleware - removed hardcoded wildcards
         }
     )
