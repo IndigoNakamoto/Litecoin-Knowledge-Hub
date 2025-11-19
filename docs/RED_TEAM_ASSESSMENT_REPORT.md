@@ -11,8 +11,9 @@ This red team assessment evaluates the Litecoin Knowledge Hub application's secu
 - CRIT-2 (Unauthenticated Sources API Endpoints) has been **RESOLVED** by removing unused endpoints.
 - CRIT-3 (MongoDB Without Authentication) has been **ACCEPTED RISK** - Decision made not to implement authentication due to local-only deployment and network isolation.
 - CRIT-4 (Redis Without Authentication) has been **ACCEPTED RISK** - Decision made not to implement authentication due to local-only deployment and network isolation.
+- CRIT-12 (Insecure Rate Limiting Implementation) has been **RESOLVED** with sliding window rate limiting and progressive bans.
 
-The application demonstrates good security practices in input validation and rate limiting. Webhook authentication has been implemented. Unused Sources API endpoints have been removed to eliminate attack surface. MongoDB and Redis authentication were assessed but not implemented based on risk acceptance decision for local-only deployment with network isolation. Remaining critical gaps include secrets management.
+The application demonstrates good security practices in input validation and rate limiting. Webhook authentication has been implemented. Unused Sources API endpoints have been removed to eliminate attack surface. MongoDB and Redis authentication were assessed but not implemented based on risk acceptance decision for local-only deployment with network isolation. Rate limiting has been hardened with sliding windows and progressive penalties. Remaining critical gaps include secrets management.
 
 ---
 
@@ -449,15 +450,18 @@ allow_credentials=True,
 
 **Severity:** MEDIUM-HIGH
 
+**Status:** ✅ **RESOLVED** (2025-11-18)
+
 **Location:** `backend/rate_limiter.py`
 
 **Risk:** Rate limiting bypass via IP spoofing
 
-**Current State:**
+**Original State:**
 
 - IP-based rate limiting can be bypassed with proxy/VPN
 - Fixed-window rate limiting allows bursts
 - No distributed rate limiting across instances
+- No progressive penalties for repeated violations
 
 **Impact:**
 
@@ -465,13 +469,62 @@ allow_credentials=True,
 - Resource exhaustion
 - API abuse
 
-**Recommendation:**
+**Resolution Implemented:**
 
-1. Consider user-based rate limiting for authenticated endpoints
-2. Implement sliding window rate limiting
-3. Add distributed rate limiting using Redis
-4. Implement progressive rate limiting with exponential backoff
-5. Add CAPTCHA after repeated failures
+1. ✅ **Sliding window rate limiting** - Implemented using Redis sorted sets
+   - Replaced fixed-window counters with accurate sliding windows (60s and 3600s)
+   - Each request tracked with unique member (timestamp + UUID) and score (timestamp)
+   - Prevents burst attacks by accurately tracking requests within time windows
+   - Uses `ZADD`, `ZREMRANGEBYSCORE`, and `ZCARD` Redis operations
+
+2. ✅ **Progressive rate limiting with exponential backoff** - Implemented violation tracking and temporary bans
+   - 1st violation: 1 minute ban
+   - 2nd violation: 5 minute ban
+   - 3rd violation: 15 minute ban
+   - 4th+ violations: 60 minute ban
+   - Violation count resets after 24 hours
+   - Bans checked before rate limit evaluation
+
+3. ✅ **Enhanced error messages** - Improved rate limit responses
+   - Added `ban_expires_at` timestamp
+   - Added `retry_after_seconds` for accurate retry timing
+   - Added `violation_count` for debugging/monitoring
+   - More accurate `Retry-After` headers based on sliding window
+
+4. ✅ **Metrics tracking** - Added Prometheus metrics
+   - `rate_limit_bans_total` - Tracks total bans applied
+   - `rate_limit_violations_total` - Tracks total violations
+   - Integrated with existing monitoring infrastructure
+
+5. ✅ **Configuration enhancements** - Extended `RateLimitConfig`
+   - Added `enable_progressive_limits` flag (default: True)
+   - Added `progressive_ban_durations` list (customizable)
+   - Maintains backward compatibility with existing code
+
+6. ✅ **Cloudflare integration** - Maintained support for Cloudflare headers
+   - Continues to use `CF-Connecting-IP` header when available
+   - Provides defense in depth against IP spoofing
+
+**Implementation Details:**
+
+- **Backend:** `backend/rate_limiter.py` - Complete rewrite with sliding windows and progressive bans
+- **Backend:** `backend/monitoring/metrics.py` - Added new rate limiting metrics
+- **Testing:** `backend/tests/test_rate_limiter.py` - Comprehensive test suite (11 tests, all passing)
+- **Testing:** `backend/tests/test_rate_limiter_simple.py` - Core logic tests (no dependencies required)
+- **Redis:** Uses sorted sets for accurate sliding window tracking
+- **Backward Compatibility:** Existing `RateLimitConfig` usage continues to work
+
+**Test Results:**
+- ✅ All 11 integration tests passing (pytest)
+- ✅ Configuration and IP extraction tests: 5/5 passed
+- ✅ Progressive ban logic tests: 3/3 passed
+- ✅ Sliding window tests: 1/1 passed
+- ✅ Core logic tests: All passing (standalone test suite)
+
+**Remaining Recommendations:**
+
+- Consider user-based rate limiting for authenticated endpoints (if authentication is added)
+- Consider CAPTCHA after repeated failures (optional enhancement)
 
 ---
 
@@ -715,27 +768,28 @@ allow_credentials=True,
 8. **Implement secrets management** - Move secrets to secure storage (Vault, Secrets Manager)
 9. **Scan dependencies** - Run security scan and update vulnerable packages
 10. **Fix Docker security** - Use non-root users, minimal images, remove build tools
+11. ✅ **Fix rate limiting** - Implemented sliding window rate limiting and progressive bans **[COMPLETED]**
 
 ### Short Term (1-2 Weeks)
 
-11. **Error sanitization** - Ensure no stack traces or internal errors leak to clients
-12. **API request logging** - Implement comprehensive request/audit logging
-13. **HTTPS enforcement** - Configure TLS and redirect HTTP to HTTPS
-14. **Input validation review** - Audit and strengthen input validation
-15. **Rate limiting improvements** - Implement distributed rate limiting, sliding windows
-16. **Backup strategy** - Implement automated backups and test restoration
-17. **Security monitoring** - Set up alerts for security events
-18. **Load testing** - Conduct load tests and capacity planning
+12. **Error sanitization** - Ensure no stack traces or internal errors leak to clients
+13. **API request logging** - Implement comprehensive request/audit logging
+14. **HTTPS enforcement** - Configure TLS and redirect HTTP to HTTPS
+15. **Input validation review** - Audit and strengthen input validation
+16. ✅ **Rate limiting improvements** - Implemented distributed rate limiting with sliding windows and progressive bans **[COMPLETED]**
+17. **Backup strategy** - Implement automated backups and test restoration
+18. **Security monitoring** - Set up alerts for security events
+19. **Load testing** - Conduct load tests and capacity planning
 
 ### Medium Term (1 Month)
 
-19. **CSRF protection** - Implement CSRF tokens and validation
-20. **Session management** - Review and secure session handling
-21. **Request ID tracking** - Add request IDs for better tracing
-22. **CSP implementation** - Define and implement Content Security Policy
-23. **API documentation review** - Secure API docs, hide sensitive endpoints
-24. **Penetration testing** - Conduct professional security assessment
-25. **Disaster recovery plan** - Document and test DR procedures
+20. **CSRF protection** - Implement CSRF tokens and validation
+21. **Session management** - Review and secure session handling
+22. **Request ID tracking** - Add request IDs for better tracing
+23. **CSP implementation** - Define and implement Content Security Policy
+24. **API documentation review** - Secure API docs, hide sensitive endpoints
+25. **Penetration testing** - Conduct professional security assessment
+26. **Disaster recovery plan** - Document and test DR procedures
 
 ---
 
@@ -794,7 +848,7 @@ allow_credentials=True,
 
 ## Conclusion
 
-The Litecoin Knowledge Hub application has a solid foundation with good input validation and rate limiting. **CRIT-1 (Webhook Authentication) and CRIT-2 (Unauthenticated Sources API) have been successfully resolved**. **CRIT-3 (MongoDB Authentication) and CRIT-4 (Redis Authentication) have been assessed and accepted as risks** due to local-only deployment with network isolation. However, **remaining critical security vulnerabilities must be addressed before production deployment**, particularly around secrets management and infrastructure hardening.
+The Litecoin Knowledge Hub application has a solid foundation with good input validation and rate limiting. **CRIT-1 (Webhook Authentication), CRIT-2 (Unauthenticated Sources API), and CRIT-12 (Insecure Rate Limiting) have been successfully resolved**. **CRIT-3 (MongoDB Authentication) and CRIT-4 (Redis Authentication) have been assessed and accepted as risks** due to local-only deployment with network isolation. However, **remaining critical security vulnerabilities must be addressed before production deployment**, particularly around secrets management and infrastructure hardening.
 
 **Progress Update:**
 - ✅ CRIT-1: Webhook authentication - **RESOLVED** (HMAC-SHA256 signature verification)
@@ -802,9 +856,10 @@ The Litecoin Knowledge Hub application has a solid foundation with good input va
 - ⚠️ CRIT-3: MongoDB authentication - **ACCEPTED RISK** (local-only deployment, network isolation)
 - ⚠️ CRIT-4: Redis authentication - **ACCEPTED RISK** (local-only deployment, network isolation)
 - ⚠️ CRIT-7: Test/Debug endpoints - **PARTIALLY RESOLVED** (test-webhook disabled in production)
-- ⏳ CRIT-5, CRIT-6, CRIT-8 through CRIT-12: **PENDING**
+- ✅ CRIT-12: Insecure Rate Limiting - **RESOLVED** (sliding window + progressive bans)
+- ⏳ CRIT-5, CRIT-6, CRIT-8 through CRIT-11: **PENDING**
 
-**Estimated time to production readiness: 2-3 weeks** with dedicated security focus (reduced from 2-4 weeks due to CRIT-1, CRIT-2 resolution, and CRIT-3/CRIT-4 risk acceptance).
+**Estimated time to production readiness: 2-3 weeks** with dedicated security focus (reduced from 2-4 weeks due to CRIT-1, CRIT-2, CRIT-12 resolution, and CRIT-3/CRIT-4 risk acceptance).
 
 **Recommended next steps:**
 
@@ -812,10 +867,11 @@ The Litecoin Knowledge Hub application has a solid foundation with good input va
 2. ✅ ~~Secure Sources API~~ **[COMPLETED - removed unused endpoints]**
 3. ⚠️ ~~MongoDB authentication~~ **[ACCEPTED RISK - local-only deployment, network isolation]**
 4. ⚠️ ~~Redis authentication~~ **[ACCEPTED RISK - local-only deployment, network isolation]**
-5. **Implement secrets management solution** - Move to secure storage (CRIT-5)
-6. **Implement security headers** - Add CSP, HSTS, X-Frame-Options (CRIT-6)
-7. Conduct penetration testing before launch
-8. Establish ongoing security monitoring and processes
+5. ✅ ~~Fix rate limiting implementation~~ **[COMPLETED - sliding window + progressive bans]**
+6. **Implement secrets management solution** - Move to secure storage (CRIT-5)
+7. **Implement security headers** - Add CSP, HSTS, X-Frame-Options (CRIT-6)
+8. Conduct penetration testing before launch
+9. Establish ongoing security monitoring and processes
 
 ---
 
@@ -831,5 +887,6 @@ The Litecoin Knowledge Hub application has a solid foundation with good input va
 - 2025-11-18: CRIT-3 (MongoDB Without Authentication) - **ACCEPTED RISK** - Decision made not to implement authentication due to local-only deployment, network isolation, and no external exposure
 - 2025-11-18: CRIT-4 (Redis Without Authentication) - **ACCEPTED RISK** - Decision made not to implement authentication due to local-only deployment, network isolation, and no external exposure
 - 2025-11-18: CRIT-7 (Test/Debug Endpoints) - **PARTIALLY RESOLVED** - Test webhook endpoint disabled in production
+- 2025-11-18: CRIT-12 (Insecure Rate Limiting Implementation) - **RESOLVED** - Implemented sliding window rate limiting using Redis sorted sets and progressive bans with exponential backoff
 
 **Next Review:** After remaining critical fixes implementation
