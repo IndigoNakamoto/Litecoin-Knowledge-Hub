@@ -39,18 +39,20 @@ These variables differ based on the environment (localhost vs Docker service nam
 
 ### 2. Database Connections
 
-These variables use different hostnames based on the environment.
+These variables use different hostnames based on the environment. **Authentication is required for production deployments** (see [MongoDB/Redis Authentication Migration Guide](./MONGODB_REDIS_AUTH_MIGRATION.md)).
 
-| Variable | Local Dev | Docker | Description |
-|----------|-----------|--------|-------------|
-| `MONGO_URI` | `mongodb://localhost:27017` | `mongodb://mongodb:27017` | MongoDB connection string |
-| `MONGO_DETAILS` | `mongodb://localhost:27017` | `mongodb://mongodb:27017` | MongoDB details (alias) |
-| `MONGODB_URI` | `mongodb://localhost:27017` | `mongodb://mongodb:27017` | MongoDB URI (alias) |
-| `TEST_MONGO_URI` | `mongodb://localhost:27017` | `mongodb://mongodb:27017` | Test MongoDB URI |
-| `DATABASE_URI` | `mongodb://localhost:27017/payload_cms` | `mongodb://mongodb:27017/payload_cms` | Payload CMS database URI |
-| `REDIS_URL` | `redis://localhost:6379/0` | `redis://redis:6379/0` | Redis connection URL (used for rate limiting and suggested question cache) |
+| Variable | Local Dev | Docker (No Auth) | Docker (With Auth) | Description |
+|----------|-----------|------------------|-------------------|-------------|
+| `MONGO_URI` | `mongodb://localhost:27017` | `mongodb://mongodb:27017` | `mongodb://litecoin_app:PASSWORD@mongodb:27017/litecoin_rag_db?authSource=litecoin_rag_db` | MongoDB connection string |
+| `MONGO_DETAILS` | `mongodb://localhost:27017` | `mongodb://mongodb:27017` | `mongodb://litecoin_app:PASSWORD@mongodb:27017/litecoin_rag_db?authSource=litecoin_rag_db` | MongoDB details (alias) |
+| `MONGODB_URI` | `mongodb://localhost:27017` | `mongodb://mongodb:27017` | `mongodb://litecoin_app:PASSWORD@mongodb:27017/litecoin_rag_db?authSource=litecoin_rag_db` | MongoDB URI (alias) |
+| `TEST_MONGO_URI` | `mongodb://localhost:27017` | `mongodb://mongodb:27017` | `mongodb://litecoin_app:PASSWORD@mongodb:27017/litecoin_rag_db?authSource=litecoin_rag_db` | Test MongoDB URI |
+| `DATABASE_URI` | `mongodb://localhost:27017/payload_cms` | `mongodb://mongodb:27017/payload_cms` | `mongodb://litecoin_app:PASSWORD@mongodb:27017/payload_cms?authSource=payload_cms` | Payload CMS database URI |
+| `REDIS_URL` | `redis://localhost:6379/0` | `redis://redis:6379/0` | `redis://:PASSWORD@redis:6379/0` | Redis connection URL (used for rate limiting and suggested question cache) |
 
 **Where to set:** Root-level `.env.*` files
+
+**Note:** Replace `PASSWORD` with actual passwords from `MONGO_APP_PASSWORD` and `REDIS_PASSWORD` environment variables. The `authSource` parameter tells MongoDB which database to authenticate against.
 
 ### 3. Secrets
 
@@ -63,11 +65,21 @@ These should be stored in service-specific `.env` files and never committed to g
 | `WEBHOOK_SECRET` | Both | Shared secret for webhook HMAC signature verification (must be same in both services) |
 | `ADMIN_TOKEN` | Backend | Bearer token for admin endpoints (e.g., cache refresh) |
 | `CLOUDFLARE_TUNNEL_TOKEN` | Production | Cloudflare tunnel token (optional) |
+| `MONGO_ROOT_USERNAME` | Docker | MongoDB root/admin username (default: `admin`) |
+| `MONGO_ROOT_PASSWORD` | Docker | **REQUIRED** - MongoDB root/admin password (generate with `openssl rand -base64 32`) |
+| `MONGO_APP_USERNAME` | Docker | MongoDB application username (default: `litecoin_app`) |
+| `MONGO_APP_PASSWORD` | Docker | **REQUIRED** - MongoDB application user password (generate with `openssl rand -base64 32`) |
+| `REDIS_PASSWORD` | Docker | **REQUIRED** - Redis password (generate with `openssl rand -base64 32`) |
 
 **Where to set:** 
 - `backend/.env` for `GOOGLE_API_KEY`, `WEBHOOK_SECRET`, and `ADMIN_TOKEN`
 - `payload_cms/.env` for `PAYLOAD_SECRET` and `WEBHOOK_SECRET`
+- Root `.env.docker.prod`, `.env.docker.dev`, or `.env.prod-local` for `MONGO_ROOT_PASSWORD`, `MONGO_APP_PASSWORD`, and `REDIS_PASSWORD`
 - Root `.env.docker.prod` or environment variables for `CLOUDFLARE_TUNNEL_TOKEN`
+
+**Important:** 
+- `WEBHOOK_SECRET` must be the same value in both `backend/.env` and `payload_cms/.env` for webhook authentication to work.
+- MongoDB and Redis authentication passwords are **REQUIRED for production deployments** (see [MongoDB/Redis Authentication Migration Guide](./MONGODB_REDIS_AUTH_MIGRATION.md)).
 
 **Important:** `WEBHOOK_SECRET` must be the same value in both `backend/.env` and `payload_cms/.env` for webhook authentication to work. Generate a secure random string:
 
@@ -161,11 +173,29 @@ These variables are usually the same across environments but can be overridden.
    cp .env.example .env.docker.dev
    ```
 
-2. The `.env.docker.dev` file already has Docker service names configured
+2. Generate MongoDB and Redis passwords and add to `.env.docker.dev`:
+   ```bash
+   # Generate passwords
+   MONGO_ROOT_PASSWORD=$(openssl rand -base64 32)
+   MONGO_APP_PASSWORD=$(openssl rand -base64 32)
+   REDIS_PASSWORD=$(openssl rand -base64 32)
+   
+   # Add to .env.docker.dev
+   echo "MONGO_ROOT_PASSWORD=$MONGO_ROOT_PASSWORD" >> .env.docker.dev
+   echo "MONGO_APP_PASSWORD=$MONGO_APP_PASSWORD" >> .env.docker.dev
+   echo "REDIS_PASSWORD=$REDIS_PASSWORD" >> .env.docker.dev
+   
+   # Update connection strings with passwords
+   # (Edit .env.docker.dev manually to update MONGO_URI, DATABASE_URI, REDIS_URL)
+   ```
 
-3. Ensure service-specific `.env` files exist (same as local development)
+3. The `.env.docker.dev` file already has Docker service names configured
 
-4. Run with:
+4. Ensure service-specific `.env` files exist (same as local development)
+
+5. **Before first run with authentication:** Create MongoDB users (see [MongoDB/Redis Authentication Migration Guide](./MONGODB_REDIS_AUTH_MIGRATION.md))
+
+6. Run with:
    ```bash
    docker-compose -f docker-compose.dev.yml up
    ```
@@ -177,15 +207,36 @@ These variables are usually the same across environments but can be overridden.
    cp .env.example .env.docker.prod
    ```
 
-2. Update production URLs in `.env.docker.prod`:
+2. Generate MongoDB and Redis passwords and add to `.env.docker.prod`:
+   ```bash
+   # Generate passwords
+   MONGO_ROOT_PASSWORD=$(openssl rand -base64 32)
+   MONGO_APP_PASSWORD=$(openssl rand -base64 32)
+   REDIS_PASSWORD=$(openssl rand -base64 32)
+   
+   # Add to .env.docker.prod
+   echo "MONGO_ROOT_PASSWORD=$MONGO_ROOT_PASSWORD" >> .env.docker.prod
+   echo "MONGO_APP_PASSWORD=$MONGO_APP_PASSWORD" >> .env.docker.prod
+   echo "REDIS_PASSWORD=$REDIS_PASSWORD" >> .env.docker.prod
+   ```
+
+3. Update production URLs in `.env.docker.prod`:
    - `PAYLOAD_PUBLIC_SERVER_URL=https://cms.lite.space`
    - `FRONTEND_URL=https://chat.lite.space`
    - `NEXT_PUBLIC_BACKEND_URL=https://api.lite.space`
    - `NEXT_PUBLIC_PAYLOAD_URL=https://cms.lite.space`
 
-3. Ensure service-specific `.env` files have production secrets
+4. Update connection strings in `.env.docker.prod` with authentication:
+   - `MONGO_URI=mongodb://litecoin_app:${MONGO_APP_PASSWORD}@mongodb:27017/litecoin_rag_db?authSource=litecoin_rag_db`
+   - `MONGO_DETAILS=mongodb://litecoin_app:${MONGO_APP_PASSWORD}@mongodb:27017/litecoin_rag_db?authSource=litecoin_rag_db`
+   - `DATABASE_URI=mongodb://litecoin_app:${MONGO_APP_PASSWORD}@mongodb:27017/payload_cms?authSource=payload_cms`
+   - `REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0`
 
-4. Run with:
+5. Ensure service-specific `.env` files have production secrets
+
+6. **Before first run with authentication:** Create MongoDB users (see [MongoDB/Redis Authentication Migration Guide](./MONGODB_REDIS_AUTH_MIGRATION.md))
+
+7. Run with:
    ```bash
    docker-compose -f docker-compose.prod.yml up
    ```
