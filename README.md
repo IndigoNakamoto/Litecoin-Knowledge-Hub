@@ -24,7 +24,10 @@ The project has successfully completed the implementation of the core RAG pipeli
 | **Conversational Memory** | ✅ **IMPLEMENTED** - Enables natural follow-up conversations with context-aware responses, allowing users to ask questions like "Who created it?" or "What about the second one?" that reference previous conversation context. |
 | **Payload CMS Integration** | ✅ **IMPLEMENTED** - Complete content lifecycle management system with draft→publish→unpublish→delete workflows, real-time webhook synchronization, automated content filtering, and Foundation-controlled editorial oversight ensuring knowledge base quality and accuracy. |
 | **Monitoring & Observability** | ✅ **IMPLEMENTED** - Comprehensive monitoring infrastructure with Prometheus metrics, Grafana dashboards, health checks, structured logging, and LLM observability (LangSmith integration). Tracks RAG pipeline performance, LLM costs, cache performance, and system health. |
-| **Question Logging** | ✅ **IMPLEMENTED** - All user questions are logged to MongoDB for analysis, enabling insights into user needs, query patterns, and system usage. Includes API endpoints for querying logged questions and statistics. |
+| **Question Logging** | ✅ **IMPLEMENTED** - All user questions are logged to MongoDB for analysis, enabling insights into user needs, query patterns, and system usage. Questions are accessible via direct MongoDB queries for internal analysis. |
+| **LLM Spend Limit Monitoring** | ✅ **IMPLEMENTED** - Multi-layered cost control system with daily/hourly spend limits, pre-flight cost estimation, Prometheus metrics, and Discord alerting. Prevents billing overages with hard stops. See [FEATURE_SPEND_LIMIT_MONITORING.md](./docs/FEATURE_SPEND_LIMIT_MONITORING.md) for details. |
+| **Suggested Question Caching** | ✅ **IMPLEMENTED** - Redis-based cache layer for suggested questions with 24-hour TTL, pre-populated on startup, providing instant responses (<100ms) for common questions. See [FEATURE_SUGGESTED_QUESTION_CACHING.md](./docs/FEATURE_SUGGESTED_QUESTION_CACHING.md) for details. |
+| **Security Hardening** | ⚠️ **NEARLY COMPLETE** - Comprehensive security review and hardening completed. 15 critical/high vulnerabilities resolved including webhook authentication, CORS configuration, error disclosure fixes, rate limiting, and security headers. **1 public launch blocker remaining:** MongoDB and Redis authentication (CRIT-3, CRIT-4) - code already written, needs to be enabled (~1-2 hours). See [RED_TEAM_ASSESSMENT_COMBINED.md](./docs/RED_TEAM_ASSESSMENT_COMBINED.md) for details. |
 | **Litecoin Basics & FAQ** | 📝 **IN PROGRESS** - Provides clear, concise answers to fundamental questions about Litecoin, its history, how it works, and common terminology. Caters especially to new users. Content population in progress. |
 | **Transaction & Block Explorer** | 📝 **PLANNED** - Allows users to look up details of Litecoin transactions and explore block information. |
 | **Market Data & Insights** | 📝 **PLANNED** - Delivers real-time Litecoin price information, market capitalization, and trading volume from reliable market APIs. |
@@ -167,6 +170,31 @@ flowchart TD
 
 ## **Log of Completed Milestones**
 
+* **LLM Spend Limit Monitoring (Recent)**
+  * Implemented multi-layered cost control system with daily/hourly spend limits
+  * Pre-flight cost estimation prevents billing overages
+  * Prometheus metrics and Grafana dashboards for cost tracking
+  * Discord webhook alerts at 80% and 100% thresholds
+  * Hard stops prevent any cost overages
+  * See [FEATURE_SPEND_LIMIT_MONITORING.md](./docs/FEATURE_SPEND_LIMIT_MONITORING.md) for details
+* **Suggested Question Caching (Recent)**
+  * Implemented Redis-based cache layer for suggested questions
+  * 24-hour TTL with pre-population on startup
+  * Provides instant responses (<100ms) for common questions
+  * Automatic cache refresh via cron job (every 48 hours)
+  * Comprehensive Prometheus metrics and Grafana integration
+  * See [FEATURE_SUGGESTED_QUESTION_CACHING.md](./docs/FEATURE_SUGGESTED_QUESTION_CACHING.md) for details
+* **Security Hardening (Recent)**
+  * Completed comprehensive red team security assessment
+  * Resolved 15 critical and high-priority vulnerabilities
+  * Implemented webhook authentication (HMAC-SHA256)
+  * Fixed CORS configuration and error disclosure issues
+  * Added comprehensive security headers (CSP, HSTS, etc.)
+  * Hardened rate limiting with sliding window and progressive bans
+  * Sanitized health check endpoints and added rate limiting
+  * Removed all debug code from production builds
+  * **1 public launch blocker remaining:** MongoDB and Redis authentication (CRIT-3, CRIT-4) - code already written, needs to be enabled (~1-2 hours)
+  * See [RED_TEAM_ASSESSMENT_COMBINED.md](./docs/RED_TEAM_ASSESSMENT_COMBINED.md) for complete details
 * **Monitoring & Observability Infrastructure (Recent)**
   * Implemented comprehensive Prometheus metrics system tracking HTTP requests, RAG pipeline performance, LLM costs, cache performance, and vector store health
   * Set up Grafana dashboards with pre-configured panels for key metrics visualization
@@ -177,8 +205,7 @@ flowchart TD
   * Added Docker Compose stack for easy monitoring infrastructure deployment
 * **Question Logging System (Recent)**
   * Implemented user question logging to MongoDB for analytics and insights
-  * Created API endpoints (`/api/v1/questions`) for querying logged questions with pagination and filtering
-  * Added question statistics endpoint for usage analytics
+  * Questions are accessible via direct MongoDB queries for internal analysis (public API endpoints removed for security - see CRIT-NEW-1)
   * Integrated Prometheus metrics for tracking question volume by endpoint type
   * Background logging ensures no performance impact on user queries
 * **Payload CMS Content Lifecycle Management (11/3/2025)**

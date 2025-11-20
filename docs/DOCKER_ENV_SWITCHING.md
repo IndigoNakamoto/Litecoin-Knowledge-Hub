@@ -177,6 +177,21 @@ docker-compose -f docker-compose.prod.yml build --no-cache
 2. Rebuild if `NEXT_PUBLIC_*` vars changed
 3. Restart containers for runtime vars
 
+## Security Considerations
+
+⚠️ **IMPORTANT: MongoDB and Redis Authentication (Public Launch Blocker)**
+
+Currently, MongoDB and Redis run without authentication in Docker Compose configurations. This is acceptable for local-only development but **must be enabled before public launch** (see [RED_TEAM_ASSESSMENT_COMBINED.md](./RED_TEAM_ASSESSMENT_COMBINED.md) - CRIT-3, CRIT-4).
+
+**When authentication is enabled:**
+- MongoDB connection strings will need to include credentials: `mongodb://username:password@mongodb:27017/...`
+- Redis connection strings will need to include password: `redis://:password@redis:6379/0`
+- Update all `MONGO_URI`, `DATABASE_URI`, and `REDIS_URL` environment variables
+- Update Docker Compose files to configure authentication
+- Test authentication flow after enabling
+
+**Status:** Code already written, needs to be enabled (~1-2 hours). See security assessment for details.
+
 ## Best Practices
 
 1. **Always stop one environment before starting the other**
@@ -185,6 +200,7 @@ docker-compose -f docker-compose.prod.yml build --no-cache
 4. **Use separate database volumes** for dev/prod (currently shared!)
 5. **Regular cleanup** - Run `docker system prune` weekly
 6. **Version control env examples** - Keep `.env.example` updated
+7. **Enable MongoDB/Redis authentication** before public deployment
 
 ## Quick Reference
 
@@ -195,4 +211,5 @@ docker-compose -f docker-compose.prod.yml build --no-cache
 | Stop | `docker-compose -f docker-compose.dev.yml down` | `docker-compose -f docker-compose.prod.yml down` |
 | Logs | `docker-compose -f docker-compose.dev.yml logs -f` | `docker-compose -f docker-compose.prod.yml logs -f` |
 | Restart | `docker-compose -f docker-compose.dev.yml restart` | `docker-compose -f docker-compose.prod.yml restart` |
+
 

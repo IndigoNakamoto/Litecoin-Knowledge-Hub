@@ -46,6 +46,8 @@ Make sure you have the necessary environment variables set in your service-speci
 - `backend/.env` - Backend configuration (GOOGLE_API_KEY, MONGO_URI, etc.)
 - `payload_cms/.env` - Payload CMS configuration (DATABASE_URI, PAYLOAD_SECRET, etc.)
 
+⚠️ **Note:** Currently, MongoDB and Redis run without authentication. When authentication is enabled (required for public launch - see [RED_TEAM_ASSESSMENT_COMBINED.md](./RED_TEAM_ASSESSMENT_COMBINED.md)), connection strings will need to include credentials.
+
 ## Usage
 
 ### Option 1: Using the Helper Script (Recommended)
@@ -170,6 +172,19 @@ If you get port conflicts, make sure:
 - Verify health checks: `docker ps` (check STATUS column)
 - Ensure MongoDB is healthy before other services start
 
+## Security Considerations
+
+⚠️ **IMPORTANT: MongoDB and Redis Authentication (Public Launch Blocker)**
+
+The production-local environment uses the same Docker Compose configuration as production, which currently runs MongoDB and Redis without authentication. This is acceptable for local testing but **must be enabled before public launch** (see [RED_TEAM_ASSESSMENT_COMBINED.md](./RED_TEAM_ASSESSMENT_COMBINED.md) - CRIT-3, CRIT-4).
+
+**When authentication is enabled:**
+- Update `MONGO_URI` and `DATABASE_URI` to include credentials
+- Update `REDIS_URL` to include password
+- Test authentication flow in production-local before deploying
+
+**Status:** Code already written, needs to be enabled (~1-2 hours). See security assessment for details.
+
 ## Best Practices
 
 1. **Always test in production-local** before deploying to production
@@ -177,6 +192,7 @@ If you get port conflicts, make sure:
 3. **Keep `.env.prod-local` updated** with any new environment variables
 4. **Clean up after testing**: `docker-compose -f docker-compose.prod-local.yml down -v`
 5. **Don't commit `.env.prod-local`** - it's gitignored for a reason
+6. **Enable MongoDB/Redis authentication** before public deployment
 
 ## Cleanup
 
@@ -191,4 +207,5 @@ To stop but keep volumes (faster for next run):
 ```bash
 docker-compose -f docker-compose.prod-local.yml down
 ```
+
 
