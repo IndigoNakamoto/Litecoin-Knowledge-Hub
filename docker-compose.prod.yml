@@ -7,14 +7,24 @@ services:
     env_file:
       - ./.env.docker.prod
     environment:
+      # Only set init DB variables if MONGO_ROOT_PASSWORD is set
+      # MongoDB requires both USERNAME and PASSWORD to be set together
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USERNAME:-admin}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:-}
     # Only enable --auth if MONGO_ROOT_PASSWORD is set
     # --bind_ip_all allows connections from other containers
-    command:
-      - mongod
-      - --bind_ip_all
-      - ${MONGO_ROOT_PASSWORD:+--auth}
+    # Use entrypoint override to conditionally set/unset init DB vars
+    entrypoint: >
+      sh -c "
+      if [ -n \"$$MONGO_ROOT_PASSWORD\" ]; then
+        export MONGO_INITDB_ROOT_USERNAME=\"$${MONGO_ROOT_USERNAME:-admin}\";
+        export MONGO_INITDB_ROOT_PASSWORD=\"$$MONGO_ROOT_PASSWORD\";
+      else
+        unset MONGO_INITDB_ROOT_USERNAME;
+        unset MONGO_INITDB_ROOT_PASSWORD;
+      fi;
+      exec docker-entrypoint.sh mongod --bind_ip_all $${MONGO_ROOT_PASSWORD:+--auth}
+      "
     ports:
       - "27017:27017"
     volumes:
