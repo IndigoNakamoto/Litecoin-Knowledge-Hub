@@ -7,50 +7,48 @@ This comprehensive red team assessment evaluates the Litecoin Knowledge Hub appl
 **Overall Security Score: 7.0/10** - **NEARLY READY FOR PUBLIC LAUNCH** (1 blocker remaining)
 
 **Total Issues Identified:**
-- **14 CRITICAL** vulnerabilities (12 original + 2 additional)
-- **13 HIGH** priority issues (8 original + 5 additional)
-- **18 MEDIUM** priority recommendations (15 original + 3 additional)
+- **16 CRITICAL** vulnerabilities (12 original + 4 additional)
+- **15 HIGH** priority issues (8 original + 7 additional)
+- **21 MEDIUM** priority recommendations (15 original + 6 additional)
+- **3 LOW** priority recommendations
 
 **Current Status Summary:**
 - ✅ **15 RESOLVED** (CRIT-1, CRIT-2, CRIT-6, CRIT-7, CRIT-8, CRIT-9, CRIT-12, CRIT-NEW-1, CRIT-NEW-2, HIGH-NEW-1, HIGH-NEW-2, HIGH-NEW-3, HIGH-NEW-4, HIGH-NEW-5, and related fixes)
 - ⚠️ **2 ACCEPTED RISK** (CRIT-3, CRIT-4 - MongoDB/Redis authentication) - **NOW REQUIRES FIX FOR PUBLIC LAUNCH**
-- ⏳ **4 PENDING** (3 critical + 1 high priority)
+- ⏳ **6 PENDING** (4 critical + 2 high priority)
 
 ---
 
-## 🚨 PUBLIC LAUNCH BLOCKERS (Reprioritized for Public Repo + Foundation Tweet)
+## 🚨 PUBLIC LAUNCH BLOCKERS (Reprioritized for Public Repo)
 
-**Context:** With the repository going fully public, live chat active, and a Foundation tweet imminent, the threat model has fundamentally changed. What was acceptable for local-only deployment is now a critical blocker for public exposure.
+**Context:** With the repository going fully public, and live chat active, the threat model has fundamentally changed. What was acceptable for local-only deployment is now a critical blocker for public exposure.
 
 **Timeline:** **1-2 hours of focused work** to address blocker 6 below (blockers 1-5 already resolved).
 
-### ⛔ ABSOLUTE BLOCKERS (Must Fix Before Foundation Tweet)
+### ⛔ ABSOLUTE BLOCKERS
 
 | Rank | Issue | Why It's a Blocker | Effort | Status |
 |------|-------|-------------------|--------|--------|
-| **1** | **CRIT-NEW-1: Unauthenticated User Questions API** (`GET /api/v1/questions/` + `/stats`) | **Privacy catastrophe** - Every user question is publicly downloadable. Risk: "Litecoin AI leaks all user prompts" viral Twitter thread. | 2-4 hours | ✅ **RESOLVED** |
+| **1** | **CRIT-NEW-1: Unauthenticated User Questions API** (`GET /api/v1/questions/` + `/stats`) | **Privacy catastrophe** - Every user question is publicly downloadable. Risk: "Litecoin AI leaks all user prompts" viral social media exposure. | 2-4 hours | ✅ **RESOLVED** |
 | **2** | **HIGH-NEW-3 + CRIT-7: Debug code** (print/console.log, especially auth tokens in frontend) | Browser console leaks backend URLs + tokens + internal state. Script kiddie opens devtools → full reconnaissance. | 3-6 hours | ✅ **RESOLVED** |
 | **3** | **CRIT-NEW-2 + CRIT-9 + HIGH-NEW-5: Error information disclosure** (streaming, webhook, general) | 500 errors leak file paths, exception details, sometimes secrets. Information disclosure enables targeted attacks. | 4-8 hours | ✅ **RESOLVED** |
 | **4** | **CRIT-8 + HIGH-NEW-1: Permissive + hardcoded CORS wildcards** | Combined with public frontend, enables CSRF on future authenticated features + makes project look unprofessional. | 1-2 hours | ✅ **RESOLVED** |
 | **5** | **HIGH-NEW-2 + HIGH-NEW-4: Health check info disclosure + no rate limiting** | Public health endpoint leaks DB counts + cache stats. No rate limit = perfect reconnaissance + easy DoS vector. | 2-4 hours | ✅ **RESOLVED** |
 | **6** | **CRIT-3 + CRIT-4: MongoDB + Redis authentication** | Repo is public → anyone can `docker-compose up` on $5 VPS and instantly have unauthenticated DB/Redis on internet. Happens constantly. **Code already written, just needs to be enabled.** | 1-2 hours | ⚠️ ACCEPTED RISK → **NOW REQUIRED** |
 
-### ✅ POST-TWEET (Can Wait Until After Launch)
+### ✅ POST-LAUNCH
 
 | Rank | Issue | Why It Can Wait | Effort |
 |------|-------|----------------|--------|
 | **7** | **CRIT-5: Secrets management** | Not urgent if no real secrets ever committed. Move to Railway/Render secrets for best practices. | 2 hours |
-| **8** | Everything else (Docker non-root, dependency scanning, backups, etc.) | Important but not tweet-kill. Important for long-term security posture. | 1-2 weeks |
+| **8** | Everything else (Docker non-root, dependency scanning, backups, etc.) | Important for long-term security posture. | 1-2 weeks |
 
-### Realistic "Safe-to-Tweet" Timeline
+### Realistic "Ready-to-Launch" Timeline
 
 **Do item 6 above = 1-2 hours of focused work.**
 
-After that, the bot is **public-hardened enough** that even a hostile Twitter thread can't do real damage.
+After that, the bot is **public-hardened enough** that even a hostile security incident can't do real damage.
 
-**Do only 1-5** and you risk the Foundation tweet turning into a security PR nightmare.
-
-**Do all 6** → push → tell the Foundation "green for tweet".
 
 ---
 
@@ -64,7 +62,7 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 | CRIT-2 | Unauthenticated Sources API Endpoints | ✅ RESOLVED | - |
 | CRIT-3 | MongoDB Without Authentication | ⏳ **NOW REQUIRED** (was ACCEPTED RISK) | **PUBLIC LAUNCH BLOCKER #6** |
 | CRIT-4 | Redis Without Authentication | ⏳ **NOW REQUIRED** (was ACCEPTED RISK) | **PUBLIC LAUNCH BLOCKER #6** |
-| CRIT-5 | Secrets in Environment Files | ⏳ PENDING | Post-tweet |
+| CRIT-5 | Secrets in Environment Files | ⏳ PENDING | Post-launch |
 | CRIT-6 | Missing Security Headers | ✅ RESOLVED | - |
 | CRIT-7 | Test/Debug Endpoints in Production | ✅ **RESOLVED** | - |
 | CRIT-8 | Permissive CORS Configuration | ✅ **RESOLVED** | - |
@@ -74,6 +72,8 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 | CRIT-12 | Insecure Rate Limiting Implementation | ✅ RESOLVED | - |
 | CRIT-NEW-1 | Unauthenticated User Questions API | ✅ **RESOLVED** | - |
 | CRIT-NEW-2 | Error Disclosure in Streaming Endpoint | ✅ **RESOLVED** | - |
+| CRIT-NEW-3 | Payload CMS Access Control Bypass | ⏳ **PENDING** | **PUBLIC LAUNCH BLOCKER** |
+| CRIT-NEW-4 | Admin Endpoint Missing Rate Limiting | ⏳ **PENDING** | **PUBLIC LAUNCH BLOCKER** |
 
 ### High Priority Issues Status
 
@@ -92,6 +92,8 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 | HIGH-NEW-3 | Debug Code in Production | ✅ **RESOLVED** | - |
 | HIGH-NEW-4 | Missing Rate Limiting on Health/Metrics | ✅ **RESOLVED** | - |
 | HIGH-NEW-5 | Webhook Error Information Disclosure | ✅ **RESOLVED** | - |
+| HIGH-NEW-6 | Payload CMS Public User Read Access | ⏳ **PENDING** | Short-term |
+| HIGH-NEW-7 | Missing CSP in Backend Middleware | ⏳ **PENDING** | Short-term |
 
 ---
 
@@ -272,6 +274,8 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
   - `frontend/src/components/SuggestedQuestions.tsx` - Removed URL from error logging
 - **Test files:** Print statements in test files remain (acceptable for test output)
 
+**Additional Note:** The test webhook endpoint was disabled by checking `NODE_ENV`, but this approach has limitations. For better security, consider removing the endpoint entirely from production builds or using environment-based route registration instead of relying solely on `NODE_ENV` checks.
+
 ---
 
 ### ⏳ PENDING - IMMEDIATE PRIORITY
@@ -280,7 +284,7 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 
 **Severity:** CRITICAL  
 **Status:** ⏳ **PENDING**  
-**Location:** `backend/.env`, `payload_cms/.env`
+**Location:** `backend/.env`, `payload_cms/.env`, `backend/main.py:887-894`
 
 **Risk:** Secret leakage through file system access or backups
 
@@ -289,6 +293,20 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 - Secrets may be exposed in Docker layers, backups, or logs
 - No secrets rotation mechanism
 - No secret scanning in CI/CD
+- Admin token stored in plain environment variable with no rotation mechanism:
+
+```python
+expected_token = os.getenv("ADMIN_TOKEN")
+if not expected_token:
+    logger.warning("ADMIN_TOKEN not set, admin endpoint authentication disabled")
+    return False
+```
+
+**Impact:**
+- Token leakage through logs, env dumps, or backups
+- No token rotation capability
+- Single point of failure
+- Difficult to revoke compromised tokens
 
 **Recommendation:**
 1. Use secret management service (AWS Secrets Manager, HashiCorp Vault, etc.)
@@ -297,6 +315,9 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 4. Implement secrets rotation schedule
 5. Add secret scanning to CI/CD pipeline
 6. Use different secrets per environment
+7. Use JWT tokens with expiration for admin access
+8. Add token revocation mechanism
+9. Never log tokens or include in error messages
 
 ---
 
@@ -391,6 +412,94 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 - **Backend:** `backend/main.py:406-413` - Streaming endpoint error handling updated
 - **Error Message:** "An error occurred while processing your query. Please try again or rephrase your question."
 - **Security Impact:** No internal system details, file paths, or exception messages exposed to clients
+
+---
+
+#### CRIT-NEW-3: Payload CMS Access Control Bypass
+
+**Severity:** CRITICAL  
+**Status:** ⏳ **PENDING**  
+**Priority:** **PUBLIC LAUNCH BLOCKER**  
+**Location:** `payload_cms/src/collections/Users.ts`, `payload_cms/src/access/isAdmin.ts`, `payload_cms/src/collections/Article.ts`
+
+**Issue:**
+Access control functions return `true` when no user is present, with comments indicating this is for "form state building." This creates a dangerous bypass pattern:
+
+```typescript
+// Users.ts line 34-43
+if (!id) {
+  if (user) {
+    return true
+  } else {
+    // Allow form state building without user - Payload will handle auth for actual operations
+    return true  // ⚠️ CRITICAL: Allows unauthenticated access
+  }
+}
+
+// isAdmin.ts line 8-10
+if (!user) {
+  return true  // ⚠️ CRITICAL: Allows unauthenticated admin access
+}
+```
+
+**Impact:**
+- Unauthenticated users may be able to read sensitive data
+- Form state building could expose internal data structures
+- SSR edge cases could bypass authentication checks
+
+**Recommendation:**
+1. Remove the `if (!user) return true` pattern from access control functions
+2. Use Payload's built-in authentication middleware properly
+3. Implement proper role-based checks that fail securely
+4. Add explicit authentication requirements for all sensitive operations
+
+**Fix Example:**
+```typescript
+read: ({ req: { user }, id }) => {
+  if (!user) {
+    // Only allow public read for published articles
+    if (id) {
+      return { status: { equals: 'published' } }
+    }
+    return false  // Require authentication for list operations
+  }
+  // ... rest of logic
+}
+```
+
+---
+
+#### CRIT-NEW-4: Admin Endpoint Missing Rate Limiting
+
+**Severity:** CRITICAL  
+**Status:** ⏳ **PENDING**  
+**Priority:** **PUBLIC LAUNCH BLOCKER**  
+**Location:** `backend/api/v1/admin/usage.py`
+
+**Issue:**
+The admin cache refresh endpoint (`/api/v1/admin/refresh-suggested-cache`) has rate limiting, but the admin usage endpoints (`/api/v1/admin/usage` and `/api/v1/admin/usage/status`) have **NO rate limiting** and **NO authentication**.
+
+```python
+@router.get("/usage")
+async def get_usage() -> Dict[str, Any]:
+    """Get current daily and hourly LLM usage statistics."""
+    # ⚠️ NO AUTHENTICATION
+    # ⚠️ NO RATE LIMITING
+    usage_info = await get_current_usage()
+    return usage_info
+```
+
+**Impact:**
+- Unauthenticated access to usage statistics
+- Potential information disclosure about system capacity
+- DoS via unlimited requests
+- Cost information leakage
+
+**Recommendation:**
+1. Add authentication to admin usage endpoints
+2. Apply rate limiting (same as cache refresh endpoint)
+3. Consider IP allowlisting for monitoring tools
+4. Add audit logging for admin endpoint access
 
 ---
 
@@ -555,11 +664,34 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 - Length validation present
 - May miss edge cases or advanced techniques
 
+**Issue:**
+Prompt injection detection uses regex patterns that can be bypassed:
+
+```python
+PROMPT_INJECTION_PATTERNS = [
+    r'(?i)ignore\s+(previous|all|above)\s+(instructions?|prompts?|rules?)',
+    # ... more patterns
+]
+# ⚠️ Regex-based detection can be bypassed with encoding, obfuscation
+# ⚠️ Sanitization wraps in brackets but doesn't prevent all attacks
+```
+
+**Impact:**
+- Prompt injection attacks bypassing filters
+- LLM manipulation
+- Information leakage
+- Unauthorized actions
+
 **Recommendation:**
 - Add comprehensive validation for all input types
 - Implement content-type validation
 - Add file upload validation if applicable
 - Regular security testing of input validation
+- Use LLM-based prompt injection detection
+- Implement input length limits more strictly
+- Use prompt templates that isolate user input
+- Monitor for injection attempts and block repeat offenders
+- Consider using specialized prompt injection detection libraries
 
 ---
 
@@ -663,6 +795,67 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 
 ---
 
+#### HIGH-NEW-6: Payload CMS Public User Read Access
+
+**Severity:** HIGH  
+**Status:** ⏳ **PENDING**  
+**Location:** `payload_cms/src/collections/Users.ts:46-64`
+
+**Issue:**
+User collection allows public read access to all users, potentially exposing sensitive information:
+
+```typescript
+// If no user is authenticated but id is provided, allow public read access (for basic user info)
+if (!user) {
+  return true  // ⚠️ Allows reading any user's data
+}
+```
+
+**Impact:**
+- Email addresses exposed
+- User IDs exposed
+- Potential enumeration attacks
+- Privacy violation (GDPR concerns)
+
+**Recommendation:**
+1. Restrict public read to only necessary fields (if any)
+2. Implement field-level access control
+3. Remove public read access entirely
+4. Use separate public profile endpoint if needed
+
+---
+
+#### HIGH-NEW-7: Missing Content Security Policy (CSP) in Backend
+
+**Severity:** HIGH  
+**Status:** ⏳ **PENDING**  
+**Location:** `backend/middleware/security_headers.py`
+
+**Issue:**
+Security headers middleware implements several headers but **missing Content Security Policy (CSP)**:
+
+```python
+response.headers["X-Content-Type-Options"] = "nosniff"
+response.headers["X-Frame-Options"] = "DENY"
+response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+# ⚠️ Missing: Content-Security-Policy
+```
+
+**Note:** CSP is implemented in the frontend (Next.js), but not in the backend middleware. While the backend primarily serves API endpoints, adding CSP to backend responses provides defense in depth.
+
+**Impact:**
+- XSS attacks not fully mitigated at backend level
+- Inline script execution possible in API responses
+- External resource injection
+
+**Recommendation:**
+1. Implement strict CSP header in backend middleware
+2. Use nonce-based CSP for dynamic content if needed
+3. Test CSP with application functionality
+4. Use CSP reporting endpoint for violations
+
+---
+
 ### ⏳ PENDING - MEDIUM-TERM PRIORITY
 
 #### HIGH-4: No Session Management
@@ -706,10 +899,70 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 - Add unique request IDs to all requests for tracing
 - Include request IDs in logs and error responses
 
+#### MED-1-ADD: CORS Origin Validation Enhancement
+
+**Severity:** MEDIUM  
+**Status:** ⏳ **PENDING**  
+**Location:** `backend/main.py:297-313`
+
+**Issue:**
+CORS allows credentials and multiple origins, but validation is basic:
+
+```python
+cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:3000")
+origins = [origin.strip() for origin in cors_origins_env.split(",")]
+# ⚠️ No validation of origin format
+# ⚠️ Allows any origin if env var is compromised
+```
+
+**Impact:**
+- CSRF attacks if origin validation fails
+- Credential leakage to unauthorized origins
+- Session hijacking
+
+**Recommendation:**
+1. Validate origin format (scheme, host, port)
+2. Use allowlist instead of env var parsing
+3. Consider removing `allow_credentials=True` if not needed
+4. Implement origin validation middleware
+
+**Note:** This is an enhancement to CRIT-8 (already resolved) - the basic CORS configuration is fixed, but origin validation could be strengthened.
+
 #### MED-2: Add Health Check Security
-- Don't expose sensitive information in health checks
-- Rate limit health check endpoints
-- Use separate endpoints for internal vs external health checks
+- ✅ **Already implemented** (see HIGH-NEW-2, HIGH-NEW-4) - Health check information disclosure fixed and rate limiting added
+
+#### MED-NEW-4: Rate Limiting IP Spoofing Vulnerability
+
+**Severity:** MEDIUM  
+**Status:** ⏳ **PENDING**  
+**Location:** `backend/rate_limiter.py:28-44`
+
+**Issue:**
+Rate limiting relies on `X-Forwarded-For` header which can be spoofed:
+
+```python
+def _get_ip_from_request(request: Request) -> str:
+    cf_ip = request.headers.get("CF-Connecting-IP")
+    if cf_ip:
+        return cf_ip
+    
+    xff = request.headers.get("X-Forwarded-For")
+    if xff:
+        return xff.split(",")[0].strip()  # ⚠️ Can be spoofed if not behind proxy
+    
+    return request.client.host if request.client else "unknown"
+```
+
+**Impact:**
+- Rate limit bypass via header spoofing
+- DoS attacks
+- Unfair resource consumption
+
+**Recommendation:**
+1. Only trust `X-Forwarded-For` when behind trusted proxy
+2. Use Cloudflare's `CF-Connecting-IP` when available (already implemented)
+3. Implement IP validation
+4. Consider additional rate limiting factors (user ID, session)
 
 #### MED-3: Implement API Documentation Security
 - Review OpenAPI/Swagger documentation for information leakage
@@ -770,6 +1023,81 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 - Create incident response plan
 - Document security runbooks
 - Define security roles and responsibilities
+
+---
+
+## Low Priority Recommendations
+
+### ⏳ PENDING
+
+#### LOW-1: Missing Additional Security Headers
+
+**Severity:** LOW  
+**Status:** ⏳ **PENDING**  
+**Location:** `backend/middleware/security_headers.py`
+
+**Issue:**
+Some recommended security headers are missing:
+- `X-XSS-Protection` (deprecated but still used by some browsers)
+- `Cross-Origin-Embedder-Policy`
+- `Cross-Origin-Opener-Policy`
+- `Cross-Origin-Resource-Policy`
+
+**Note:** `Content-Security-Policy` is covered in HIGH-NEW-7.
+
+**Recommendation:**
+Add additional security headers for defense in depth.
+
+---
+
+#### LOW-2: Error Logging Sanitization
+
+**Severity:** LOW  
+**Status:** ⏳ **PENDING**  
+**Location:** `backend/main.py:352-359`
+
+**Issue:**
+While error sanitization exists for client responses, some error paths may still leak information through logs:
+
+```python
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)  # ⚠️ Full traceback in logs
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal server error", "message": "..."}  # ✅ Good sanitization
+    )
+```
+
+**Recommendation:**
+1. Ensure no sensitive data in exception messages
+2. Use structured logging with PII redaction
+3. Implement log sanitization filters
+4. Review log storage and access controls
+
+---
+
+#### LOW-3: Grafana Default Credentials
+
+**Severity:** LOW  
+**Status:** ⏳ **PENDING**  
+**Location:** `docker-compose.prod.yml:135-136`
+
+**Issue:**
+Grafana uses default admin credentials if not set:
+
+```yaml
+- GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}  # ⚠️ Defaults to 'admin'
+```
+
+**Impact:**
+- Unauthorized access to monitoring dashboards
+- Metrics data exposure
+
+**Recommendation:**
+1. Require `GRAFANA_ADMIN_PASSWORD` to be set
+2. Use strong default generation
+3. Implement Grafana authentication with external provider
 
 #### MED-NEW-1: Backend Dockerfile Security Issues
 
@@ -913,7 +1241,7 @@ class ChatMessage(BaseModel):
 
 ## Actionable Todo List (Reprioritized for Public Launch)
 
-### 🚨 PUBLIC LAUNCH BLOCKERS (Must Fix Before Foundation Tweet)
+### 🚨 PUBLIC LAUNCH BLOCKERS
 
 **Timeline: 1-2 days of focused work (3-6 hours)**
 
@@ -945,7 +1273,11 @@ class ChatMessage(BaseModel):
 14. **Enable MongoDB authentication** (CRIT-3) - **Code already written, just needs to be enabled.** Public repo → anyone can `docker-compose up` on $5 VPS → instant unauthenticated MongoDB on internet.
 15. **Enable Redis authentication** (CRIT-4) - **Code already written, just needs to be enabled.** Same risk as MongoDB.
 
-### ✅ POST-TWEET (Can Wait Until After Launch)
+**BLOCKER #7: Payload CMS Access Control** (2-4 hours)
+16. **Fix Payload CMS access control bypass** (CRIT-NEW-3) - Remove `if (!user) return true` pattern from access control functions. Critical for preventing unauthenticated access to sensitive data.
+17. **Add authentication to admin usage endpoints** (CRIT-NEW-4) - Add authentication and rate limiting to `/api/v1/admin/usage` and `/api/v1/admin/usage/status` endpoints.
+
+### ✅ POST-LAUNCH
 
 **BLOCKER #7: Secrets Management** (2 hours)
 16. **Implement secrets management** (CRIT-5) - Move secrets to secure storage (Railway/Render secrets). Not urgent if no real secrets ever committed.
@@ -995,18 +1327,22 @@ class ChatMessage(BaseModel):
 - [ ] **MongoDB authentication enabled** (CRIT-3) - **Code already written, just enable it**
 - [ ] **Redis authentication enabled** (CRIT-4) - **Code already written, just enable it**
 
+**BLOCKER #7: Payload CMS Access Control**
+- [ ] **Fix Payload CMS access control bypass** (CRIT-NEW-3) - Remove `if (!user) return true` pattern from access control functions
+- [ ] **Add authentication to admin usage endpoints** (CRIT-NEW-4) - Add authentication and rate limiting to `/api/v1/admin/usage` endpoints
+
 ### ✅ Already Completed
 - [x] Webhook authentication implemented ✅
 - [x] Unused Sources API removed ✅
 - [x] Security headers configured ✅
 - [x] Rate limiting hardened ✅
 
-### Post-Tweet (Can Wait)
-- [ ] Secrets managed securely (CRIT-5) - Post-tweet is fine
+### Post-launch (Can Wait)
+- [ ] Secrets managed securely (CRIT-5) - Post-launch is fine
 - [ ] Dependencies scanned and updated (CRIT-11)
 - [ ] Docker security fixed (CRIT-10, MED-NEW-1)
 
-### High Priority Issues (Post-Tweet)
+### High Priority Issues (Post-launch)
 - [ ] Logging and monitoring in place (HIGH-1, HIGH-5)
 - [ ] HTTPS enforced (HIGH-3)
 - [ ] Input validation strengthened (HIGH-2)
@@ -1014,12 +1350,15 @@ class ChatMessage(BaseModel):
 - [ ] Load testing completed (HIGH-8)
 - [ ] Session management implemented (HIGH-4)
 - [ ] API versioning strategy documented (HIGH-7)
+- [ ] Restrict Payload CMS public user read access (HIGH-NEW-6)
+- [ ] Add CSP to backend middleware (HIGH-NEW-7)
 
 ### Medium Priority
 - [ ] Request size limits implemented (MED-NEW-2)
 - [ ] Chat history validation added (MED-NEW-3)
 - [ ] Request ID tracking implemented (MED-1)
-- [ ] Health check security improved (MED-2)
+- [ ] CORS origin validation enhanced (MED-1-ADD)
+- [ ] Health check security improved (MED-2) - ✅ Already implemented
 - [ ] API documentation secured (MED-3)
 - [ ] CSRF protection implemented (MED-7)
 - [ ] Security.txt implemented (MED-9)
@@ -1028,6 +1367,12 @@ class ChatMessage(BaseModel):
 - [ ] Graceful degradation implemented (MED-13)
 - [ ] Penetration testing completed (MED-14)
 - [ ] Security procedures documented (MED-15)
+- [ ] Fix rate limiting IP spoofing vulnerability (MED-NEW-4)
+
+### Low Priority
+- [ ] Add additional security headers (LOW-1)
+- [ ] Enhance error logging sanitization (LOW-2)
+- [ ] Secure Grafana credentials (LOW-3)
 
 ### General
 - [ ] Security documentation complete
@@ -1062,11 +1407,11 @@ class ChatMessage(BaseModel):
 
 The Litecoin Knowledge Hub application has a solid foundation with good input validation and rate limiting. **Fifteen critical and high-priority vulnerabilities have been successfully resolved**, including all public-facing security issues except database authentication.
 
-**🚨 CRITICAL CONTEXT CHANGE: PUBLIC REPOSITORY + FOUNDATION TWEET**
+**🚨 CRITICAL CONTEXT CHANGE: PUBLIC REPOSITORY**
 
-With the repository going fully public, live chat active, and a Foundation tweet imminent, **the threat model has fundamentally changed**. What was acceptable for local-only deployment is now a critical blocker for public exposure.
+With the repository going fully public, and live chat active, **the threat model has fundamentally changed**. What was acceptable for local-only deployment is now a critical blocker for public exposure.
 
-**One Public Launch Blocker Remaining (Five Resolved):**
+**Three Public Launch Blockers Remaining (Five Resolved):**
 
 1. ✅ **BLOCKER #1: Privacy Catastrophe** - **RESOLVED** - Unauthenticated User Questions API (CRIT-NEW-1) - Endpoints removed entirely, questions still logged to MongoDB.
 2. ✅ **BLOCKER #2: Token Leakage** - **RESOLVED** - Debug code (HIGH-NEW-3 + CRIT-7) - All debug code removed, auth tokens and backend URLs no longer exposed in browser console.
@@ -1074,22 +1419,26 @@ With the repository going fully public, live chat active, and a Foundation tweet
 4. ✅ **BLOCKER #4: CORS Misconfiguration** - **RESOLVED** - Permissive + hardcoded CORS wildcards (CRIT-8, HIGH-NEW-1) - Methods/headers restricted, wildcards removed.
 5. ✅ **BLOCKER #5: Health Check Reconnaissance** - **RESOLVED** - Health check info disclosure + no rate limiting (HIGH-NEW-2, HIGH-NEW-4) - Public endpoints sanitized, rate limiting added, Grafana/Prometheus compatibility maintained.
 6. **BLOCKER #6: Database Authentication** - MongoDB + Redis authentication (CRIT-3, CRIT-4) - **Code already written, just needs to be enabled.** Public repo → anyone can `docker-compose up` on $5 VPS → instant unauthenticated DB/Redis on internet.
+7. **BLOCKER #7: Payload CMS Access Control** - Payload CMS access control bypass (CRIT-NEW-3) + Admin endpoint authentication (CRIT-NEW-4) - **Critical access control issues** that allow unauthenticated access to sensitive data and admin endpoints.
 
 **Progress Summary:**
 - ✅ **15 RESOLVED:** CRIT-1, CRIT-2, CRIT-6, CRIT-7, CRIT-8, CRIT-9, CRIT-12, CRIT-NEW-1, CRIT-NEW-2, HIGH-NEW-1, HIGH-NEW-2, HIGH-NEW-3, HIGH-NEW-4, HIGH-NEW-5, and related fixes
-- ⏳ **1 PUBLIC LAUNCH BLOCKER REMAINING:** Database authentication (CRIT-3, CRIT-4) - Code already written, just needs to be enabled (1-2 hours)
-- ⏳ **1 POST-TWEET:** Secrets management (can wait)
+- ⏳ **3 PUBLIC LAUNCH BLOCKERS REMAINING:**
+  - Database authentication (CRIT-3, CRIT-4) - Code already written, just needs to be enabled (1-2 hours)
+  - Payload CMS access control bypass (CRIT-NEW-3) - Remove unsafe access control patterns (2-4 hours)
+  - Admin endpoint authentication (CRIT-NEW-4) - Add authentication and rate limiting (1-2 hours)
+- ⏳ **1 POST-launch:** Secrets management (can wait)
 - ⏳ **Everything else:** Post-launch improvements
 
-**Realistic "Safe-to-Tweet" Timeline:**
+**Realistic "Ready-to-launch" Timeline:**
 
-**Do item 6 above = 1-2 hours of focused work.**
+**Do items 6-7 above = 4-8 hours of focused work.**
 
-After that, the bot is **public-hardened enough** that even a hostile Twitter thread can't do real damage.
+After that, the bot is **public-hardened enough** that even a hostile security incident can't do real damage.
 
-**Do only 1-5** and you risk the Foundation tweet turning into a security PR nightmare.
+**Do only 1-5** and you risk the public launch turning into a security PR nightmare.
 
-**Do all 6 blockers** → push → tell the Foundation "green for tweet".
+**Do all 7 blockers** → push → tell the Foundation "green for launch".
 
 **You are one short sprint (literally the same length as your original 3-week build) away from having the cleanest, most bulletproof open-source RAG agent in crypto.**
 
@@ -1104,17 +1453,19 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 8. ✅ **BLOCKER #4:** Fix CORS configuration (CRIT-8, HIGH-NEW-1) - **RESOLVED** - Methods/headers restricted, wildcards removed
 9. ✅ **BLOCKER #5:** Sanitize health checks + add rate limiting (HIGH-NEW-2, HIGH-NEW-4) - **RESOLVED** - Public endpoints sanitized, rate limiting added, Grafana/Prometheus compatible
 10. **🚨 BLOCKER #6:** Enable MongoDB + Redis authentication (CRIT-3, CRIT-4) - **1-2 hours** (code already written)
-11. **Post-tweet:** Implement secrets management (CRIT-5) - **2 hours**
-12. **Post-launch:** Everything else (Docker security, dependency scanning, backups, etc.) - **1-2 weeks**
+11. **🚨 BLOCKER #7:** Fix Payload CMS access control bypass (CRIT-NEW-3) - **2-4 hours**
+12. **🚨 BLOCKER #7:** Add authentication to admin usage endpoints (CRIT-NEW-4) - **1-2 hours**
+13. **Post-launch:** Implement secrets management (CRIT-5) - **2 hours**
+14. **Post-launch:** Everything else (Docker security, dependency scanning, backups, etc.) - **1-2 weeks**
 
-**Knock out the remaining blocker above → push → tell the Foundation "green for tweet".**
+**Knock out the remaining blockers above → push → tell the Foundation "green for launch".**
 
 **You've already done the hard 95%. This is the last 5% that decides whether the project is remembered as "legendary" or "that Litecoin bot that leaked everything".**
 
 ---
 
 **Assessment Date:** 2025-11-18  
-**Last Updated:** 2025-11-19  
+**Last Updated:** 2025-11-20  
 **Assessor:** Red Team Security Assessment (Combined Report)  
 **Next Review:** After remaining critical fixes implementation
 
@@ -1137,4 +1488,5 @@ After that, the bot is **public-hardened enough** that even a hostile Twitter th
 - **2025-11-18:** CRIT-NEW-2 (Error Disclosure in Streaming Endpoint) - **RESOLVED** - Replaced `str(e)` with generic error message, added `exc_info=True` for server-side logging
 - **2025-11-18:** CRIT-9 (Error Information Disclosure) - **RESOLVED** - Added global FastAPI exception handlers (RequestValidationError, ValidationError, HTTPException, Exception), sanitized all error responses, added error handling wrapper to chat endpoint
 - **2025-11-18:** HIGH-NEW-5 (Webhook Error Information Disclosure) - **RESOLVED** - Sanitized validation errors and exception messages in webhook endpoint, fixed health check error disclosure
+- **2025-11-20:** Additional security review identified 2 new CRITICAL issues (CRIT-NEW-3: Payload CMS Access Control Bypass, CRIT-NEW-4: Admin Endpoint Missing Rate Limiting), 2 new HIGH issues (HIGH-NEW-6: Payload CMS Public User Read Access, HIGH-NEW-7: Missing CSP in Backend), 1 new MEDIUM issue (MED-NEW-4: Rate Limiting IP Spoofing), and 3 LOW priority issues
 
