@@ -4,6 +4,15 @@ services:
   mongodb:
     image: mongo:7.0
     container_name: litecoin-mongodb-prod-local
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USERNAME:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
+    # Only enable --auth if MONGO_ROOT_PASSWORD is set
+    # --bind_ip_all allows connections from other containers
+    command:
+      - mongod
+      - --bind_ip_all
+      - ${MONGO_ROOT_PASSWORD:+--auth}
     ports:
       - "27017:27017"
     volumes:
@@ -11,11 +20,7 @@ services:
       # - mongodb_data:/data/db
     restart: unless-stopped
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "mongosh --quiet --eval \"db.adminCommand('ping')\"",
-        ]
+      test: ["CMD-SHELL", "if [ -n \"$$MONGO_ROOT_PASSWORD\" ]; then mongosh --quiet --username $$MONGO_ROOT_USERNAME --password $$MONGO_ROOT_PASSWORD --authenticationDatabase admin --eval \"db.adminCommand('ping')\"; else mongosh --quiet --eval \"db.adminCommand('ping')\"; fi"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -178,7 +183,13 @@ services:
   redis:
     image: redis:7-alpine
     container_name: litecoin-redis-prod-local
-    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    # Only add --requirepass if REDIS_PASSWORD is set
+    command: >
+      sh -c "if [ -n \"$$REDIS_PASSWORD\" ]; then
+        redis-server --requirepass $$REDIS_PASSWORD --save 60 1 --loglevel warning;
+      else
+        redis-server --save 60 1 --loglevel warning;
+      fi"
     volumes:
       - redis_data:/data
     restart: unless-stopped
