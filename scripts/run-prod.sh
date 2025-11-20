@@ -79,6 +79,12 @@ fi
 echo "🚀 Starting production build with --no-cache (clean rebuild)..."
 echo ""
 
+# Clean up dangling images from previous builds to save disk space
+echo "🧹 Cleaning up dangling images from previous builds..."
+docker image prune -f > /dev/null 2>&1
+echo "   ✓ Cleaned up dangling images"
+echo ""
+
 # Set production URLs (defaults from docker-compose.prod.yml)
 PROD_BACKEND_URL="${NEXT_PUBLIC_BACKEND_URL:-https://api.lite.space}"
 PROD_PAYLOAD_URL="${NEXT_PUBLIC_PAYLOAD_URL:-https://cms.lite.space}"

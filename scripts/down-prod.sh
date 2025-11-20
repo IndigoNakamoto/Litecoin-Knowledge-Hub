@@ -34,5 +34,14 @@ echo ""
 $DOCKER_COMPOSE -f docker-compose.prod.yml down "$@"
 
 echo ""
+echo "🧹 Cleaning up dangling images from previous builds..."
+docker image prune -f > /dev/null 2>&1
+echo "   ✓ Cleaned up dangling images"
+echo ""
+
 echo "✅ Production services shutdown complete!"
+echo ""
+echo "💡 Tip: To free up more disk space, run:"
+echo "   docker system prune -a        # Remove all unused images, containers, networks"
+echo "   docker builder prune -a       # Remove build cache"
 
