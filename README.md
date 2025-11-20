@@ -373,4 +373,26 @@ This project thrives on community contributions to its knowledge base via Payloa
 
 ## **License**
 
-(To be determined \- e.g., MIT License)
+This project is licensed under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License (CC BY-NC-SA 4.0)** for all non-commercial use.
+
+[![CC BY-NC-SA 4.0](https://licensebuttons.net/l/by-nc-sa/4.0/88x31.png)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+
+You are free to:
+- Share — copy and redistribute the material in any medium or format
+- Adapt — remix, transform, and build upon the material
+
+As long as you follow the license terms:
+- **Attribution** — You must give appropriate credit, provide a link to the license, and indicate if changes were made.
+- **NonCommercial** — You may not use the material for commercial purposes.
+- **ShareAlike** — If you remix, transform, or build upon the material, you must distribute your contributions under the same CC BY-NC-SA 4.0 license.
+
+**Additional requirement**: Any implementation or derivative work that includes a frontend or user interface **must prominently display** the following credit (e.g., in the footer, about page, or settings): Original development by Indigo Nakamoto — x.com/indigo_nakamoto
+
+
+### Commercial Use & Paid Licensing
+
+The CC BY-NC-SA license **prohibits commercial use by third parties**.  
+If you wish to use this project in a for-profit product, service, company website, paid app, or any other commercial context (or remove the mandatory credit requirement), a separate commercial license is available.
+
+Contact **Indigo Nakamoto** for commercial licensing, enterprise support, custom development, or hosted/SaaS options:  
+Twitter/X: [@indigo_nakamoto](https://x.com/indigo_nakamoto)  
