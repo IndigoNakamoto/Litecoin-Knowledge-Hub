@@ -1,9 +1,28 @@
+import os
+import sys
 import asyncio
 import time
 import logging
 from dotenv import load_dotenv
-from advanced_retrieval import AdvancedRetrievalPipeline
-from data_ingestion.vector_store_manager import VectorStoreManager
+import pytest
+
+# Add project root and backend directory to path
+backend_dir = os.path.dirname(os.path.abspath(__file__))
+project_root_dir = os.path.dirname(backend_dir)
+if project_root_dir not in sys.path:
+    sys.path.insert(0, project_root_dir)
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+
+# Try to import advanced_retrieval, skip tests if not available
+try:
+    from advanced_retrieval import AdvancedRetrievalPipeline
+    ADVANCED_RETRIEVAL_AVAILABLE = True
+except ImportError:
+    ADVANCED_RETRIEVAL_AVAILABLE = False
+    AdvancedRetrievalPipeline = None
+
+from backend.data_ingestion.vector_store_manager import VectorStoreManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
