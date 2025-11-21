@@ -132,9 +132,21 @@ Just so you know, the context mentions that while **MWEB** is a big improvement,
 
 {context}
 
+{chat_history}
+
 User: {input}
 """
-rag_prompt = ChatPromptTemplate.from_template(RAG_PROMPT_TEMPLATE)
+# Create rag_prompt for document chain (only needs context and input, chat_history is handled by history-aware retriever)
+# Extract the system prompt part (everything before {context})
+system_prompt = RAG_PROMPT_TEMPLATE.split("{context}")[0].strip()
+# Remove {chat_history} and {input} from the system prompt since we'll add them back properly
+# We need to remove these to ensure the template only has 'context' and 'input' variables
+system_prompt = system_prompt.replace("{chat_history}", "").replace("{input}", "").strip()
+# Construct the document prompt template with only context and input variables
+# This template will be used by create_stuff_documents_chain which expects 'context' and 'input'
+# The 'context' variable will be filled with retrieved documents by create_stuff_documents_chain
+document_prompt_template = system_prompt + "\n\n{context}\n\nUser: {input}"
+rag_prompt = ChatPromptTemplate.from_template(document_prompt_template)
 
 def format_docs(docs: List[Document]) -> str:
     """Helper function to format a list of documents into a single string."""
@@ -229,7 +241,25 @@ class RAGPipeline:
 
     def _build_prompt_text(self, query_text: str, context_text: str) -> str:
         """Reconstruct the prompt text fed to the LLM for token accounting."""
-        return RAG_PROMPT_TEMPLATE.format(context=context_text, input=query_text)
+        return RAG_PROMPT_TEMPLATE.format(context=context_text, chat_history="", input=query_text)
+    
+    def _build_prompt_text_with_history(
+        self, query_text: str, context_text: str, chat_history: List[BaseMessage]
+    ) -> str:
+        """Reconstruct the prompt text with chat history for token accounting."""
+        # Format history as string for token counting
+        history_text = ""
+        for msg in chat_history:
+            if isinstance(msg, HumanMessage):
+                history_text += f"User: {msg.content}\n"
+            elif isinstance(msg, AIMessage):
+                history_text += f"Assistant: {msg.content}\n"
+        
+        return RAG_PROMPT_TEMPLATE.format(
+            context=context_text,
+            chat_history=history_text,
+            input=query_text
+        )
 
     def _estimate_token_usage(self, prompt_text: str, answer_text: str) -> Tuple[int, int]:
         """
@@ -683,28 +713,66 @@ class RAGPipeline:
             if MONITORING_ENABLED:
                 rag_cache_misses_total.labels(cache_type="query").inc()
 
-            # Track retrieval time
-            retrieval_start = time.time()
-            
-            # For non-cached responses, use async conversational RAG chain
+            # Convert chat_history to Langchain's BaseMessage format
             converted_chat_history: List[BaseMessage] = []
             for human_msg, ai_msg in truncated_history:
                 converted_chat_history.append(HumanMessage(content=human_msg))
                 converted_chat_history.append(AIMessage(content=ai_msg))
 
-            # Get context for pre-flight cost estimation
-            retriever = self.vector_store_manager.get_retriever(
-                search_type="similarity",
-                search_kwargs={"k": 15}
-            )
-            context_docs_pre = retriever.invoke(query_text)
-            context_text_pre = format_docs(context_docs_pre)
+            # 1. SINGLE RETRIEVAL (using history-aware retriever for query rephrasing)
+            retrieval_start = time.time()
             
-            # Pre-flight spend limit check (before LLM API call)
+            # Use history-aware retriever to get context (rephrases query with history)
+            context_docs = await self.async_history_aware_retriever.ainvoke({
+                "input": query_text,
+                "chat_history": converted_chat_history
+            })
+            
+            retrieval_duration = time.time() - retrieval_start
+            
+            # Format context for LLM
+            context_text = format_docs(context_docs)
+            
+            # Filter published sources
+            published_sources = [
+                doc for doc in context_docs
+                if doc.metadata.get("status") == "published"
+            ]
+            
+            if not published_sources:
+                if MONITORING_ENABLED:
+                    rag_retrieval_duration_seconds.observe(retrieval_duration)
+                    rag_documents_retrieved_total.observe(0)
+                    total_duration = time.time() - start_time
+                    rag_query_duration_seconds.labels(
+                        query_type="stream",
+                        cache_hit="false"
+                    ).observe(total_duration)
+                # Inform client that no sources were available
+                yield {"type": "sources", "sources": []}
+                yield {"type": "chunk", "content": NO_KB_MATCH_RESPONSE}
+                metadata = {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cost_usd": 0.0,
+                    "duration_seconds": time.time() - start_time,
+                    "cache_hit": False,
+                    "cache_type": None,
+                }
+                yield {"type": "metadata", "metadata": metadata}
+                yield {"type": "complete", "from_cache": False, "no_kb_results": True}
+                return
+            
+            # Send sources immediately (low latency UX)
+            yield {"type": "sources", "sources": published_sources}
+            
+            # 2. Pre-flight spend limit check (before LLM API call)
             if MONITORING_ENABLED:
                 try:
-                    # Estimate cost before making API call
-                    prompt_text = self._build_prompt_text(query_text, context_text_pre)
+                    # Estimate cost before making API call (use history for accurate estimation)
+                    prompt_text = self._build_prompt_text_with_history(
+                        query_text, context_text, converted_chat_history
+                    )
                     input_tokens_est, _ = self._estimate_token_usage(prompt_text, "")
                     # Use max expected output tokens for worst-case estimation (2048 tokens)
                     max_output_tokens = 2048
@@ -734,73 +802,47 @@ class RAGPipeline:
                     # Log error but allow request (graceful degradation)
                     logger.warning(f"Error in spend limit check: {e}", exc_info=True)
 
-            # Invoke the async conversational retrieval chain with chat history
-            result = await self.async_rag_chain.ainvoke({
-                "input": query_text,
-                "chat_history": converted_chat_history
-            })
-
-            retrieval_duration = time.time() - retrieval_start
-
-            answer = result.get("answer", "Error: Could not generate answer.")
-            # Get source documents from the chain result
-            context_docs = result.get("context", [])
-            context_text = format_docs(context_docs)
-
-            # Filter out draft/unpublished documents from sources
-            published_sources = [
-                doc for doc in context_docs
-                if doc.metadata.get("status") == "published"
-            ]
-
-            if not published_sources:
-                if MONITORING_ENABLED:
-                    rag_retrieval_duration_seconds.observe(retrieval_duration)
-                    rag_documents_retrieved_total.observe(0)
-                    total_duration = time.time() - start_time
-                    rag_query_duration_seconds.labels(
-                        query_type="stream",
-                        cache_hit="false"
-                    ).observe(total_duration)
-                # Inform client that no sources were available
-                yield {"type": "sources", "sources": []}
-                yield {"type": "chunk", "content": NO_KB_MATCH_RESPONSE}
-                metadata = {
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                    "cost_usd": 0.0,
-                    "duration_seconds": time.time() - start_time,
-                    "cache_hit": False,
-                    "cache_type": None,
-                }
-                yield {"type": "metadata", "metadata": metadata}
-                yield {"type": "complete", "from_cache": False, "no_kb_results": True}
-                return
-
+            # 3. TRUE STREAMING GENERATION
+            llm_start = time.time()
+            full_answer_accumulator = ""
+            
+            # Use async_document_chain.astream() directly for true streaming
+            # create_stuff_documents_chain expects 'context' to be a list of Document objects, not a formatted string
+            async for chunk in self.async_document_chain.astream({
+                "context": context_docs,  # Pass Document objects, not formatted string
+                "input": query_text
+            }):
+                # Extract content from chunk
+                content = ""
+                if isinstance(chunk, str):
+                    content = chunk
+                elif isinstance(chunk, dict) and "answer" in chunk:
+                    content = chunk["answer"]
+                elif hasattr(chunk, "content"):
+                    content = chunk.content
+                
+                if content:
+                    full_answer_accumulator += content
+                    yield {"type": "chunk", "content": content}
+            
+            llm_duration = time.time() - llm_start
             total_duration = time.time() - start_time
 
-            # Track metrics
+            # 4. POST-PROCESSING (Metrics & Cache)
+            # Initialize variables for metadata
+            input_tokens = 0
+            output_tokens = 0
+            estimated_cost = 0.0
+            
             if MONITORING_ENABLED:
-                rag_retrieval_duration_seconds.observe(retrieval_duration)
-                rag_documents_retrieved_total.observe(len(published_sources))
-                rag_query_duration_seconds.labels(
-                    query_type="stream",
-                    cache_hit="false"
-                ).observe(total_duration)
-                
-                # Extract actual token usage from chain response, fallback to estimation
-                input_tokens, output_tokens = self._extract_token_usage_from_chain_result(result)
-                if input_tokens == 0 and output_tokens == 0:
-                    # Fallback to estimation if metadata not available
-                    prompt_text = self._build_prompt_text(query_text, context_text)
-                    input_tokens, output_tokens = self._estimate_token_usage(
-                        prompt_text,
-                        answer,
-                    )
-                    logger.debug("Using estimated token counts (metadata not available)")
-                else:
-                    logger.debug(f"Using actual token counts: input={input_tokens}, output={output_tokens}")
-                
+                # Calculate metrics using accumulated answer
+                prompt_text = self._build_prompt_text_with_history(
+                    query_text, context_text, converted_chat_history
+                )
+                input_tokens, output_tokens = self._estimate_token_usage(
+                    prompt_text,
+                    full_answer_accumulator
+                )
                 estimated_cost = estimate_gemini_cost(
                     input_tokens,
                     output_tokens,
@@ -812,7 +854,7 @@ class RAGPipeline:
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
                     cost_usd=estimated_cost,
-                    duration_seconds=total_duration,
+                    duration_seconds=llm_duration,
                     status="success",
                 )
                 
@@ -821,19 +863,17 @@ class RAGPipeline:
                     await record_spend(estimated_cost, input_tokens, output_tokens, LLM_MODEL_NAME)
                 except Exception as e:
                     logger.warning(f"Error recording spend: {e}", exc_info=True)
-
-            # Send sources first
-            yield {"type": "sources", "sources": published_sources}
-
+                
+                # Track retrieval metrics
+                rag_retrieval_duration_seconds.observe(retrieval_duration)
+                rag_documents_retrieved_total.observe(len(published_sources))
+                rag_query_duration_seconds.labels(
+                    query_type="stream",
+                    cache_hit="false"
+                ).observe(total_duration)
+            
             # Cache the result (using truncated history)
-            query_cache.set(query_text, truncated_history, answer, published_sources)
-
-            # Now stream the full response character by character for smooth animation
-            for i, char in enumerate(answer):
-                yield {"type": "chunk", "content": char}
-                # Small delay to control streaming speed (optional - frontend handles timing)
-                if i % 10 == 0:  # Yield control every 10 characters
-                    await asyncio.sleep(0.001)
+            query_cache.set(query_text, truncated_history, full_answer_accumulator, published_sources)
 
             # Yield metadata before completion
             metadata = {

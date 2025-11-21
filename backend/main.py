@@ -421,8 +421,10 @@ app.json_encoders = {
 }
 
 # CORS configuration - supports both development and production
-cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:3000")
-origins = [origin.strip() for origin in cors_origins_env.split(",")]
+# Default origins include localhost for development and production domains
+default_origins = "http://localhost:3000,https://chat.lite.space,https://www.chat.lite.space"
+cors_origins_env = os.getenv("CORS_ORIGINS", default_origins)
+origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
 
 # Add monitoring middleware (before CORS to capture all requests)
 app.add_middleware(MetricsMiddleware)
