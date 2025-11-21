@@ -1,0 +1,58 @@
+[
+  {
+    "id": "doc1",
+    "title": "Litecoin History",
+    "markdown": "Litecoin was created by Charlie Lee in October 2011. It is a peer-to-peer cryptocurrency that enables instant, near-zero cost payments to anyone in the world.",
+    "status": "published",
+    "metadata": {
+      "author": "test",
+      "tags": ["history", "foundation"],
+      "createdAt": "2024-01-01T00:00:00Z"
+    }
+  },
+  {
+    "id": "doc2",
+    "title": "Litecoin Features",
+    "markdown": "Litecoin features include: Faster block times (2.5 minutes vs Bitcoin's 10 minutes), Scrypt mining algorithm, Segregated Witness (SegWit) support, and Lightning Network compatibility.",
+    "status": "published",
+    "metadata": {
+      "author": "test",
+      "tags": ["features", "technology"],
+      "createdAt": "2024-01-02T00:00:00Z"
+    }
+  },
+  {
+    "id": "doc3",
+    "title": "Litecoin vs Bitcoin",
+    "markdown": "Litecoin differs from Bitcoin in several ways: faster block generation (2.5 minutes vs 10 minutes), different hashing algorithm (Scrypt vs SHA-256), and higher maximum supply (84 million vs 21 million).",
+    "status": "published",
+    "metadata": {
+      "author": "test",
+      "tags": ["comparison", "bitcoin"],
+      "createdAt": "2024-01-03T00:00:00Z"
+    }
+  },
+  {
+    "id": "doc4",
+    "title": "MWEB Privacy",
+    "markdown": "MimbleWimble Extension Blocks (MWEB) is an opt-in privacy upgrade for Litecoin launched in 2022. It enables confidential transactions where amounts are hidden and uses CoinJoin to mix transactions for enhanced privacy.",
+    "status": "published",
+    "metadata": {
+      "author": "test",
+      "tags": ["privacy", "mweb", "features"],
+      "createdAt": "2024-01-04T00:00:00Z"
+    }
+  },
+  {
+    "id": "doc5",
+    "title": "Draft Document",
+    "markdown": "This is a draft document that should not appear in search results. It contains test content about Litecoin mining.",
+    "status": "draft",
+    "metadata": {
+      "author": "test",
+      "tags": ["draft"],
+      "createdAt": "2024-01-05T00:00:00Z"
+    }
+  }
+]
+

@@ -1,0 +1,28 @@
+[
+  {
+    "query": "Who created Litecoin?",
+    "expected": "Charlie Lee",
+    "context": "Initial query about Litecoin creator"
+  },
+  {
+    "query": "When was it created?",
+    "expected": "2011",
+    "context": "Follow-up question with pronoun reference"
+  },
+  {
+    "query": "What are Litecoin's features?",
+    "expected": "faster blocks",
+    "context": "Query about features"
+  },
+  {
+    "query": "How is it different from Bitcoin?",
+    "expected": "faster block",
+    "context": "Follow-up comparison question"
+  },
+  {
+    "query": "What about the second one?",
+    "expected": "scrypt",
+    "context": "Ambiguous reference test (should resolve to second feature)"
+  }
+]
+
