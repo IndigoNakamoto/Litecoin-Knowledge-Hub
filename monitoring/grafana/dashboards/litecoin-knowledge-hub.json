@@ -535,9 +535,15 @@
       },
       "targets": [
         {
-          "expr": "sum(delta(llm_tokens_total[1m])) by (model, token_type)",
-          "legendFormat": "{{model}} - {{token_type}}",
+          "expr": "sum(rate(llm_tokens_total[$__rate_interval])) by (model, token_type) / on(model) group_left() clamp_min(sum(rate(llm_requests_total{status=\"success\"}[$__rate_interval])) by (model), 0.0001)",
+          "legendFormat": "{{model}} - {{token_type}} (avg per request)",
           "refId": "A"
+        },
+        {
+          "expr": "sum(increase(llm_tokens_total[$__range])) by (model, token_type) / on(model) group_left() clamp_min(sum(increase(llm_requests_total{status=\"success\"}[$__range])) by (model), 1)",
+          "legendFormat": "{{model}} - {{token_type}} (total avg)",
+          "refId": "B",
+          "hide": true
         }
       ],
       "title": "LLM Tokens Per Response",
