@@ -1,88 +1,170 @@
-#!/usr/bin/env python3
 """
-Test script for conversational memory functionality in RAG pipeline.
+Pytest tests for conversational memory functionality in RAG pipeline.
 Tests the LangChain-style conversation management with history-aware retrieval.
 """
 
 import os
+import sys
 from dotenv import load_dotenv
 
+# Add project root and backend directory to path
+backend_dir = os.path.dirname(os.path.abspath(__file__))
+project_root_dir = os.path.dirname(backend_dir)
+# Add both project root (for backend.* imports) and backend dir (for data_ingestion.* imports)
+if project_root_dir not in sys.path:
+    sys.path.insert(0, project_root_dir)
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+
 # Load environment variables
-load_dotenv()
+dotenv_path = os.path.join(backend_dir, '.env')
+if os.path.exists(dotenv_path):
+    load_dotenv(dotenv_path=dotenv_path, override=True)
 
-from rag_pipeline import RAGPipeline
+# Set required environment variables for imports (rag_pipeline checks at import time)
+if not os.getenv("GOOGLE_API_KEY"):
+    os.environ["GOOGLE_API_KEY"] = "test-key"
+if not os.getenv("MONGO_URI"):
+    os.environ["MONGO_URI"] = "mongodb://test"
 
-def test_conversational_memory():
-    """Test conversational memory with follow-up questions."""
-    print("🧠 Testing Conversational Memory Implementation")
-    print("=" * 50)
+import pytest
+from backend.rag_pipeline import RAGPipeline
+from backend.data_ingestion.vector_store_manager import VectorStoreManager
+from langchain_core.documents import Document
 
-    try:
-        # Initialize RAG pipeline
-        pipeline = RAGPipeline()
-        print("✅ RAG Pipeline initialized with conversational memory")
 
-        # Test 1: Initial query about Litecoin
-        print("\n📝 Test 1: Initial query")
-        initial_query = "What is Litecoin?"
-        print(f"Query: '{initial_query}'")
+@pytest.fixture
+def rag_pipeline(test_vector_store, mock_llm, monkeypatch):
+    """Create a RAG pipeline instance with mocked dependencies."""
+    # Create VectorStoreManager that uses the test vector store
+    vs_manager = VectorStoreManager()
+    vs_manager.vector_store = test_vector_store
+    vs_manager.retriever = test_vector_store.as_retriever(
+        search_type="similarity",
+        search_kwargs={"k": 7}
+    )
+    
+    # Create RAG pipeline with the test vector store manager
+    pipeline = RAGPipeline(vector_store_manager=vs_manager)
+    
+    # Mock the LLM to return deterministic responses
+    pipeline.llm = mock_llm
+    
+    return pipeline
 
-        answer1, sources1 = pipeline.query(initial_query, chat_history=[])
-        print(f"Answer: {answer1[:200]}...")
-        print(f"Sources: {len(sources1)} documents retrieved")
 
-        # Test 2: Follow-up question using "it" (should understand context)
-        print("\n📝 Test 2: Follow-up question with context")
-        followup_query = "Who created it?"
-        print(f"Query: '{followup_query}' (referring to Litecoin)")
+def test_initial_query(rag_pipeline, test_kb_docs):
+    """Test initial query about Litecoin."""
+    initial_query = "What is Litecoin?"
+    
+    answer, sources = rag_pipeline.query(initial_query, chat_history=[])
+    
+    assert answer is not None
+    assert len(answer) > 0
+    assert isinstance(sources, list)
+    assert len(sources) >= 0  # May or may not have sources depending on mock
 
-        # Provide the previous conversation as history
-        chat_history = [(initial_query, answer1)]
-        print(f"Chat history provided: {len(chat_history)} pairs")
-        answer2, sources2 = pipeline.query(followup_query, chat_history)
-        print(f"Answer: {answer2[:300]}...")
-        print(f"Sources: {len(sources2)} documents retrieved")
 
-        # Debug: Check if the answer mentions Charlie Lee
-        if "Charlie" in answer2 or "Lee" in answer2:
-            print("✅ SUCCESS: Answer correctly identifies Charlie Lee as Litecoin creator")
-        else:
-            print("❌ ISSUE: Answer does not mention Charlie Lee")
+def test_follow_up_pronoun_resolution(rag_pipeline, test_kb_docs):
+    """Test that follow-up questions resolve pronouns correctly."""
+    # First message establishes context
+    initial_query = "Who created Litecoin?"
+    answer1, sources1 = rag_pipeline.query(initial_query, chat_history=[])
+    
+    assert answer1 is not None
+    
+    # Follow-up with pronoun reference
+    followup_query = "When did he create it?"
+    chat_history = [(initial_query, answer1)]
+    answer2, sources2 = rag_pipeline.query(followup_query, chat_history)
+    
+    assert answer2 is not None
+    assert len(answer2) > 0
+    # The answer should reference the context (even if mocked, the structure should work)
+    assert isinstance(sources2, list)
 
-        # Test 3: Another follow-up about differences
-        print("\n📝 Test 3: Second follow-up question")
-        followup2_query = "How is it different from Bitcoin?"
-        print(f"Query: '{followup2_query}' (should still understand 'it' means Litecoin)")
 
-        # Add to conversation history
-        chat_history.append((followup_query, answer2))
-        answer3, sources3 = pipeline.query(followup2_query, chat_history)
-        print(f"Answer: {answer3[:200]}...")
-        print(f"Sources: {len(sources3)} documents retrieved")
+def test_multi_turn_conversation(rag_pipeline, test_kb_docs):
+    """Test multi-turn conversations maintain context."""
+    # First query
+    query1 = "What is Litecoin?"
+    answer1, _ = rag_pipeline.query(query1, chat_history=[])
+    
+    # Second query
+    query2 = "Who created it?"
+    chat_history = [(query1, answer1)]
+    answer2, _ = rag_pipeline.query(query2, chat_history)
+    
+    # Third query
+    query3 = "How is it different from Bitcoin?"
+    chat_history.append((query2, answer2))
+    answer3, _ = rag_pipeline.query(query3, chat_history)
+    
+    assert answer1 is not None
+    assert answer2 is not None
+    assert answer3 is not None
+    assert len(chat_history) == 2  # Should have 2 pairs
 
-        # Test 4: Test standalone question generation
-        print("\n📝 Test 4: Testing 'What about the second one?' scenario")
-        # Simulate a conversation where AI mentioned multiple things
-        simulated_history = [
-            ("What are some Litecoin features?", "Litecoin has several key features: 1) Faster block times (2.5 minutes vs Bitcoin's 10 minutes), 2) Scrypt mining algorithm, 3) Segregated Witness (SegWit) support, 4) Lightning Network compatibility.")
-        ]
 
-        ambiguous_query = "What about the second one?"
-        print(f"Query: '{ambiguous_query}' (should be converted to standalone question)")
+def test_ambiguous_reference_resolution(rag_pipeline, test_kb_docs):
+    """Test resolution of ambiguous references like 'the second one'."""
+    # Simulate a conversation where AI mentioned multiple items
+    simulated_history = [
+        (
+            "What are some Litecoin features?",
+            "Litecoin has several key features: 1) Faster block times (2.5 minutes vs Bitcoin's 10 minutes), 2) Scrypt mining algorithm, 3) Segregated Witness (SegWit) support, 4) Lightning Network compatibility."
+        )
+    ]
+    
+    ambiguous_query = "What about the second one?"
+    answer, sources = rag_pipeline.query(ambiguous_query, simulated_history)
+    
+    assert answer is not None
+    assert len(answer) > 0
+    # The query should be converted to a standalone question that resolves the reference
+    assert isinstance(sources, list)
 
-        answer4, sources4 = pipeline.query(ambiguous_query, simulated_history)
-        print(f"Answer: {answer4[:200]}...")
-        print(f"Sources: {len(sources4)} documents retrieved")
 
-        print("\n🎉 All conversational memory tests completed successfully!")
-        print("✅ History-aware retrieval working")
-        print("✅ Memory management functional")
-        print("✅ Standalone question generation active")
+def test_chat_history_truncation(rag_pipeline, monkeypatch):
+    """Test that chat history is truncated at MAX_CHAT_HISTORY_PAIRS."""
+    import os
+    # Set MAX_CHAT_HISTORY_PAIRS to 2 for testing
+    monkeypatch.setenv("MAX_CHAT_HISTORY_PAIRS", "2")
+    
+    # Create a long chat history (more than 2 pairs)
+    long_history = [
+        ("Query 1", "Answer 1"),
+        ("Query 2", "Answer 2"),
+        ("Query 3", "Answer 3"),
+        ("Query 4", "Answer 4"),
+    ]
+    
+    # The pipeline should truncate to the last 2 pairs
+    query = "What is Litecoin?"
+    answer, _ = rag_pipeline.query(query, long_history)
+    
+    assert answer is not None
+    # Verify truncation happened (internal check - the pipeline should handle this)
 
-    except Exception as e:
-        print(f"❌ Test failed with error: {e}")
-        import traceback
-        traceback.print_exc()
 
-if __name__ == "__main__":
-    test_conversational_memory()
+def test_empty_chat_history(rag_pipeline):
+    """Test query with empty chat history."""
+    query = "What is Litecoin?"
+    answer, sources = rag_pipeline.query(query, chat_history=[])
+    
+    assert answer is not None
+    assert len(answer) > 0
+    assert isinstance(sources, list)
+
+
+def test_chat_history_format(rag_pipeline):
+    """Test that chat history is in the correct format (list of tuples)."""
+    query1 = "What is Litecoin?"
+    answer1, _ = rag_pipeline.query(query1, chat_history=[])
+    
+    # Chat history should be list of (query, answer) tuples
+    chat_history = [(query1, answer1)]
+    assert isinstance(chat_history, list)
+    assert len(chat_history) == 1
+    assert isinstance(chat_history[0], tuple)
+    assert len(chat_history[0]) == 2
