@@ -93,6 +93,26 @@ async def get_user_questions_collection() -> AsyncIOMotorCollection:
         logger.error(f"Error accessing user questions collection: {e}", exc_info=True)
         raise ConnectionError(f"Error accessing user questions collection: {e}")
 
+LLM_REQUEST_LOGS_COLLECTION_NAME = os.getenv("LLM_REQUEST_LOGS_COLLECTION_NAME", "llm_request_logs") # Default collection
+
+async def get_llm_request_logs_collection() -> AsyncIOMotorCollection:
+    """
+    Dependency function to get the MongoDB collection for logging LLM request/response data.
+    """
+    try:
+        client = await get_mongo_client()
+        if client is None:
+            raise ConnectionError("MongoDB client is not available.")
+        
+        database = client[MONGO_DATABASE_NAME]
+        llm_request_logs_collection = database[LLM_REQUEST_LOGS_COLLECTION_NAME]
+        return llm_request_logs_collection
+    except ConnectionError as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Error accessing LLM request logs collection: {e}", exc_info=True)
+        raise ConnectionError(f"Error accessing LLM request logs collection: {e}")
+
 async def close_mongo_connection():
     """
     Closes the Motor MongoDB client connection.

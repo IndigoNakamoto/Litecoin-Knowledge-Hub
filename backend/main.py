@@ -15,17 +15,20 @@ from pydantic import BaseModel, Field, ValidationError # Re-add BaseModel and Fi
 from typing import List, Dict, Any, Tuple
 import asyncio
 import time
+import uuid
+from datetime import datetime
 from contextlib import asynccontextmanager
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Import the RAG chain constructor and data models
-from backend.rag_pipeline import RAGPipeline
-from backend.data_models import ChatRequest, ChatMessage, UserQuestion
+from backend.rag_pipeline import RAGPipeline, LLM_MODEL_NAME
+from backend.data_models import ChatRequest, ChatMessage, UserQuestion, LLMRequestLog
 from backend.api.v1.sync.payload import router as payload_sync_router
 from backend.api.v1.admin.usage import router as admin_router
-from backend.dependencies import get_user_questions_collection
+from backend.api.v1.admin.llm_logs import router as admin_logs_router
+from backend.dependencies import get_user_questions_collection, get_llm_request_logs_collection
 from bson import ObjectId
 from fastapi.encoders import jsonable_encoder # Import jsonable_encoder
 import json
@@ -122,10 +125,6 @@ async def update_metrics_periodically():
     from backend.redis_client import get_redis_client
     import os
     
-    # Get spend limits from environment
-    daily_limit = float(os.getenv("DAILY_SPEND_LIMIT_USD", "5.00"))
-    hourly_limit = float(os.getenv("HOURLY_SPEND_LIMIT_USD", "1.00"))
-    
     while True:
         try:
             # Update vector store metrics every 60 seconds
@@ -135,6 +134,10 @@ async def update_metrics_periodically():
             
             # Update spend limit metrics every 30 seconds
             try:
+                # Read spend limits from environment (allows hot-reloading)
+                daily_limit = float(os.getenv("DAILY_SPEND_LIMIT_USD", "5.00"))
+                hourly_limit = float(os.getenv("HOURLY_SPEND_LIMIT_USD", "1.00"))
+                
                 usage_info = await get_current_usage()
                 
                 # Update Prometheus gauges
@@ -380,6 +383,7 @@ except (ImportError, AttributeError) as e:
 # Include API routers
 app.include_router(payload_sync_router, prefix="/api/v1/sync", tags=["Payload Sync"])
 app.include_router(admin_router, prefix="/api/v1/admin", tags=["Admin"])
+app.include_router(admin_logs_router, prefix="/api/v1/admin", tags=["Admin"])
 
 # Import cache utilities and suggested questions utility
 from backend.cache_utils import suggested_question_cache
@@ -593,6 +597,58 @@ async def log_user_question(question: str, chat_history_length: int, endpoint_ty
         # Log error but don't fail the request
         logger.error(f"Failed to log user question: {e}", exc_info=True)
 
+async def log_llm_request(
+    request_id: str,
+    user_question: str,
+    chat_history_length: int,
+    endpoint_type: str,
+    assistant_response: str,
+    input_tokens: int,
+    output_tokens: int,
+    cost_usd: float,
+    pricing_version: str,
+    model: str,
+    operation: str,
+    duration_seconds: float,
+    status: str,
+    sources_count: int,
+    cache_hit: bool = False,
+    cache_type: str = None,
+    error_message: str = None,
+):
+    """
+    Helper function to log complete LLM request/response data to MongoDB.
+    This runs asynchronously and won't block the main request.
+    Handles errors gracefully - logs but doesn't fail the request.
+    """
+    try:
+        collection = await get_llm_request_logs_collection()
+        request_log = LLMRequestLog(
+            request_id=request_id,
+            user_question=user_question,
+            chat_history_length=chat_history_length,
+            endpoint_type=endpoint_type,
+            assistant_response=assistant_response,
+            response_length=len(assistant_response),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost_usd=cost_usd,
+            pricing_version=pricing_version,
+            model=model,
+            operation=operation,
+            duration_seconds=duration_seconds,
+            status=status,
+            sources_count=sources_count,
+            cache_hit=cache_hit,
+            cache_type=cache_type,
+            error_message=error_message,
+        )
+        await collection.insert_one(request_log.model_dump())
+        logger.debug(f"Logged LLM request: {request_id} ({model}, {input_tokens}+{output_tokens} tokens, ${cost_usd:.6f})")
+    except Exception as e:
+        # Log error but don't fail the request
+        logger.error(f"Failed to log LLM request: {e}", exc_info=True)
+
 CHAT_RATE_LIMIT = RateLimitConfig(
     requests_per_minute=int(os.getenv("RATE_LIMIT_PER_MINUTE", "60")),
     requests_per_hour=int(os.getenv("RATE_LIMIT_PER_HOUR", "1000")),
@@ -609,6 +665,10 @@ async def chat_endpoint(request: ChatRequest, background_tasks: BackgroundTasks,
     """
     # Rate limiting
     await check_rate_limit(http_request, CHAT_RATE_LIMIT)
+
+    # Generate unique request ID
+    request_id = str(uuid.uuid4())
+    start_time = time.time()
 
     try:
         # Log the user question in the background
@@ -656,6 +716,28 @@ async def chat_endpoint(request: ChatRequest, background_tasks: BackgroundTasks,
                     if doc.metadata.get('status') == 'published'
                 ]
                 
+                # Log LLM request (cache hit - no token data)
+                duration = time.time() - start_time
+                background_tasks.add_task(
+                    log_llm_request,
+                    request_id=request_id,
+                    user_question=request.query,
+                    chat_history_length=len(request.chat_history),
+                    endpoint_type="chat",
+                    assistant_response=answer,
+                    input_tokens=0,
+                    output_tokens=0,
+                    cost_usd=0.0,
+                    pricing_version=datetime.utcnow().strftime("%Y-%m-%d"),
+                    model=LLM_MODEL_NAME,
+                    operation="generate",
+                    duration_seconds=duration,
+                    status="success",
+                    sources_count=len(source_documents),
+                    cache_hit=True,
+                    cache_type="suggested_question",
+                )
+                
                 return ChatResponse(
                     answer=answer,
                     sources=source_documents
@@ -667,7 +749,7 @@ async def chat_endpoint(request: ChatRequest, background_tasks: BackgroundTasks,
                 
         # Use the globally initialized RAG pipeline instance with async processing
         # This will check QueryCache internally, then run RAG pipeline if needed
-        answer, sources = await rag_pipeline_instance.aquery(request.query, paired_chat_history)
+        answer, sources, metadata = await rag_pipeline_instance.aquery(request.query, paired_chat_history)
         
         # Transform Langchain Document objects to our Pydantic SourceDocument model
         # Additional filtering to ensure only published documents are returned (backup to RAG pipeline filtering)
@@ -676,6 +758,27 @@ async def chat_endpoint(request: ChatRequest, background_tasks: BackgroundTasks,
             for doc in sources
             if doc.metadata.get('status') == 'published'
         ]
+        
+        # Log LLM request in background
+        background_tasks.add_task(
+            log_llm_request,
+            request_id=request_id,
+            user_question=request.query,
+            chat_history_length=len(request.chat_history),
+            endpoint_type="chat",
+            assistant_response=answer,
+            input_tokens=metadata.get("input_tokens", 0),
+            output_tokens=metadata.get("output_tokens", 0),
+            cost_usd=metadata.get("cost_usd", 0.0),
+            pricing_version=datetime.utcnow().strftime("%Y-%m-%d"),
+            model=LLM_MODEL_NAME,
+            operation="generate",
+            duration_seconds=metadata.get("duration_seconds", time.time() - start_time),
+            status="success",
+            sources_count=len(source_documents),
+            cache_hit=metadata.get("cache_hit", False),
+            cache_type=metadata.get("cache_type"),
+        )
         
         return ChatResponse(
             answer=answer,
@@ -687,6 +790,31 @@ async def chat_endpoint(request: ChatRequest, background_tasks: BackgroundTasks,
     except Exception as e:
         # Log full error details server-side
         logger.error(f"Error in chat endpoint: {e}", exc_info=True)
+        
+        # Log error request in background
+        duration = time.time() - start_time
+        error_message = str(e)[:500]  # Truncate error message
+        background_tasks.add_task(
+            log_llm_request,
+            request_id=request_id,
+            user_question=request.query,
+            chat_history_length=len(request.chat_history),
+            endpoint_type="chat",
+            assistant_response="",
+            input_tokens=0,
+            output_tokens=0,
+            cost_usd=0.0,
+            pricing_version=datetime.utcnow().strftime("%Y-%m-%d"),
+            model=LLM_MODEL_NAME,
+            operation="generate",
+            duration_seconds=duration,
+            status="error",
+            sources_count=0,
+            cache_hit=False,
+            cache_type=None,
+            error_message=error_message,
+        )
+        
         # Raise HTTPException which will be handled by global exception handler
         raise HTTPException(
             status_code=500,
@@ -708,6 +836,10 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
     """
     # Rate limiting
     await check_rate_limit(http_request, STREAM_RATE_LIMIT)
+
+    # Generate unique request ID
+    request_id = str(uuid.uuid4())
+    start_time = time.time()
 
     # Log the user question in the background
     background_tasks.add_task(
@@ -733,6 +865,15 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
             i += 1
 
     async def generate_stream():
+        # Variables to collect response data for logging
+        full_answer = ""
+        metadata = None
+        sources_count = 0
+        cache_hit = False
+        cache_type = None
+        status = "success"
+        error_message = None
+        
         try:
             # Send initial status
             payload = {
@@ -755,12 +896,16 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
                     logger.debug(f"Suggested Question Cache hit for: {request.query[:50]}...")
                     suggested_question_cache_hits_total.labels(cache_type="suggested_question").inc()
                     answer, sources = cached_result
+                    full_answer = answer
                     
                     # Filter published sources
                     published_sources = [
                         doc for doc in sources
                         if doc.metadata.get('status') == 'published'
                     ]
+                    sources_count = len(published_sources)
+                    cache_hit = True
+                    cache_type = "suggested_question"
                     
                     # Send sources first
                     sources_json = jsonable_encoder([
@@ -794,6 +939,16 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
                         "fromCache": "suggested_question"
                     }
                     yield f"data: {json.dumps(payload)}\n\n"
+                    
+                    # Set metadata for cache hit
+                    metadata = {
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "cost_usd": 0.0,
+                        "duration_seconds": time.time() - start_time,
+                        "cache_hit": True,
+                        "cache_type": "suggested_question",
+                    }
                     return
                 else:
                     # Cache miss - fall through to QueryCache → RAG pipeline
@@ -804,6 +959,8 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
             # This will check QueryCache internally, then run RAG pipeline if needed
             async for chunk_data in rag_pipeline_instance.astream_query(request.query, paired_chat_history):
                 if chunk_data["type"] == "chunk":
+                    # Collect full answer for logging
+                    full_answer += chunk_data['content']
                     # Use proper JSON encoding for the chunk content
                     payload = {
                         "status": "streaming",
@@ -813,10 +970,14 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
                     yield f"data: {json.dumps(payload)}\n\n"
                 elif chunk_data["type"] == "sources":
                     # Send sources information
+                    published_sources = [
+                        doc for doc in chunk_data["sources"]
+                        if doc.metadata.get('status') == 'published'
+                    ]
+                    sources_count = len(published_sources)
                     sources_json = jsonable_encoder([
                         SourceDocument(page_content=doc.page_content, metadata=doc.metadata)
-                        for doc in chunk_data["sources"]
-                        if doc.metadata.get('status') == 'published'
+                        for doc in published_sources
                     ])
                     payload = {
                         "status": "sources",
@@ -824,8 +985,16 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
                         "isComplete": False
                     }
                     yield f"data: {json.dumps(payload)}\n\n"
+                elif chunk_data["type"] == "metadata":
+                    # Capture metadata for logging
+                    metadata = chunk_data.get("metadata", {})
+                    cache_hit = metadata.get("cache_hit", False)
+                    cache_type = metadata.get("cache_type")
                 elif chunk_data["type"] == "complete":
                     from_cache = chunk_data.get("from_cache", False)
+                    if from_cache:
+                        cache_hit = True
+                        cache_type = "query"
                     payload = {
                         "status": "complete",
                         "chunk": "",
@@ -834,15 +1003,60 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
                     }
                     yield f"data: {json.dumps(payload)}\n\n"
                     break
+                elif chunk_data["type"] == "error":
+                    status = "error"
+                    error_message = chunk_data.get("error", "Unknown error")
+                    payload = {
+                        "status": "error",
+                        "error": error_message,
+                        "isComplete": True
+                    }
+                    yield f"data: {json.dumps(payload)}\n\n"
+                    break
 
         except Exception as e:
             logger.error(f"Error in streaming response: {e}", exc_info=True)
+            status = "error"
+            error_message = str(e)[:500]
             payload = {
                 "status": "error",
                 "error": "An error occurred while processing your query. Please try again or rephrase your question.",
                 "isComplete": True
             }
             yield f"data: {json.dumps(payload)}\n\n"
+        finally:
+            # Log LLM request in background after stream completes
+            duration = time.time() - start_time
+            if metadata is None:
+                # Fallback metadata if not captured
+                metadata = {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cost_usd": 0.0,
+                    "duration_seconds": duration,
+                    "cache_hit": cache_hit,
+                    "cache_type": cache_type,
+                }
+            background_tasks.add_task(
+                log_llm_request,
+                request_id=request_id,
+                user_question=request.query,
+                chat_history_length=len(request.chat_history),
+                endpoint_type="stream",
+                assistant_response=full_answer,
+                input_tokens=metadata.get("input_tokens", 0),
+                output_tokens=metadata.get("output_tokens", 0),
+                cost_usd=metadata.get("cost_usd", 0.0),
+                pricing_version=datetime.utcnow().strftime("%Y-%m-%d"),
+                model=LLM_MODEL_NAME,
+                operation="generate",
+                duration_seconds=metadata.get("duration_seconds", duration),
+                status=status,
+                sources_count=sources_count,
+                cache_hit=cache_hit,
+                cache_type=cache_type,
+                error_message=error_message,
+            )
 
     return StreamingResponse(
         generate_stream(),

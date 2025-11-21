@@ -290,6 +290,96 @@ class RAGPipeline:
 
         return input_tokens, output_tokens
 
+    def _extract_token_usage_from_chain_result(self, result: Dict[str, Any]) -> Tuple[int, int]:
+        """
+        Extract actual token counts from LangChain chain result.
+        
+        The rag_chain returns a dict with "answer" that contains an AIMessage object
+        which should have response_metadata with token usage information.
+        
+        Args:
+            result: The result dict from rag_chain.invoke() or async_rag_chain.ainvoke()
+        
+        Returns:
+            Tuple of (input_tokens, output_tokens) or (0, 0) if not available
+        """
+        input_tokens = 0
+        output_tokens = 0
+        
+        try:
+            answer = result.get("answer")
+            if answer is None:
+                return 0, 0
+            
+            # Check if answer is an AIMessage with response_metadata
+            if hasattr(answer, 'response_metadata'):
+                metadata = answer.response_metadata
+                if metadata:
+                    # LangChain format: response_metadata may contain token_usage
+                    if 'token_usage' in metadata:
+                        usage = metadata['token_usage']
+                        input_tokens = usage.get('prompt_tokens', 0)
+                        output_tokens = usage.get('completion_tokens', 0)
+                    
+                    # Also check for usage_metadata (direct Gemini API format)
+                    if 'usage_metadata' in metadata:
+                        usage = metadata['usage_metadata']
+                        if hasattr(usage, 'prompt_token_count'):
+                            input_tokens = getattr(usage, 'prompt_token_count', 0)
+                        if hasattr(usage, 'candidates_token_count'):
+                            output_tokens = getattr(usage, 'candidates_token_count', 0)
+                
+                # Check for direct usage_metadata attribute (Gemini response object)
+                if hasattr(answer, 'usage_metadata'):
+                    usage = answer.usage_metadata
+                    input_tokens = getattr(usage, 'prompt_token_count', 0)
+                    output_tokens = getattr(usage, 'candidates_token_count', 0)
+        except Exception as e:
+            logger.debug(f"Could not extract token usage from chain result: {e}", exc_info=True)
+        
+        return input_tokens, output_tokens
+
+    def _extract_token_usage_from_llm_response(self, response: Any) -> Tuple[int, int]:
+        """
+        Extract actual token counts from LangChain LLM response (AIMessage).
+        
+        Args:
+            response: The AIMessage response from LLM
+        
+        Returns:
+            Tuple of (input_tokens, output_tokens) or (0, 0) if not available
+        """
+        input_tokens = 0
+        output_tokens = 0
+        
+        try:
+            if hasattr(response, 'response_metadata'):
+                metadata = response.response_metadata
+                if metadata:
+                    # LangChain format
+                    if 'token_usage' in metadata:
+                        usage = metadata['token_usage']
+                        input_tokens = usage.get('prompt_tokens', 0)
+                        output_tokens = usage.get('completion_tokens', 0)
+                    
+                    # Gemini API format
+                    if 'usage_metadata' in metadata:
+                        usage = metadata['usage_metadata']
+                        if hasattr(usage, 'prompt_token_count'):
+                            input_tokens = getattr(usage, 'prompt_token_count', 0)
+                        if hasattr(usage, 'candidates_token_count'):
+                            output_tokens = getattr(usage, 'candidates_token_count', 0)
+            
+            # Direct usage_metadata attribute
+            if hasattr(response, 'usage_metadata'):
+                usage = response.usage_metadata
+                input_tokens = getattr(usage, 'prompt_token_count', 0)
+                output_tokens = getattr(usage, 'candidates_token_count', 0)
+        except Exception as e:
+            logger.debug(f"Could not extract token usage from LLM response: {e}", exc_info=True)
+        
+        return input_tokens, output_tokens
+
     def refresh_vector_store(self):
         """
         Refreshes the vector store by reloading from disk and recreating the RAG chain.
@@ -457,12 +547,19 @@ class RAGPipeline:
                     cache_hit="false"
                 ).observe(total_duration)
                 
-                # Estimate and track LLM costs using Gemini tokenizer where possible
-                prompt_text = self._build_prompt_text(query_text, context_text)
-                input_tokens, output_tokens = self._estimate_token_usage(
-                    prompt_text,
-                    answer,
-                )
+                # Extract actual token usage from chain response, fallback to estimation
+                input_tokens, output_tokens = self._extract_token_usage_from_chain_result(result)
+                if input_tokens == 0 and output_tokens == 0:
+                    # Fallback to estimation if metadata not available
+                    prompt_text = self._build_prompt_text(query_text, context_text)
+                    input_tokens, output_tokens = self._estimate_token_usage(
+                        prompt_text,
+                        answer,
+                    )
+                    logger.debug("Using estimated token counts (metadata not available)")
+                else:
+                    logger.debug(f"Using actual token counts: input={input_tokens}, output={output_tokens}")
+                
                 estimated_cost = estimate_gemini_cost(
                     input_tokens,
                     output_tokens,
@@ -514,7 +611,7 @@ class RAGPipeline:
             # Return generic error message without exposing internal details
             return "I encountered an error while processing your query. Please try again or rephrase your question.", []
 
-    async def aquery(self, query_text: str, chat_history: List[Tuple[str, str]]) -> Tuple[str, List[Document]]:
+    async def aquery(self, query_text: str, chat_history: List[Tuple[str, str]]) -> Tuple[str, List[Document], Dict[str, Any]]:
         """
         Async version of query method optimized for performance with caching.
 
@@ -523,7 +620,10 @@ class RAGPipeline:
             chat_history: A list of (human_message, ai_message) tuples representing the conversation history.
 
         Returns:
-            A tuple containing the generated answer (str) and a list of source documents (List[Document]).
+            A tuple containing:
+            - The generated answer (str)
+            - A list of source documents (List[Document])
+            - A metadata dict with: input_tokens, output_tokens, cost_usd, duration_seconds, cache_hit, cache_type
         """
         start_time = time.time()
         
@@ -554,7 +654,17 @@ class RAGPipeline:
                     query_type="async",
                     cache_hit="true"
                 ).observe(time.time() - start_time)
-            return cached_result
+            # Return cached result with metadata indicating cache hit
+            answer, published_sources = cached_result
+            metadata = {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cost_usd": 0.0,
+                "duration_seconds": time.time() - start_time,
+                "cache_hit": True,
+                "cache_type": "query",
+            }
+            return answer, published_sources, metadata
         
         # Cache miss
         if MONITORING_ENABLED:
@@ -596,7 +706,15 @@ class RAGPipeline:
                         query_type="async",
                         cache_hit="false"
                     ).observe(total_duration)
-                return NO_KB_MATCH_RESPONSE, []
+                metadata = {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cost_usd": 0.0,
+                    "duration_seconds": time.time() - start_time,
+                    "cache_hit": False,
+                    "cache_type": None,
+                }
+                return NO_KB_MATCH_RESPONSE, [], metadata
 
             # Pre-flight spend limit check (before LLM API call)
             if MONITORING_ENABLED:
@@ -634,13 +752,13 @@ class RAGPipeline:
                     # Log error but allow request (graceful degradation)
                     logger.warning(f"Error in spend limit check: {e}", exc_info=True)
 
-            # Generate answer using LLM with retrieved context
+            # Generate answer using LLM with retrieved context (without StrOutputParser to preserve metadata)
             llm_start = time.time()
-            chain = rag_prompt | self.llm | StrOutputParser()
-            answer = await chain.ainvoke({
+            llm_response = await (rag_prompt | self.llm).ainvoke({
                 "input": query_text,
                 "context": context_text
             })
+            answer = llm_response.content if hasattr(llm_response, 'content') else str(llm_response)
             llm_duration = time.time() - llm_start
 
             # Use retrieved docs as sources
@@ -656,12 +774,18 @@ class RAGPipeline:
                     cache_hit="false"
                 ).observe(total_duration)
                 
-                # Estimate and track LLM costs using Gemini tokenizer when possible
-                prompt_text = self._build_prompt_text(query_text, context_text)
-                input_tokens, output_tokens = self._estimate_token_usage(
-                    prompt_text,
-                    answer,
-                )
+                # Extract actual token usage from LLM response, fallback to estimation
+                input_tokens, output_tokens = self._extract_token_usage_from_llm_response(llm_response)
+                if input_tokens == 0 and output_tokens == 0:
+                    # Fallback to estimation if metadata not available
+                    prompt_text = self._build_prompt_text(query_text, context_text)
+                    input_tokens, output_tokens = self._estimate_token_usage(
+                        prompt_text,
+                        answer,
+                    )
+                    logger.debug("Using estimated token counts (metadata not available)")
+                else:
+                    logger.debug(f"Using actual token counts: input={input_tokens}, output={output_tokens}")
                 estimated_cost = estimate_gemini_cost(
                     input_tokens,
                     output_tokens,
@@ -686,7 +810,17 @@ class RAGPipeline:
             # Cache the result (using truncated history)
             query_cache.set(query_text, truncated_history, answer, published_sources)
 
-            return answer, published_sources
+            # Build metadata dict
+            metadata = {
+                "input_tokens": input_tokens if MONITORING_ENABLED else 0,
+                "output_tokens": output_tokens if MONITORING_ENABLED else 0,
+                "cost_usd": estimated_cost if MONITORING_ENABLED else 0.0,
+                "duration_seconds": time.time() - start_time,
+                "cache_hit": False,
+                "cache_type": None,
+            }
+
+            return answer, published_sources, metadata
         except Exception as e:
             # Log full error details for debugging but don't expose to user
             logger.error(f"Error during async RAG query execution: {e}", exc_info=True)
@@ -705,7 +839,15 @@ class RAGPipeline:
                 )
             
             # Return generic error message without exposing internal details
-            return "I encountered an error while processing your query. Please try again or rephrase your question.", []
+            metadata = {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cost_usd": 0.0,
+                "duration_seconds": time.time() - start_time,
+                "cache_hit": False,
+                "cache_type": None,
+            }
+            return "I encountered an error while processing your query. Please try again or rephrase your question.", [], metadata
 
     async def astream_query(self, query_text: str, chat_history: List[Tuple[str, str]]):
         """
@@ -760,6 +902,17 @@ class RAGPipeline:
                     # Small delay to control streaming speed
                     if i % 10 == 0:  # Yield control every 10 characters
                         await asyncio.sleep(0.001)
+
+                # Yield metadata for cache hit
+                metadata = {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cost_usd": 0.0,
+                    "duration_seconds": time.time() - start_time,
+                    "cache_hit": True,
+                    "cache_type": "query",
+                }
+                yield {"type": "metadata", "metadata": metadata}
 
                 # Signal completion with cache flag
                 yield {"type": "complete", "from_cache": True}
@@ -851,6 +1004,15 @@ class RAGPipeline:
                 # Inform client that no sources were available
                 yield {"type": "sources", "sources": []}
                 yield {"type": "chunk", "content": NO_KB_MATCH_RESPONSE}
+                metadata = {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cost_usd": 0.0,
+                    "duration_seconds": time.time() - start_time,
+                    "cache_hit": False,
+                    "cache_type": None,
+                }
+                yield {"type": "metadata", "metadata": metadata}
                 yield {"type": "complete", "from_cache": False, "no_kb_results": True}
                 return
 
@@ -865,12 +1027,19 @@ class RAGPipeline:
                     cache_hit="false"
                 ).observe(total_duration)
                 
-                # Estimate and track LLM costs using Gemini tokenizer when possible
-                prompt_text = self._build_prompt_text(query_text, context_text)
-                input_tokens, output_tokens = self._estimate_token_usage(
-                    prompt_text,
-                    answer,
-                )
+                # Extract actual token usage from chain response, fallback to estimation
+                input_tokens, output_tokens = self._extract_token_usage_from_chain_result(result)
+                if input_tokens == 0 and output_tokens == 0:
+                    # Fallback to estimation if metadata not available
+                    prompt_text = self._build_prompt_text(query_text, context_text)
+                    input_tokens, output_tokens = self._estimate_token_usage(
+                        prompt_text,
+                        answer,
+                    )
+                    logger.debug("Using estimated token counts (metadata not available)")
+                else:
+                    logger.debug(f"Using actual token counts: input={input_tokens}, output={output_tokens}")
+                
                 estimated_cost = estimate_gemini_cost(
                     input_tokens,
                     output_tokens,
@@ -905,6 +1074,17 @@ class RAGPipeline:
                 if i % 10 == 0:  # Yield control every 10 characters
                     await asyncio.sleep(0.001)
 
+            # Yield metadata before completion
+            metadata = {
+                "input_tokens": input_tokens if MONITORING_ENABLED else 0,
+                "output_tokens": output_tokens if MONITORING_ENABLED else 0,
+                "cost_usd": estimated_cost if MONITORING_ENABLED else 0.0,
+                "duration_seconds": total_duration,
+                "cache_hit": False,
+                "cache_type": None,
+            }
+            yield {"type": "metadata", "metadata": metadata}
+
             # Signal completion
             yield {"type": "complete", "from_cache": False}
 
@@ -925,6 +1105,17 @@ class RAGPipeline:
                     duration_seconds=total_duration,
                     status="error",
                 )
+            
+            # Yield metadata for error case
+            metadata = {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cost_usd": 0.0,
+                "duration_seconds": time.time() - start_time,
+                "cache_hit": False,
+                "cache_type": None,
+            }
+            yield {"type": "metadata", "metadata": metadata}
             
             # Return generic error message without exposing internal details
             yield {"type": "error", "error": "An error occurred while processing your query. Please try again or rephrase your question."}

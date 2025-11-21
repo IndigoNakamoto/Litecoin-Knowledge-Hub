@@ -131,3 +131,82 @@ class UserQuestion(BaseModel):
                 "timestamp": "2024-01-15T10:30:00Z"
             }
         }
+
+class LLMRequestLog(BaseModel):
+    """
+    Pydantic model for logging complete LLM request/response data.
+    Stores user questions, assistant responses, token counts, costs, and metadata
+    for historical analysis, cost recalculation, and audit trails.
+    """
+    id: Optional[str] = Field(None, description="MongoDB document ID (assigned when retrieved from database).")
+    request_id: str = Field(..., description="Unique request identifier (UUID).")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="When the request was processed.")
+    
+    # User input
+    user_question: str = Field(..., description="The user's question/query.")
+    chat_history_length: int = Field(0, description="Number of previous messages in the conversation.")
+    endpoint_type: Literal["chat", "stream"] = Field(..., description="Which endpoint was used (chat or stream).")
+    
+    # LLM response
+    assistant_response: str = Field(..., description="Full assistant response text.")
+    response_length: int = Field(..., description="Character count of the response.")
+    
+    # Token usage (actual from API)
+    input_tokens: int = Field(0, description="Number of input tokens (actual from API).")
+    output_tokens: int = Field(0, description="Number of output tokens (actual from API).")
+    
+    # Cost calculation
+    cost_usd: float = Field(0.0, description="Calculated cost in USD.")
+    pricing_version: str = Field(..., description="Pricing version used (date string).")
+    model: str = Field(..., description="LLM model name.")
+    operation: str = Field(..., description="Operation type (e.g., 'generate').")
+    
+    # Performance
+    duration_seconds: float = Field(0.0, description="Request duration in seconds.")
+    status: Literal["success", "error"] = Field("success", description="Request status.")
+    
+    # Source documents
+    sources_count: int = Field(0, description="Number of source documents retrieved.")
+    
+    # Caching
+    cache_hit: bool = Field(False, description="Whether this was a cache hit.")
+    cache_type: Optional[str] = Field(None, description="Cache type: 'query', 'suggested_question', or null.")
+    
+    # Error handling
+    error_message: Optional[str] = Field(None, description="Error message if status is 'error'.")
+    
+    @field_validator('user_question', 'assistant_response')
+    @classmethod
+    def sanitize_text(cls, v: str) -> str:
+        """Sanitize text fields for prompt injection, NoSQL injection, and length."""
+        if not v:
+            return v
+        # For assistant_response, allow longer content (responses can be long)
+        max_length = MAX_QUERY_LENGTH * 10  # Allow 10x for responses
+        sanitized = sanitize_query_input(v, max_length)
+        return sanitized
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "request_id": "550e8400-e29b-41d4-a716-446655440000",
+                "timestamp": "2025-01-15T10:30:00Z",
+                "user_question": "What is Litecoin?",
+                "chat_history_length": 0,
+                "endpoint_type": "chat",
+                "assistant_response": "Litecoin is a peer-to-peer cryptocurrency...",
+                "response_length": 1250,
+                "input_tokens": 1250,
+                "output_tokens": 450,
+                "cost_usd": 0.000325,
+                "pricing_version": "2025-01-15",
+                "model": "gemini-2.5-flash-lite-preview-09-2025",
+                "operation": "generate",
+                "duration_seconds": 1.2,
+                "status": "success",
+                "sources_count": 3,
+                "cache_hit": False,
+                "cache_type": None,
+                "error_message": None
+            }
+        }
