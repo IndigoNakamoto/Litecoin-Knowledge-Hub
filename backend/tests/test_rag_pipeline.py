@@ -199,7 +199,8 @@ def test_hierarchical_chunking_and_retrieval():
             
         # 5. Formulate a specific query and assert that the correct, context-rich chunk is retrieved via RAGPipeline
         print(f"Performing RAG query via RAGPipeline: '{TEST_QUERY_HIERARCHICAL}'")
-        answer, sources = rag_pipeline_instance.query(TEST_QUERY_HIERARCHICAL)
+        import asyncio
+        answer, sources, metadata = asyncio.run(rag_pipeline_instance.aquery(TEST_QUERY_HIERARCHICAL, chat_history=[]))
         
         print(f"RAG Answer: {answer}")
         if sources:
@@ -386,7 +387,8 @@ if __name__ == "__main__":
         validation_query = "What is Mimblewimble CoinSwap?"
         print(f"Sending validation query to RAG pipeline: '{validation_query}'")
         
-        answer, sources = rag_pipeline.query(validation_query)
+        import asyncio
+        answer, sources, metadata = asyncio.run(rag_pipeline.aquery(validation_query, chat_history=[]))
         
         print("\n--- Answer from RAG Pipeline (Validation Query) ---")
         print(answer)

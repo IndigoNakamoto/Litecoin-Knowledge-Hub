@@ -178,44 +178,15 @@ class RAGPipeline:
             google_api_key=google_api_key
         )
 
-        # Construct the RAG chains (both sync and async)
-        self._setup_rag_chain()
+        # Construct the async RAG chain
         self._setup_async_rag_chain()
-
-    def _setup_rag_chain(self):
-        """Sets up the conversational RAG chain with memory."""
-        # Get retriever from vector store
-        retriever = self.vector_store_manager.get_retriever(
-            search_type="similarity",
-            search_kwargs={"k": 7}
-        )
-
-        # Create history-aware retriever for standalone question generation
-        from langchain.chains import create_history_aware_retriever, create_retrieval_chain
-        from langchain.chains.combine_documents import create_stuff_documents_chain
-        
-        self.history_aware_retriever = create_history_aware_retriever(
-            self.llm,
-            retriever,
-            QA_WITH_HISTORY_PROMPT
-        )
-
-        # Create document combining chain for final answer generation
-        self.document_chain = create_stuff_documents_chain(self.llm, rag_prompt)
-
-        # Create conversational retrieval chain using LCEL
-        self.rag_chain = RunnablePassthrough.assign(
-            context=self.history_aware_retriever
-        ).assign(
-            answer=self.document_chain
-        )
 
     def _setup_async_rag_chain(self):
         """Sets up async conversational RAG chain for concurrent processing."""
         # Get retriever from vector store
         retriever = self.vector_store_manager.get_retriever(
             search_type="similarity",
-            search_kwargs={"k": 15}
+            search_kwargs={"k": 6}
         )
 
         # Create history-aware retriever for standalone question generation
@@ -394,222 +365,12 @@ class RAGPipeline:
                 self.vector_store_manager.vector_store = self.vector_store_manager._create_faiss_from_mongodb()
                 logger.info("Vector store reloaded from disk")
 
-            # Recreate the RAG chain with the updated vector store
-            self._setup_rag_chain()
+            # Recreate the async RAG chain with the updated vector store
             self._setup_async_rag_chain()
             logger.info("RAG pipeline refreshed successfully")
 
         except Exception as e:
             logger.error(f"Error refreshing vector store: {e}", exc_info=True)
-
-    def query(self, query_text: str, chat_history: List[Tuple[str, str]]) -> Tuple[str, List[Document]]:
-        """
-        Processes a query through the conversational RAG pipeline with memory and caching.
-
-        Args:
-            query_text: The user's current query.
-            chat_history: A list of (human_message, ai_message) tuples representing the conversation history.
-
-        Returns:
-            A tuple containing the generated answer (str) and a list of source documents (List[Document]).
-        """
-        start_time = time.time()
-        
-        # Sanitize query for prompt injection and other attacks
-        # Additional layer of protection even though Pydantic validators already sanitize
-        is_injection, pattern = detect_prompt_injection(query_text)
-        if is_injection:
-            logger.warning(f"Prompt injection detected in query (pattern: {pattern}). Sanitizing...")
-        query_text = sanitize_query_input(query_text)
-        
-        # Sanitize chat history messages as well
-        sanitized_history = []
-        for human_msg, ai_msg in chat_history:
-            sanitized_human = sanitize_query_input(human_msg) if human_msg else human_msg
-            sanitized_ai = sanitize_query_input(ai_msg) if ai_msg else ai_msg
-            sanitized_history.append((sanitized_human, sanitized_ai))
-        
-        # Truncate chat history to prevent token overflow
-        truncated_history = self._truncate_chat_history(sanitized_history)
-        
-        # Check cache first (using truncated history for cache key)
-        cached_result = query_cache.get(query_text, truncated_history)
-        if cached_result:
-            logger.debug(f"Cache hit for query: '{query_text}'")
-            if MONITORING_ENABLED:
-                rag_cache_hits_total.labels(cache_type="query").inc()
-                rag_query_duration_seconds.labels(
-                    query_type="sync",
-                    cache_hit="true"
-                ).observe(time.time() - start_time)
-            return cached_result
-        
-        # Cache miss
-        if MONITORING_ENABLED:
-            rag_cache_misses_total.labels(cache_type="query").inc()
-
-        try:
-            # Convert chat_history to Langchain's BaseMessage format for the history-aware retriever
-            converted_chat_history: List[BaseMessage] = []
-            for human_msg, ai_msg in truncated_history:
-                converted_chat_history.append(HumanMessage(content=human_msg))
-                converted_chat_history.append(AIMessage(content=ai_msg))
-
-            # Track retrieval time
-            retrieval_start = time.time()
-            
-            # Get source documents first for pre-flight cost estimation
-            retriever = self.vector_store_manager.get_retriever(
-                search_type="similarity",
-                search_kwargs={"k": 15}
-            )
-            context_docs = retriever.get_relevant_documents(query_text)
-            context_text = format_docs(context_docs)
-            
-            # Pre-flight spend limit check (before LLM API call)
-            # Note: For sync method, we run async check in a new event loop
-            if MONITORING_ENABLED:
-                try:
-                    # Estimate cost before making API call
-                    prompt_text = self._build_prompt_text(query_text, context_text)
-                    input_tokens_est, _ = self._estimate_token_usage(prompt_text, "")
-                    # Use max expected output tokens for worst-case estimation (2048 tokens)
-                    max_output_tokens = 2048
-                    estimated_cost = estimate_gemini_cost(
-                        input_tokens_est,
-                        max_output_tokens,
-                        LLM_MODEL_NAME,
-                    )
-                    # Check spend limit with 10% buffer (run async in new event loop for sync method)
-                    try:
-                        loop = asyncio.get_running_loop()
-                        # Event loop is running, skip check in sync method (will be checked in async method)
-                        logger.debug("Skipping spend limit check in sync method (event loop running)")
-                    except RuntimeError:
-                        # No event loop, can use asyncio.run()
-                        allowed, error_msg, _ = asyncio.run(check_spend_limit(estimated_cost, LLM_MODEL_NAME))
-                        if not allowed:
-                            # Increment rejection counter
-                            if "daily" in error_msg.lower():
-                                llm_spend_limit_rejections_total.labels(limit_type="daily").inc()
-                            elif "hourly" in error_msg.lower():
-                                llm_spend_limit_rejections_total.labels(limit_type="hourly").inc()
-                            # Return user-friendly error message
-                        raise HTTPException(
-                            status_code=429,
-                            detail={
-                                "error": "spend_limit_exceeded",
-                                "message": "We've reached our daily usage limit. Please try again later.",
-                                "type": "daily" if "daily" in error_msg.lower() else "hourly"
-                            }
-                        )
-                except HTTPException:
-                    raise
-                except Exception as e:
-                    # Log error but allow request (graceful degradation)
-                    logger.warning(f"Error in spend limit check: {e}", exc_info=True)
-            
-            # Invoke the conversational retrieval chain with chat history
-            result = self.rag_chain.invoke({
-                "input": query_text,
-                "chat_history": converted_chat_history
-            })
-
-            retrieval_duration = time.time() - retrieval_start
-            
-            answer = result.get("answer", "Error: Could not generate answer.")
-
-            # Filter out draft/unpublished documents from sources
-            published_sources = [
-                doc for doc in context_docs
-                if doc.metadata.get("status") == "published"
-            ]
-
-            # Track metrics or short-circuit when no published sources found
-            if not published_sources:
-                if MONITORING_ENABLED:
-                    rag_retrieval_duration_seconds.observe(retrieval_duration)
-                    rag_documents_retrieved_total.observe(0)
-                    total_duration = time.time() - start_time
-                    rag_query_duration_seconds.labels(
-                        query_type="sync",
-                        cache_hit="false"
-                    ).observe(total_duration)
-                return NO_KB_MATCH_RESPONSE, []
-
-            # Track metrics
-            if MONITORING_ENABLED:
-                rag_retrieval_duration_seconds.observe(retrieval_duration)
-                rag_documents_retrieved_total.observe(len(published_sources))
-                total_duration = time.time() - start_time
-                rag_query_duration_seconds.labels(
-                    query_type="sync",
-                    cache_hit="false"
-                ).observe(total_duration)
-                
-                # Extract actual token usage from chain response, fallback to estimation
-                input_tokens, output_tokens = self._extract_token_usage_from_chain_result(result)
-                if input_tokens == 0 and output_tokens == 0:
-                    # Fallback to estimation if metadata not available
-                    prompt_text = self._build_prompt_text(query_text, context_text)
-                    input_tokens, output_tokens = self._estimate_token_usage(
-                        prompt_text,
-                        answer,
-                    )
-                    logger.debug("Using estimated token counts (metadata not available)")
-                else:
-                    logger.debug(f"Using actual token counts: input={input_tokens}, output={output_tokens}")
-                
-                estimated_cost = estimate_gemini_cost(
-                    input_tokens,
-                    output_tokens,
-                    LLM_MODEL_NAME,
-                )
-                track_llm_metrics(
-                    model=LLM_MODEL_NAME,
-                    operation="generate",
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                    cost_usd=estimated_cost,
-                    duration_seconds=total_duration,
-                    status="success",
-                )
-                
-                # Record actual spend in Redis (run async in new event loop for sync method)
-                try:
-                    try:
-                        loop = asyncio.get_running_loop()
-                        # Event loop is running, skip recording in sync method
-                        logger.debug("Skipping spend recording in sync method (event loop running)")
-                    except RuntimeError:
-                        # No event loop, can use asyncio.run()
-                        asyncio.run(record_spend(estimated_cost, input_tokens, output_tokens, LLM_MODEL_NAME))
-                except Exception as e:
-                    logger.warning(f"Error recording spend: {e}", exc_info=True)
-
-            # Cache the result (using truncated history)
-            query_cache.set(query_text, truncated_history, answer, published_sources)
-
-            return answer, published_sources
-        except Exception as e:
-            # Log full error details for debugging but don't expose to user
-            logger.error(f"Error during conversational RAG query execution: {e}", exc_info=True)
-            
-            if MONITORING_ENABLED:
-                total_duration = time.time() - start_time
-                rag_query_duration_seconds.labels(
-                    query_type="sync",
-                    cache_hit="false"
-                ).observe(total_duration)
-                track_llm_metrics(
-                    model=LLM_MODEL_NAME,
-                    operation="generate",
-                    duration_seconds=total_duration,
-                    status="error",
-                )
-            
-            # Return generic error message without exposing internal details
-            return "I encountered an error while processing your query. Please try again or rephrase your question.", []
 
     async def aquery(self, query_text: str, chat_history: List[Tuple[str, str]]) -> Tuple[str, List[Document], Dict[str, Any]]:
         """
@@ -685,7 +446,7 @@ class RAGPipeline:
                 search_type="similarity",
                 search_kwargs={"k": 15}
             )
-            context_docs = retriever.get_relevant_documents(query_text)
+            context_docs = retriever.invoke(query_text)
             retrieval_duration = time.time() - retrieval_start
 
             # Format context for LLM
@@ -936,7 +697,7 @@ class RAGPipeline:
                 search_type="similarity",
                 search_kwargs={"k": 15}
             )
-            context_docs_pre = retriever.get_relevant_documents(query_text)
+            context_docs_pre = retriever.invoke(query_text)
             context_text_pre = format_docs(context_docs_pre)
             
             # Pre-flight spend limit check (before LLM API call)
@@ -1132,43 +893,47 @@ if __name__ == "__main__":
     else:
         print("RAGPipeline direct run: .env file not found. Ensure GOOGLE_API_KEY and MONGO_URI are set.")
 
-    print("Testing RAGPipeline class with local embeddings and Google Flash 2.5...")
-    try:
-        pipeline = RAGPipeline()  # Uses default collection
+    async def main():
+        print("Testing RAGPipeline class with local embeddings and Google Flash 2.5...")
+        try:
+            pipeline = RAGPipeline()  # Uses default collection
 
-        # Test 1: Initial query
-        initial_query = "What is Litecoin?"
-        print(f"\nQuerying pipeline with: '{initial_query}' (initial query)")
-        answer, sources = pipeline.query(initial_query, chat_history=[])
-        print("\n--- Answer (Initial Query) ---")
-        print(answer)
-        print("\n--- Sources (Initial Query) ---")
-        if sources:
-            for i, doc in enumerate(sources):
-                print(f"Source {i+1}: {doc.page_content[:150]}... (Metadata: {doc.metadata.get('title', 'N/A')})")
-        else:
-            print("No sources retrieved.")
+            # Test 1: Initial query
+            initial_query = "What is Litecoin?"
+            print(f"\nQuerying pipeline with: '{initial_query}' (initial query)")
+            answer, sources, metadata = await pipeline.aquery(initial_query, chat_history=[])
+            print("\n--- Answer (Initial Query) ---")
+            print(answer)
+            print("\n--- Sources (Initial Query) ---")
+            if sources:
+                for i, doc in enumerate(sources):
+                    print(f"Source {i+1}: {doc.page_content[:150]}... (Metadata: {doc.metadata.get('title', 'N/A')})")
+            else:
+                print("No sources retrieved.")
 
-        # Test 2: Follow-up query with history
-        follow_up_query = "Who created it?"
-        simulated_history = [
-            ("What is Litecoin?", "Litecoin is a peer-to-peer cryptocurrency and open-source software project released under the MIT/X11 license. It was inspired by Bitcoin but designed to have a faster block generation rate and use a different hashing algorithm.")
-        ]
-        print(f"\nQuerying pipeline with: '{follow_up_query}' (follow-up query)")
-        answer, sources = pipeline.query(follow_up_query, chat_history=simulated_history)
-        
-        print("\n--- Answer (Follow-up Query) ---")
-        print(answer)
-        print("\n--- Sources (Follow-up Query) ---")
-        if sources:
-            for i, doc in enumerate(sources):
-                print(f"Source {i+1}: {doc.page_content[:150]}... (Metadata: {doc.metadata.get('title', 'N/A')})")
-        else:
-            print("No sources retrieved.")
+            # Test 2: Follow-up query with history
+            follow_up_query = "Who created it?"
+            simulated_history = [
+                ("What is Litecoin?", "Litecoin is a peer-to-peer cryptocurrency and open-source software project released under the MIT/X11 license. It was inspired by Bitcoin but designed to have a faster block generation rate and use a different hashing algorithm.")
+            ]
+            print(f"\nQuerying pipeline with: '{follow_up_query}' (follow-up query)")
+            answer, sources, metadata = await pipeline.aquery(follow_up_query, chat_history=simulated_history)
             
-    except ValueError as ve:
-        print(f"Initialization Error: {ve}")
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        import traceback
-        traceback.print_exc()
+            print("\n--- Answer (Follow-up Query) ---")
+            print(answer)
+            print("\n--- Sources (Follow-up Query) ---")
+            if sources:
+                for i, doc in enumerate(sources):
+                    print(f"Source {i+1}: {doc.page_content[:150]}... (Metadata: {doc.metadata.get('title', 'N/A')})")
+            else:
+                print("No sources retrieved.")
+                
+        except ValueError as ve:
+            print(f"Initialization Error: {ve}")
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    # Run the async main function
+    asyncio.run(main())

@@ -232,6 +232,129 @@ async def update_metrics_periodically():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
+    # Startup: Check MongoDB and sync Payload articles if empty
+    async def sync_payload_articles_if_empty():
+        """Check if MongoDB has documents, and sync from Payload CMS if empty."""
+        try:
+            # Check if auto-sync is enabled (default: true in production)
+            auto_sync_enabled = os.getenv("AUTO_SYNC_PAYLOAD_ARTICLES_ON_STARTUP", "true").lower() == "true"
+            if not auto_sync_enabled:
+                logger.info("Auto-sync of Payload articles on startup is disabled")
+                return
+            
+            # Check MongoDB document count
+            if rag_pipeline_instance.vector_store_manager.mongodb_available:
+                doc_count = rag_pipeline_instance.vector_store_manager.collection.count_documents({})
+                published_count = rag_pipeline_instance.vector_store_manager.collection.count_documents({
+                    "metadata.status": "published"
+                })
+                logger.info(f"MongoDB has {doc_count} total documents ({published_count} published)")
+                
+                # Sync if empty or below threshold (default: 10)
+                min_docs_threshold = int(os.getenv("MIN_DOCS_TO_SKIP_SYNC", "10"))
+                if doc_count < min_docs_threshold:
+                    logger.info(f"MongoDB has fewer than {min_docs_threshold} documents. Syncing from Payload CMS...")
+                    
+                    # Import sync functions
+                    from backend.utils.sync_payload_articles import get_published_payload_articles, normalize_payload_doc
+                    from backend.data_ingestion.embedding_processor import process_payload_documents
+                    from backend.data_models import PayloadWebhookDoc
+                    
+                    # Fetch published articles from Payload CMS
+                    payload_url = os.getenv("PAYLOAD_PUBLIC_SERVER_URL")
+                    if not payload_url:
+                        # Try to detect if we're in Docker (use service name)
+                        try:
+                            import socket
+                            socket.gethostbyname('payload_cms')
+                            payload_url = "http://payload_cms:3000"
+                        except socket.gaierror:
+                            payload_url = "http://localhost:3001"
+                    
+                    logger.info(f"Fetching published articles from Payload CMS at {payload_url}...")
+                    import requests
+                    response = requests.get(
+                        f"{payload_url}/api/articles?where[status][equals]=published&limit=1000&depth=1",
+                        timeout=30
+                    )
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        docs = data.get('docs', [])
+                        logger.info(f"Found {len(docs)} published articles in Payload CMS")
+                        
+                        if docs:
+                            # Convert to PayloadWebhookDoc objects
+                            payload_docs = []
+                            for doc in docs:
+                                try:
+                                    normalized_doc = normalize_payload_doc(doc)
+                                    payload_doc = PayloadWebhookDoc(**normalized_doc)
+                                    payload_docs.append(payload_doc)
+                                except Exception as e:
+                                    logger.warning(f"Failed to parse article '{doc.get('title', 'unknown')}': {e}")
+                                    continue
+                            
+                            # Process and add to vector store
+                            all_chunks = []
+                            vector_store_manager = rag_pipeline_instance.vector_store_manager
+                            
+                            for payload_doc in payload_docs:
+                                try:
+                                    logger.info(f"Processing article: {payload_doc.title} (ID: {payload_doc.id})")
+                                    
+                                    # Delete existing chunks for this article (in case of re-sync)
+                                    deleted_count = vector_store_manager.delete_documents_by_metadata_field('payload_id', payload_doc.id)
+                                    if deleted_count > 0:
+                                        logger.info(f"  Deleted {deleted_count} existing chunks for this article")
+                                    
+                                    # Process the document into chunks
+                                    processed_chunks = process_payload_documents([payload_doc])
+                                    
+                                    if processed_chunks:
+                                        all_chunks.extend(processed_chunks)
+                                        logger.info(f"  Generated {len(processed_chunks)} chunks")
+                                except Exception as e:
+                                    logger.error(f"Error processing article '{payload_doc.title}': {e}", exc_info=True)
+                                    continue
+                            
+                            # Add all chunks to the vector store
+                            if all_chunks:
+                                logger.info(f"Adding {len(all_chunks)} total chunks to vector store...")
+                                vector_store_manager.add_documents(all_chunks, batch_size=10)
+                                logger.info(f"✅ Successfully synced {len(payload_docs)} articles, creating {len(all_chunks)} chunks!")
+                                
+                                # Refresh the RAG pipeline to load new documents
+                                logger.info("Refreshing RAG pipeline to load newly synced documents...")
+                                rag_pipeline_instance.refresh_vector_store()
+                                logger.info("✅ RAG pipeline refreshed successfully")
+                            else:
+                                logger.warning("No chunks were generated from any articles.")
+                        else:
+                            logger.info("No published articles found in Payload CMS")
+                    else:
+                        logger.warning(f"Failed to fetch articles from Payload CMS: {response.status_code} - {response.text}")
+                else:
+                    logger.info(f"MongoDB already has {doc_count} documents (>= {min_docs_threshold}). Skipping sync.")
+            else:
+                logger.warning("MongoDB not available. Skipping Payload article sync.")
+        except Exception as e:
+            logger.error(f"Error during Payload article sync on startup: {e}", exc_info=True)
+            # Don't fail startup if sync fails
+    
+    # Startup: Sync Payload articles if MongoDB is empty
+    # Run sync check and wait a short time (non-blocking, but gives sync time to start)
+    logger.info("Checking if Payload article sync is needed...")
+    try:
+        # Run sync check with a timeout to avoid blocking startup too long
+        await asyncio.wait_for(sync_payload_articles_if_empty(), timeout=60.0)
+        logger.info("Payload article sync check completed")
+    except asyncio.TimeoutError:
+        logger.warning("Payload article sync check timed out after 60 seconds (continuing startup)")
+    except Exception as e:
+        logger.error(f"Error during Payload article sync check: {e}", exc_info=True)
+        # Continue startup even if sync fails
+    
     # Startup: Initialize question metrics from MongoDB
     await update_question_metrics_from_db()
     logger.info("Initialized question metrics from MongoDB")
@@ -445,7 +568,7 @@ async def refresh_suggested_question_cache():
                 
                 # Generate response via RAG pipeline (empty chat history for suggested questions)
                 logger.info(f"Generating response for question: {question_text[:50]}...")
-                answer, sources = await rag_pipeline_instance.aquery(question_text, [])
+                answer, sources, metadata = await rag_pipeline_instance.aquery(question_text, [])
                 
                 # Store in Suggested Question Cache
                 await suggested_question_cache.set(question_text, answer, sources)
@@ -568,13 +691,6 @@ async def readiness_endpoint(request: Request):
     from backend.monitoring.health import _get_health_checker
     return _get_health_checker().get_public_readiness()
 
-@app.options("/api/v1/chat")
-async def chat_options():
-    """
-    Handle CORS preflight requests for the chat endpoint.
-    """
-    return {"status": "ok"}
-
 async def log_user_question(question: str, chat_history_length: int, endpoint_type: str):
     """
     Helper function to log user questions to MongoDB for later analysis.
@@ -648,178 +764,6 @@ async def log_llm_request(
     except Exception as e:
         # Log error but don't fail the request
         logger.error(f"Failed to log LLM request: {e}", exc_info=True)
-
-CHAT_RATE_LIMIT = RateLimitConfig(
-    requests_per_minute=int(os.getenv("RATE_LIMIT_PER_MINUTE", "60")),
-    requests_per_hour=int(os.getenv("RATE_LIMIT_PER_HOUR", "1000")),
-    identifier="chat",
-)
-
-
-@app.post("/api/v1/chat", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest, background_tasks: BackgroundTasks, http_request: Request):
-    """
-    Endpoint to handle chat queries with conversational history.
-    Processes the query through the RAG pipeline to get a generated response
-    and the source documents used, taking into account previous messages.
-    """
-    # Rate limiting
-    await check_rate_limit(http_request, CHAT_RATE_LIMIT)
-
-    # Generate unique request ID
-    request_id = str(uuid.uuid4())
-    start_time = time.time()
-
-    try:
-        # Log the user question in the background
-        background_tasks.add_task(
-            log_user_question,
-            question=request.query,
-            chat_history_length=len(request.chat_history),
-            endpoint_type="chat"
-        )
-        
-        # Convert ChatMessage list to the (human_message, ai_message) tuple format expected by RAGPipeline
-        # The frontend now sends only complete exchanges, so we can simply pair consecutive human-AI messages
-
-        paired_chat_history: List[Tuple[str, str]] = []
-        i = 0
-        while i < len(request.chat_history) - 1:  # Ensure we have pairs to process
-            human_msg = request.chat_history[i]
-            ai_msg = request.chat_history[i + 1]
-
-            if human_msg.role == "human" and ai_msg.role == "ai":
-                paired_chat_history.append((human_msg.content, ai_msg.content))
-                i += 2
-            else:
-                # Skip malformed pairs and continue
-                logger.warning(f"Skipping malformed chat history pair at index {i}")
-                i += 1
-        
-        # Check Suggested Question Cache FIRST (for empty chat history)
-        if len(paired_chat_history) == 0:
-            lookup_start = time.time()
-            cached_result = await suggested_question_cache.get(request.query)
-            lookup_duration = time.time() - lookup_start
-            suggested_question_cache_lookup_duration_seconds.observe(lookup_duration)
-            
-            if cached_result:
-                # Cache hit - return immediately
-                logger.debug(f"Suggested Question Cache hit for: {request.query[:50]}...")
-                suggested_question_cache_hits_total.labels(cache_type="suggested_question").inc()
-                answer, sources = cached_result
-                
-                # Transform Langchain Document objects to our Pydantic SourceDocument model
-                source_documents = [
-                    SourceDocument(page_content=doc.page_content, metadata=doc.metadata)
-                    for doc in sources
-                    if doc.metadata.get('status') == 'published'
-                ]
-                
-                # Log LLM request (cache hit - no token data)
-                duration = time.time() - start_time
-                background_tasks.add_task(
-                    log_llm_request,
-                    request_id=request_id,
-                    user_question=request.query,
-                    chat_history_length=len(request.chat_history),
-                    endpoint_type="chat",
-                    assistant_response=answer,
-                    input_tokens=0,
-                    output_tokens=0,
-                    cost_usd=0.0,
-                    pricing_version=datetime.utcnow().strftime("%Y-%m-%d"),
-                    model=LLM_MODEL_NAME,
-                    operation="generate",
-                    duration_seconds=duration,
-                    status="success",
-                    sources_count=len(source_documents),
-                    cache_hit=True,
-                    cache_type="suggested_question",
-                )
-                
-                return ChatResponse(
-                    answer=answer,
-                    sources=source_documents
-                )
-            else:
-                # Cache miss - fall through to QueryCache → RAG pipeline
-                suggested_question_cache_misses_total.labels(cache_type="suggested_question").inc()
-                logger.debug(f"Suggested Question Cache miss for: {request.query[:50]}...")
-                
-        # Use the globally initialized RAG pipeline instance with async processing
-        # This will check QueryCache internally, then run RAG pipeline if needed
-        answer, sources, metadata = await rag_pipeline_instance.aquery(request.query, paired_chat_history)
-        
-        # Transform Langchain Document objects to our Pydantic SourceDocument model
-        # Additional filtering to ensure only published documents are returned (backup to RAG pipeline filtering)
-        source_documents = [
-            SourceDocument(page_content=doc.page_content, metadata=doc.metadata)
-            for doc in sources
-            if doc.metadata.get('status') == 'published'
-        ]
-        
-        # Log LLM request in background
-        background_tasks.add_task(
-            log_llm_request,
-            request_id=request_id,
-            user_question=request.query,
-            chat_history_length=len(request.chat_history),
-            endpoint_type="chat",
-            assistant_response=answer,
-            input_tokens=metadata.get("input_tokens", 0),
-            output_tokens=metadata.get("output_tokens", 0),
-            cost_usd=metadata.get("cost_usd", 0.0),
-            pricing_version=datetime.utcnow().strftime("%Y-%m-%d"),
-            model=LLM_MODEL_NAME,
-            operation="generate",
-            duration_seconds=metadata.get("duration_seconds", time.time() - start_time),
-            status="success",
-            sources_count=len(source_documents),
-            cache_hit=metadata.get("cache_hit", False),
-            cache_type=metadata.get("cache_type"),
-        )
-        
-        return ChatResponse(
-            answer=answer,
-            sources=source_documents
-        )
-    except HTTPException:
-        # Re-raise HTTP exceptions (rate limiting, etc.) - they're already properly formatted
-        raise
-    except Exception as e:
-        # Log full error details server-side
-        logger.error(f"Error in chat endpoint: {e}", exc_info=True)
-        
-        # Log error request in background
-        duration = time.time() - start_time
-        error_message = str(e)[:500]  # Truncate error message
-        background_tasks.add_task(
-            log_llm_request,
-            request_id=request_id,
-            user_question=request.query,
-            chat_history_length=len(request.chat_history),
-            endpoint_type="chat",
-            assistant_response="",
-            input_tokens=0,
-            output_tokens=0,
-            cost_usd=0.0,
-            pricing_version=datetime.utcnow().strftime("%Y-%m-%d"),
-            model=LLM_MODEL_NAME,
-            operation="generate",
-            duration_seconds=duration,
-            status="error",
-            sources_count=0,
-            cache_hit=False,
-            cache_type=None,
-            error_message=error_message,
-        )
-        
-        # Raise HTTPException which will be handled by global exception handler
-        raise HTTPException(
-            status_code=500,
-            detail={"error": "Internal server error", "message": "An error occurred while processing your query. Please try again or rephrase your question."}
-        )
 
 STREAM_RATE_LIMIT = RateLimitConfig(
     requests_per_minute=int(os.getenv("RATE_LIMIT_PER_MINUTE", "60")),
