@@ -30,13 +30,10 @@ const userHasRole = (user: User | null | undefined, roles: string[]): boolean =>
 const articleCreateAccess = ({ req }: { req: { user?: User } }): AccessResult => {
   const user = req.user as User | undefined
   
-  // Allow form state building even without user - Payload's authentication middleware
-  // will handle authentication for actual operations. During SSR, user session might
-  // not be available even for authenticated users, so we allow access control to pass
-  // and rely on Payload's authentication to block unauthenticated operations.
+  // Require authentication for create operations - fail securely if no user
   if (!user) {
-    console.log('[Article access] Create check - No user found (may be form state building), allowing for form structure')
-    return true
+    console.log('[Article access] Create check - No user found, denying access')
+    return false
   }
   
   const roles = Array.isArray(user.roles) ? user.roles : []

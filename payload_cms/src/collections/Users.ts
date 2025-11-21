@@ -28,24 +28,24 @@ export const Users: CollectionConfig = {
       // Ensure roles is an array if user exists
       const roles = user ? (Array.isArray(user.roles) ? user.roles : []) : []
 
-      // If no id provided, this is likely the current user endpoint (needed for admin panel)
-      // This endpoint requires authentication - return true only if user exists
-      // This allows the admin panel to read the current user's data when building form state
+      // If no id provided, this is the current user endpoint (needed for admin panel)
+      // Require authentication - fail securely if no user
       if (!id) {
         if (user) {
           console.log('[Users access] Read check - Current user endpoint, User:', user.email, 'Roles:', JSON.stringify(roles))
           return true
         } else {
-          // No user and no id - this might be a form state building request
-          // Allow it to pass through, Payload will handle the authentication check
-          console.log('[Users access] Read check - Current user endpoint, no user found (may be form state building)')
-          return true
+          // No user and no id - require authentication
+          console.log('[Users access] Read check - Current user endpoint, no user found, denying access')
+          return false
         }
       }
 
-      // If no user is authenticated but id is provided, allow public read access (for basic user info)
+      // If no user is authenticated but id is provided, deny access
+      // This prevents unauthenticated enumeration of user data
       if (!user) {
-        return true
+        console.log('[Users access] Read check - No user authenticated, denying access to user:', id)
+        return false
       }
 
       // If id is provided and matches current user, allow
@@ -60,8 +60,9 @@ export const Users: CollectionConfig = {
         return true
       }
 
-      // Allow public read access (for basic user info)
-      return true
+      // Default: deny access (users can only read their own data, or admins can read all)
+      console.log('[Users access] Read check - User:', user.email, 'attempted to read user:', id, '- denying access')
+      return false
     },
     update: ({ req: { user }, id }) => {
       if (!user) return false

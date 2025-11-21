@@ -22,8 +22,7 @@ interface UsageStatus {
   warning_level: "error" | "warning" | "info" | null;
   daily_percentage: number;
   hourly_percentage: number;
-  daily_remaining: number;
-  hourly_remaining: number;
+  // Note: daily_remaining and hourly_remaining removed for security (cost information)
 }
 
 export default function Home() {
