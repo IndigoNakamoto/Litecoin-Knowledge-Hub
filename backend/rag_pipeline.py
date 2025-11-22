@@ -428,6 +428,16 @@ class RAGPipeline:
         # Sanitize chat history messages as well
         sanitized_history = []
         for human_msg, ai_msg in chat_history:
+            # Ensure messages are strings before sanitization
+            # Handle cases where ai_msg might be an AIMessage object or other type
+            if ai_msg and not isinstance(ai_msg, str):
+                if hasattr(ai_msg, 'content'):
+                    ai_msg = str(ai_msg.content) if ai_msg.content else ""
+                else:
+                    ai_msg = str(ai_msg)
+            if human_msg and not isinstance(human_msg, str):
+                human_msg = str(human_msg)
+            
             sanitized_human = sanitize_query_input(human_msg) if human_msg else human_msg
             sanitized_ai = sanitize_query_input(ai_msg) if ai_msg else ai_msg
             sanitized_history.append((sanitized_human, sanitized_ai))
@@ -549,7 +559,20 @@ class RAGPipeline:
                 "input": query_text,
                 "context": context_text
             })
-            answer = llm_response.content if hasattr(llm_response, 'content') else str(llm_response)
+            # Extract answer content, ensuring it's always a string
+            if hasattr(llm_response, 'content'):
+                content = llm_response.content
+                # Ensure content is a string (handle mocks, coroutines, etc.)
+                if content is None:
+                    answer = ""
+                elif isinstance(content, str):
+                    answer = content
+                else:
+                    # For mocks or other types, convert to string
+                    # If it's a coroutine, this will fail and we'll catch it
+                    answer = str(content)
+            else:
+                answer = str(llm_response)
             llm_duration = time.time() - llm_start
 
             # Use retrieved docs as sources

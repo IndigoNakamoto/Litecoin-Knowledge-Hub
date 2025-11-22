@@ -53,7 +53,7 @@ async def get_current_usage() -> Dict[str, Any]:
     Returns:
         Dictionary with daily and hourly usage info including costs, limits, percentages, and tokens.
     """
-    redis_client = get_redis_client()
+    redis_client = await get_redis_client()
     
     daily_key = _get_daily_key()
     hourly_key = _get_hourly_key()
@@ -144,7 +144,7 @@ async def check_spend_limit(
     # Add 10% buffer for safety
     buffered_cost = estimated_cost * 1.1
     
-    redis_client = get_redis_client()
+    redis_client = await get_redis_client()
     daily_key = _get_daily_key()
     hourly_key = _get_hourly_key()
     
@@ -214,7 +214,7 @@ async def record_spend(
         # No cost to record
         return await get_current_usage()
     
-    redis_client = get_redis_client()
+    redis_client = await get_redis_client()
     daily_key = _get_daily_key()
     hourly_key = _get_hourly_key()
     daily_token_key = _get_daily_token_key()

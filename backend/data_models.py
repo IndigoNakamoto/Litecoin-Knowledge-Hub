@@ -58,6 +58,7 @@ class ChatRequest(BaseModel):
     """
     query: str = Field(..., description="The user's current query.")
     chat_history: List[ChatMessage] = Field([], description="A list of previous chat messages in the conversation.")
+    turnstile_token: Optional[str] = Field(None, description="Optional Cloudflare Turnstile verification token.")
     
     @field_validator('query')
     @classmethod

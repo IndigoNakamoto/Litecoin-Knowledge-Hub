@@ -193,12 +193,12 @@ class SuggestedQuestionCache:
         self.ttl_seconds = ttl_seconds
         self._redis_client = None
     
-    def _get_redis_client(self):
+    async def _get_redis_client(self):
         """Get Redis client instance."""
         if self._redis_client is None:
             try:
                 from backend.redis_client import get_redis_client
-                self._redis_client = get_redis_client()
+                self._redis_client = await get_redis_client()
             except Exception as e:
                 logger.warning(f"Failed to get Redis client: {e}")
                 return None
@@ -316,7 +316,7 @@ class SuggestedQuestionCache:
         Returns:
             Tuple of (answer, sources) if cached, None otherwise
         """
-        redis_client = self._get_redis_client()
+        redis_client = await self._get_redis_client()
         if redis_client is None:
             return None
         
@@ -349,7 +349,7 @@ class SuggestedQuestionCache:
             answer: The generated answer
             sources: List of source documents (Document objects or dicts)
         """
-        redis_client = self._get_redis_client()
+        redis_client = await self._get_redis_client()
         if redis_client is None:
             logger.warning("Redis client unavailable, cannot cache suggested question")
             return
@@ -387,7 +387,7 @@ class SuggestedQuestionCache:
         Returns:
             True if cached, False otherwise
         """
-        redis_client = self._get_redis_client()
+        redis_client = await self._get_redis_client()
         if redis_client is None:
             return False
         
@@ -403,7 +403,7 @@ class SuggestedQuestionCache:
         """
         Clear all cached entries.
         """
-        redis_client = self._get_redis_client()
+        redis_client = await self._get_redis_client()
         if redis_client is None:
             logger.warning("Redis client unavailable, cannot clear suggested question cache")
             return
@@ -429,7 +429,7 @@ class SuggestedQuestionCache:
         Returns:
             Number of cached entries
         """
-        redis_client = self._get_redis_client()
+        redis_client = await self._get_redis_client()
         if redis_client is None:
             return 0
         
