@@ -13,6 +13,7 @@ from data_ingestion.vector_store_manager import VectorStoreManager
 from cache_utils import query_cache
 from backend.utils.input_sanitizer import sanitize_query_input, detect_prompt_injection
 from fastapi import HTTPException
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 # --- Environment Variable Checks ---
 google_api_key = os.getenv("GOOGLE_API_KEY")
 if not google_api_key:
@@ -186,8 +187,14 @@ class RAGPipeline:
         # Initialize LLM with Google Flash 2.5
         self.llm = ChatGoogleGenerativeAI(
             model=LLM_MODEL_NAME, 
-            temperature=0.7, 
-            google_api_key=google_api_key
+            temperature=0.2, 
+            google_api_key=google_api_key,
+            safety_settings={
+                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT:    HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,   # non-negotiable
+                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT:    HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,   # non-negotiable
+                HarmCategory.HARM_CATEGORY_HATE_SPEECH:          HarmBlockThreshold.BLOCK_ONLY_HIGH,         # safe to loosen
+                HarmCategory.HARM_CATEGORY_HARASSMENT:           HarmBlockThreshold.BLOCK_ONLY_HIGH,         # safe to loosen
+            }
         )
 
         # Construct the async RAG chain
@@ -484,7 +491,7 @@ class RAGPipeline:
             # Use direct vector search for performance
             retriever = self.vector_store_manager.get_retriever(
                 search_type="similarity",
-                search_kwargs={"k": 15}
+                search_kwargs={"k": 6}
             )
             context_docs = retriever.invoke(query_text)
             retrieval_duration = time.time() - retrieval_start
