@@ -7,6 +7,7 @@ import StreamingMessage from "@/components/StreamingMessage";
 import MessageLoader from "@/components/MessageLoader";
 import InputBox from "@/components/InputBox";
 import SuggestedQuestions from "@/components/SuggestedQuestions";
+import { getFingerprintWithChallenge, getFingerprint } from "@/lib/utils/fingerprint";
 
 interface Message {
   role: "human" | "ai"; // Changed to match backend Pydantic model
@@ -30,11 +31,75 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState<Message | null>(null);
   const [usageWarning, setUsageWarning] = useState<UsageStatus | null>(null);
+  const [fingerprint, setFingerprint] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const chatWindowRef = useRef<ChatWindowRef>(null);
   const lastUserMessageIdRef = useRef<string | null>(null);
+  const challengeRefreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const MAX_QUERY_LENGTH = 400;
+  
+  // Fetch challenge and generate fingerprint on mount
+  useEffect(() => {
+    const fetchChallengeAndGenerateFingerprint = async () => {
+      try {
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+        const response = await fetch(`${backendUrl}/api/v1/auth/challenge`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          const challengeId = data.challenge;
+          
+          if (challengeId && challengeId !== "disabled") {
+            // Generate fingerprint with challenge
+            const fp = await getFingerprintWithChallenge(challengeId);
+            setFingerprint(fp);
+            
+            // Schedule challenge refresh every 4 minutes (before 5-min expiry)
+            challengeRefreshIntervalRef.current = setInterval(async () => {
+              try {
+                const refreshResponse = await fetch(`${backendUrl}/api/v1/auth/challenge`);
+                if (refreshResponse.ok) {
+                  const refreshData = await refreshResponse.json();
+                  const newChallengeId = refreshData.challenge;
+                  
+                  if (newChallengeId && newChallengeId !== "disabled") {
+                    const newFp = await getFingerprintWithChallenge(newChallengeId);
+                    setFingerprint(newFp);
+                  }
+                }
+              } catch (error) {
+                console.debug("Failed to refresh challenge:", error);
+                // Continue with existing challenge/fingerprint on error
+              }
+            }, 4 * 60 * 1000); // 4 minutes
+          } else {
+            // Challenge disabled, generate fingerprint without challenge (backward compatibility)
+            const fp = await getFingerprint();
+            setFingerprint(fp);
+          }
+        } else {
+          // Challenge fetch failed, generate fingerprint without challenge (backward compatibility)
+          const fp = await getFingerprint();
+          setFingerprint(fp);
+        }
+      } catch (error) {
+        console.debug("Failed to fetch challenge:", error);
+        // Generate fingerprint without challenge (backward compatibility)
+        const fp = await getFingerprint();
+        setFingerprint(fp);
+      }
+    };
+    
+    fetchChallengeAndGenerateFingerprint();
+    
+    // Cleanup interval on unmount
+    return () => {
+      if (challengeRefreshIntervalRef.current) {
+        clearInterval(challengeRefreshIntervalRef.current);
+      }
+    };
+  }, []);
 
   // Check usage status periodically
   useEffect(() => {
@@ -102,11 +167,19 @@ export default function Home() {
       }
 
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+      
+      // Prepare headers with fingerprint if available
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      
+      if (fingerprint) {
+        headers["X-Fingerprint"] = fingerprint;
+      }
+      
       const response = await fetch(`${backendUrl}/api/v1/chat/stream`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify({ query: trimmedMessage, chat_history: chatHistoryForBackend }),
       });
 
