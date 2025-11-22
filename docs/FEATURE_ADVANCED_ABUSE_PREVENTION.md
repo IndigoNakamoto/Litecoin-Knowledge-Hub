@@ -188,11 +188,15 @@ User Request
    ├─→ Server generates challenge (UUID + timestamp)
    └─→ Challenge stored in Redis (TTL: 5 minutes)
 
-2. Frontend Generates Fingerprint
+2. Frontend Generates Fingerprint (Before Each Request)
    │
+   ├─→ Fetches fresh challenge from server
    ├─→ Includes challenge in fingerprint hash
    ├─→ Generates Turnstile token
    └─→ Sends both to backend
+   
+   **Note**: Challenges are one-time use, so a fresh challenge must be fetched 
+   before each request to generate a new fingerprint.
 
 3. Backend Validation Pipeline
    │
@@ -1055,16 +1059,27 @@ ENABLE_BEHAVIORAL_ANALYSIS=true    # Enable behavioral analysis
    };
    ```
 
-4. **Handle Challenge Refresh**:
+4. **Fetch Fresh Challenge Before Each Request**:
    ```typescript
-   // Refresh challenge every 4 minutes (before 5 min expiry)
-   useEffect(() => {
-     const interval = setInterval(() => {
-       fetchChallenge();  // Request new challenge
-     }, 4 * 60 * 1000);  // 4 minutes
-     return () => clearInterval(interval);
-   }, []);
+   // Challenges are one-time use, so fetch a fresh one before each request
+   const handleSendMessage = async (message: string) => {
+     // Fetch fresh challenge and generate fingerprint
+     const challengeResponse = await fetch('/api/v1/auth/challenge');
+     const { challenge } = await challengeResponse.json();
+     const fingerprint = await getFingerprintWithChallenge(challenge);
+     
+     // Use fresh fingerprint in request
+     const headers = {
+       "Content-Type": "application/json",
+       "X-Fingerprint": fingerprint,
+     };
+     // ... make request ...
+   };
    ```
+   
+   **Note**: Challenges are consumed (deleted) after first use to prevent replay attacks. 
+   Therefore, a new challenge must be fetched before each request. The 4-minute refresh 
+   interval is only a fallback for edge cases, not the primary mechanism.
 
 ---
 
@@ -1299,7 +1314,8 @@ These 5 things provide **99.9% of the security benefit** and are fully operation
 2. ✅ Frontend includes challenge in fingerprint generation (`frontend/src/app/page.tsx`)
 3. ✅ Backend validates challenge is one-time use (`backend/utils/challenge.py`)
 4. ✅ Rejects requests with reused/expired challenges
-5. ✅ Challenge refresh every 4 minutes (before 5-min expiry)
+5. ✅ Frontend fetches fresh challenge before each request (challenges are consumed after use)
+6. ✅ Background refresh every 4 minutes as fallback (before 5-min expiry)
 
 **Files**:
 - Backend: `backend/utils/challenge.py`, `backend/main.py` (endpoint at line 794)
