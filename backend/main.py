@@ -51,7 +51,7 @@ from backend.middleware.security_headers import SecurityHeadersMiddleware
 from backend.monitoring.metrics import user_questions_total
 from backend.monitoring.llm_observability import setup_langsmith
 from backend.rate_limiter import RateLimitConfig, check_rate_limit
-from backend.utils.challenge import generate_challenge, validate_and_consume_challenge
+from backend.utils.challenge import generate_challenge, validate_and_consume_challenge, ENABLE_CHALLENGE_RESPONSE
 from backend.utils.turnstile import verify_turnstile_token, is_turnstile_enabled
 from backend.utils.cost_throttling import check_cost_based_throttling
 
@@ -918,7 +918,27 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
             # Use IP as identifier since challenge was issued to IP
             identifier = _get_identifier_from_request(http_request)
             await validate_and_consume_challenge(challenge_id, identifier)
-        # If no challenge in fingerprint, allow for backward compatibility during rollout
+        elif ENABLE_CHALLENGE_RESPONSE:
+            # Challenge required but not provided - reject request
+            logger.warning(f"Request missing challenge in fingerprint (challenge-response enabled). Fingerprint format: {fingerprint[:50]}...")
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": "missing_challenge",
+                    "message": "Security challenge required. Please refresh the page and try again."
+                }
+            )
+        # If challenge-response disabled, allow requests without challenges (backward compatibility)
+    elif ENABLE_CHALLENGE_RESPONSE:
+        # No fingerprint header at all - reject request
+        logger.warning("Request missing X-Fingerprint header (challenge-response enabled)")
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "missing_fingerprint",
+                "message": "Security fingerprint required. Please refresh the page and try again."
+            }
+        )
     
     # Turnstile verification with graceful degradation
     if is_turnstile_enabled():

@@ -31,11 +31,56 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState<Message | null>(null);
   const [usageWarning, setUsageWarning] = useState<UsageStatus | null>(null);
-  const [fingerprint, setFingerprint] = useState<string | null>(null);
+  // Fingerprint state is kept for background refresh, but we fetch fresh before each request
+  const [_fingerprint, setFingerprint] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const chatWindowRef = useRef<ChatWindowRef>(null);
   const lastUserMessageIdRef = useRef<string | null>(null);
   const challengeRefreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Helper function to ensure we have a fresh challenge and fingerprint
+  const ensureFreshFingerprint = async (): Promise<string | null> => {
+    try {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+      const response = await fetch(`${backendUrl}/api/v1/auth/challenge`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        const challengeId = data.challenge;
+        
+        if (challengeId && challengeId !== "disabled") {
+          // Generate fingerprint with challenge
+          const fp = await getFingerprintWithChallenge(challengeId);
+          setFingerprint(fp);
+          return fp;
+        } else {
+          // Challenge disabled, generate fingerprint without challenge (backward compatibility)
+          const fp = await getFingerprint();
+          setFingerprint(fp);
+          return fp;
+        }
+      } else if (response.status === 429) {
+        // Rate limited - don't proceed with request
+        throw new Error("Rate limited: Too many challenge requests. Please wait a moment and try again.");
+      } else {
+        // Other error - fallback to fingerprint without challenge (backward compatibility)
+        console.debug("Challenge fetch failed with status:", response.status);
+        const fp = await getFingerprint();
+        setFingerprint(fp);
+        return fp;
+      }
+    } catch (error) {
+      // If it's a rate limit error, re-throw it
+      if (error instanceof Error && error.message.includes("Rate limited")) {
+        throw error;
+      }
+      // Other errors - fallback to fingerprint without challenge (backward compatibility)
+      console.debug("Failed to fetch challenge:", error);
+      const fp = await getFingerprint();
+      setFingerprint(fp);
+      return fp;
+    }
+  };
 
   const MAX_QUERY_LENGTH = 400;
   
@@ -168,16 +213,37 @@ export default function Home() {
 
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
       
+      // Ensure we have a fresh challenge and fingerprint before each request
+      // Challenges are one-time use, so we need a new one for each request
+      let currentFingerprint: string | null;
+      try {
+        currentFingerprint = await ensureFreshFingerprint();
+      } catch (error) {
+        // If challenge fetch failed (e.g., rate limited), show error and don't proceed
+        if (error instanceof Error && error.message.includes("Rate limited")) {
+          setStreamingMessage({
+            role: "ai",
+            content: error.message,
+            status: "error",
+            isStreamActive: false,
+          });
+          setIsLoading(false);
+          return;
+        }
+        // For other errors, fall back to fingerprint without challenge
+        currentFingerprint = await getFingerprint();
+      }
+      
       // Prepare headers with fingerprint if available
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
       };
       
-      if (fingerprint) {
-        headers["X-Fingerprint"] = fingerprint;
+      if (currentFingerprint) {
+        headers["X-Fingerprint"] = currentFingerprint;
       }
       
-      const response = await fetch(`${backendUrl}/api/v1/chat/stream`, {
+      let response = await fetch(`${backendUrl}/api/v1/chat/stream`, {
         method: "POST",
         headers,
         body: JSON.stringify({ query: trimmedMessage, chat_history: chatHistoryForBackend }),
@@ -185,7 +251,71 @@ export default function Home() {
 
       // Handle HTTP errors explicitly so we can surface clear messages (e.g., rate limiting)
       if (!response.ok) {
-        if (response.status === 429) {
+        // Handle invalid challenge error - retry once with a fresh challenge
+        if (response.status === 403) {
+          try {
+            const errorBody = await response.json();
+            if (errorBody?.detail?.error === "invalid_challenge") {
+              // Fetch a new challenge and retry once
+              console.debug("Challenge invalid, fetching new challenge and retrying...");
+              const newFingerprint = await ensureFreshFingerprint();
+              
+              if (newFingerprint) {
+                headers["X-Fingerprint"] = newFingerprint;
+                const retryResponse = await fetch(`${backendUrl}/api/v1/chat/stream`, {
+                  method: "POST",
+                  headers,
+                  body: JSON.stringify({ query: trimmedMessage, chat_history: chatHistoryForBackend }),
+                });
+                
+                if (retryResponse.ok) {
+                  // Retry succeeded, replace response with retryResponse and continue
+                  // We'll process it in the normal flow below
+                  response = retryResponse;
+                  // Skip the rest of error handling since retry succeeded
+                } else {
+                  // Retry also failed, show error
+                  const retryErrorBody = await retryResponse.json().catch(() => ({}));
+                  const retryMessage = retryErrorBody?.detail?.message || `HTTP error! status: ${retryResponse.status}`;
+                  setStreamingMessage({
+                    role: "ai",
+                    content: retryMessage,
+                    status: "error",
+                    isStreamActive: false,
+                  });
+                  setIsLoading(false);
+                  return;
+                }
+              } else {
+                // Could not get new fingerprint, show error
+                setStreamingMessage({
+                  role: "ai",
+                  content: errorBody?.detail?.message || "Invalid security challenge. Please refresh the page and try again.",
+                  status: "error",
+                  isStreamActive: false,
+                });
+                setIsLoading(false);
+                return;
+              }
+            } else {
+              // Other 403 error, show message (errorBody already parsed above)
+              setStreamingMessage({
+                role: "ai",
+                content: errorBody?.detail?.message || "Access forbidden. Please refresh the page and try again.",
+                status: "error",
+                isStreamActive: false,
+              });
+              setIsLoading(false);
+              return;
+            }
+          } catch (parseError) {
+            // If we can't parse the error, fall through to generic error handling
+            console.debug("Could not parse error response:", parseError);
+          }
+        }
+        
+        // If response is still not ok after retry handling, continue with other error handling
+        if (!response.ok && response.status === 429) {
           let retryAfterSeconds: number | null = null;
           const retryAfterHeader = response.headers.get("Retry-After");
           if (retryAfterHeader) {
