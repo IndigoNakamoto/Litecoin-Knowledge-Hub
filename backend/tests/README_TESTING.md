@@ -1,5 +1,7 @@
 # Testing Webhook Authentication
 
+> **Note**: For the complete test suite guide (62/62 passing tests), including how to run all tests, see [docs/TESTING.md](../../docs/TESTING.md).
+
 ## Quick Start
 
 ### 1. Install Dependencies

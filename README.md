@@ -363,6 +363,26 @@ For verifying production builds locally before deployment:
 
 This runs production builds with the full stack (including monitoring) using localhost URLs. See [docs/PROD_LOCAL.md](./docs/PROD_LOCAL.md) for detailed documentation.
 
+## **Testing**
+
+The Litecoin Knowledge Hub has a comprehensive test suite with **62/62 passing tests** covering all critical functionality including the RAG pipeline, conversational memory, rate limiting, spend limits, webhook authentication, and more.
+
+### Quick Start
+
+Run the full test suite with a single command:
+
+```bash
+# From project root
+docker compose -f docker-compose.dev.yml run --rm \
+  -v "$(pwd)/backend/tests:/app/tests" \
+  -v "$(pwd)/backend:/app/backend" \
+  backend pytest tests/ -vv
+```
+
+**Expected Output**: `62 passed, 4 skipped, 29 warnings in ~33s`
+
+For the complete testing guide including prerequisites, optional commands (coverage, fast tests, single file tests), and detailed notes, see [docs/TESTING.md](./docs/TESTING.md).
+
 ## **Deployment**
 
 For detailed deployment instructions for all services (Frontend, Backend, and Payload CMS), see [DEPLOYMENT.md](./DEPLOYMENT.md).
