@@ -5,9 +5,21 @@ from pymongo import MongoClient
 import torch
 from langchain_core.documents import Document
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
+try:
+    from langchain_huggingface import HuggingFaceEmbeddings
+except ImportError:
+    # Fallback to deprecated import for backward compatibility
+    from langchain_community.embeddings import HuggingFaceEmbeddings
 from cache_utils import embedding_cache
 import numpy as np
+
+# Import Google embeddings if available
+try:
+    from langchain_google_genai import GoogleGenerativeAIEmbeddings
+    GOOGLE_EMBEDDINGS_AVAILABLE = True
+except ImportError:
+    GOOGLE_EMBEDDINGS_AVAILABLE = False
+    logger.warning("langchain_google_genai not available. Google embeddings will not work.")
 
 logger = logging.getLogger(__name__)
 
@@ -79,27 +91,95 @@ else:
     device = "cpu"
     logger.info("GPU not available. Using CPU for embeddings.")
 
-# Default local embedding model - fast and efficient for semantic search
-DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+# Default local embedding model - best quality for semantic search (recommended: all-mpnet-base-v2)
+# Can be overridden with EMBEDDING_MODEL environment variable
+# Google models: gemini-embedding-001, text-embedding-004
+DEFAULT_EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-mpnet-base-v2")
 EMBEDDING_MODEL_KWARGS = {"device": device}
 ENCODE_KWARGS = {"normalize_embeddings": True}  # Normalize embeddings for better similarity search
 
-def get_local_embedding_model():
+# Google embedding models (detected by model name)
+GOOGLE_EMBEDDING_MODELS = {
+    "gemini-embedding-001",
+    "text-embedding-004",
+    "models/gemini-embedding-001",
+    "models/text-embedding-004",
+}
+
+def is_google_embedding_model(model_name: str) -> bool:
+    """Check if the model name is a Google embedding model."""
+    # Remove 'models/' prefix if present for comparison
+    model_base = model_name.replace("models/", "")
+    return model_base in GOOGLE_EMBEDDING_MODELS or model_name.startswith("gemini-") or model_name.startswith("text-embedding-")
+
+def get_embedding_model():
     """
-    Helper function to get a local embedding model using sentence-transformers.
-    This eliminates the need for Google API calls and avoids 504 errors.
+    Helper function to get an embedding model (local or Google).
+    Automatically detects if the model is a Google model and uses the appropriate class.
     """
+    model_name = DEFAULT_EMBEDDING_MODEL
+    
+    # Check if this is a Google embedding model
+    if is_google_embedding_model(model_name):
+        if not GOOGLE_EMBEDDINGS_AVAILABLE:
+            logger.warning("langchain_google_genai not available. Google embeddings will not work.")
+            raise ImportError(
+                f"Google embedding model '{model_name}' requires langchain_google_genai. "
+                "Install it with: pip install langchain-google-genai"
+            )
+        
+        google_api_key = os.getenv("GOOGLE_API_KEY")
+        if not google_api_key:
+            raise ValueError(
+                f"Google embedding model '{model_name}' requires GOOGLE_API_KEY environment variable"
+            )
+        
+        try:
+            # Format model name for Google API (add 'models/' prefix if not present)
+            if not model_name.startswith("models/"):
+                google_model_name = f"models/{model_name}"
+            else:
+                google_model_name = model_name
+            
+            # Determine task type based on model
+            # gemini-embedding-001 supports task_type parameter
+            task_type = "retrieval_document" if "gemini" in model_name.lower() else None
+            
+            embeddings_kwargs = {
+                "model": google_model_name,
+                "google_api_key": google_api_key,
+            }
+            
+            if task_type:
+                embeddings_kwargs["task_type"] = task_type
+            
+            embeddings = GoogleGenerativeAIEmbeddings(**embeddings_kwargs)
+            logger.info(f"Google embedding model '{google_model_name}' initialized successfully")
+            return embeddings
+        except Exception as e:
+            logger.error(f"Failed to initialize Google embedding model '{model_name}': {e}")
+            raise
+    
+    # Use local HuggingFace embeddings
     try:
         embeddings = HuggingFaceEmbeddings(
-            model_name=DEFAULT_EMBEDDING_MODEL,
+            model_name=model_name,
             model_kwargs=EMBEDDING_MODEL_KWARGS,
             encode_kwargs=ENCODE_KWARGS
         )
-        logger.info(f"Local embedding model '{DEFAULT_EMBEDDING_MODEL}' initialized successfully")
+        logger.info(f"Local embedding model '{model_name}' initialized successfully")
         return embeddings
     except Exception as e:
-        logger.error(f"Failed to initialize local embedding model: {e}")
+        logger.error(f"Failed to initialize local embedding model '{model_name}': {e}")
         raise
+
+# Backward compatibility alias
+def get_local_embedding_model():
+    """
+    Deprecated: Use get_embedding_model() instead.
+    This function is kept for backward compatibility.
+    """
+    return get_embedding_model()
 
 
 class VectorStoreManager:
@@ -142,8 +222,8 @@ class VectorStoreManager:
             logger.warning("MONGO_URI not set. Using FAISS only mode.")
             self.mongodb_available = False
 
-        # Initialize local embeddings
-        self.embeddings = get_local_embedding_model()
+        # Initialize embeddings (local or Google)
+        self.embeddings = get_embedding_model()
         self.faiss_index_path = os.getenv("FAISS_INDEX_PATH", "./backend/faiss_index")
         
         # Ensure directory exists

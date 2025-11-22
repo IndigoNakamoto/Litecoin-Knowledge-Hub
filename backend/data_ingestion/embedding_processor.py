@@ -8,11 +8,23 @@ import re   # Added for regex-based heading parsing
 
 from langchain_core.documents import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
+try:
+    from langchain_huggingface import HuggingFaceEmbeddings
+except ImportError:
+    # Fallback to deprecated import for backward compatibility
+    from langchain_community.embeddings import HuggingFaceEmbeddings
 from data_models import PayloadWebhookDoc, PayloadArticleMetadata
 
 # --- Setup Logger ---
 logger = logging.getLogger(__name__)
+
+# Import Google embeddings if available
+try:
+    from langchain_google_genai import GoogleGenerativeAIEmbeddings
+    GOOGLE_EMBEDDINGS_AVAILABLE = True
+except ImportError:
+    GOOGLE_EMBEDDINGS_AVAILABLE = False
+    logger.warning("langchain_google_genai not available. Google embeddings will not work.")
 logger.setLevel(logging.INFO) # Reverted to INFO
 handler = logging.StreamHandler()
 formatter = logging.Formatter('[%(asctime)s] %(levelname)s:%(name)s:%(message)s')
@@ -72,9 +84,26 @@ class MarkdownTextSplitter:
         return all_chunks
 
 # --- Configuration Constants ---
-DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+# Default embedding model - best quality for semantic search (recommended: all-mpnet-base-v2)
+# Can be overridden with EMBEDDING_MODEL environment variable
+# Google models: gemini-embedding-001, text-embedding-004
+DEFAULT_EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-mpnet-base-v2")
 EMBEDDING_MODEL_KWARGS = {"device": "cpu"}
 ENCODE_KWARGS = {"normalize_embeddings": True}
+
+# Google embedding models (detected by model name)
+GOOGLE_EMBEDDING_MODELS = {
+    "gemini-embedding-001",
+    "text-embedding-004",
+    "models/gemini-embedding-001",
+    "models/text-embedding-004",
+}
+
+def is_google_embedding_model(model_name: str) -> bool:
+    """Check if the model name is a Google embedding model."""
+    # Remove 'models/' prefix if present for comparison
+    model_base = model_name.replace("models/", "")
+    return model_base in GOOGLE_EMBEDDING_MODELS or model_name.startswith("gemini-") or model_name.startswith("text-embedding-")
 
 # --- Custom Exception ---
 class PayloadTooLargeError(Exception):
@@ -84,19 +113,60 @@ class PayloadTooLargeError(Exception):
 # --- Embedding Service ---
 class EmbeddingService:
     """
-    Handles generating embeddings using local sentence-transformers models.
-    This eliminates API calls and avoids 504 errors.
+    Handles generating embeddings using local sentence-transformers models or Google embeddings.
+    Automatically detects if the model is a Google model and uses the appropriate class.
     """
     def __init__(self, model_name=None):
         self.model_name = model_name or os.getenv("EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL)
-        logger.info(f"EmbeddingService initialized with local model: {self.model_name}")
+        model_type = "Google" if is_google_embedding_model(self.model_name) else "local"
+        logger.info(f"EmbeddingService initialized with {model_type} model: {self.model_name}")
 
     def get_embeddings_client(self):
         """
-        Returns an instance of the Langchain HuggingFaceEmbeddings client.
-        This is used for integration with Langchain's vector store functions.
-        Uses local sentence-transformers model for document embeddings.
+        Returns an instance of the Langchain embeddings client (HuggingFace or Google).
+        Automatically detects if the model is a Google model and uses the appropriate class.
         """
+        # Check if this is a Google embedding model
+        if is_google_embedding_model(self.model_name):
+            if not GOOGLE_EMBEDDINGS_AVAILABLE:
+                raise ImportError(
+                    f"Google embedding model '{self.model_name}' requires langchain_google_genai. "
+                    "Install it with: pip install langchain-google-genai"
+                )
+            
+            google_api_key = os.getenv("GOOGLE_API_KEY")
+            if not google_api_key:
+                raise ValueError(
+                    f"Google embedding model '{self.model_name}' requires GOOGLE_API_KEY environment variable"
+                )
+            
+            try:
+                # Format model name for Google API (add 'models/' prefix if not present)
+                if not self.model_name.startswith("models/"):
+                    google_model_name = f"models/{self.model_name}"
+                else:
+                    google_model_name = self.model_name
+                
+                # Determine task type based on model
+                # gemini-embedding-001 supports task_type parameter
+                task_type = "retrieval_document" if "gemini" in self.model_name.lower() else None
+                
+                embeddings_kwargs = {
+                    "model": google_model_name,
+                    "google_api_key": google_api_key,
+                }
+                
+                if task_type:
+                    embeddings_kwargs["task_type"] = task_type
+                
+                embeddings = GoogleGenerativeAIEmbeddings(**embeddings_kwargs)
+                logger.info(f"Google embedding model '{google_model_name}' initialized successfully")
+                return embeddings
+            except Exception as e:
+                logger.error(f"Failed to initialize Google embedding model '{self.model_name}': {e}")
+                raise
+        
+        # Use local HuggingFace embeddings
         try:
             return HuggingFaceEmbeddings(
                 model_name=self.model_name,
@@ -104,7 +174,7 @@ class EmbeddingService:
                 encode_kwargs=ENCODE_KWARGS
             )
         except Exception as e:
-            logger.error(f"Failed to initialize local embedding model: {e}")
+            logger.error(f"Failed to initialize local embedding model '{self.model_name}': {e}")
             raise
 
 
