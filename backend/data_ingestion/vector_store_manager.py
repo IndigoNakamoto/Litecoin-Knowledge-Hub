@@ -160,9 +160,40 @@ class VectorStoreManager:
                     allow_dangerous_deserialization=True
                 )
                 logger.info("FAISS index loaded successfully")
+                
+                # Check if FAISS index is stale (empty or suspiciously small compared to MongoDB)
+                if self.mongodb_available:
+                    faiss_count = self.vector_store.index.ntotal if hasattr(self.vector_store, 'index') and hasattr(self.vector_store.index, 'ntotal') else 0
+                    mongo_count = self.collection.count_documents({})
+                    
+                    # Rebuild if FAISS is empty but MongoDB has documents
+                    # Also rebuild if FAISS has very few vectors (< 10) but MongoDB has many documents (> 10)
+                    # This handles the case where the index was created from just 1 document but MongoDB now has more
+                    if mongo_count > 0:
+                        if faiss_count == 0:
+                            logger.warning(
+                                f"FAISS index is empty but MongoDB has {mongo_count} documents. Rebuilding from MongoDB..."
+                            )
+                            self.vector_store = self._create_faiss_from_mongodb()
+                            logger.info("FAISS index rebuilt from MongoDB")
+                        elif faiss_count < 10 and mongo_count > 10:
+                            logger.warning(
+                                f"FAISS index appears stale: FAISS has {faiss_count} vectors, "
+                                f"MongoDB has {mongo_count} documents. Rebuilding from MongoDB..."
+                            )
+                            self.vector_store = self._create_faiss_from_mongodb()
+                            logger.info("FAISS index rebuilt from MongoDB")
+                        else:
+                            logger.info(f"FAISS index check: {faiss_count} vectors, MongoDB has {mongo_count} documents")
+                    else:
+                        logger.info(f"FAISS index check: {faiss_count} vectors, MongoDB has {mongo_count} documents")
+                        
             except Exception as e:
                 logger.warning(f"Failed to load existing FAISS index: {e}. Creating new index.")
-                self.vector_store = self._create_empty_faiss_index()
+                if self.mongodb_available:
+                    self.vector_store = self._create_faiss_from_mongodb()
+                else:
+                    self.vector_store = self._create_empty_faiss_index()
         elif self.mongodb_available:
             logger.info("No existing FAISS index found, creating from MongoDB documents")
             self.vector_store = self._create_faiss_from_mongodb()

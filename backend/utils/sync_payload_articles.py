@@ -45,18 +45,21 @@ def get_published_payload_articles(payload_url=None):
         List of PayloadWebhookDoc objects
     """
     if payload_url is None:
-        # Try environment variable first, then check if we're in Docker (use service name), else use env var default
         payload_url = os.getenv("PAYLOAD_PUBLIC_SERVER_URL")
         if not payload_url:
-            # If running in Docker, use the service name; otherwise use default from env var
-            # Check if we can resolve the service name (Docker internal network)
-            try:
-                import socket
-                socket.gethostbyname('payload_cms')
-                payload_url = "http://payload_cms:3000"  # Internal Docker network
-            except socket.gaierror:
-                # Use default from PAYLOAD_PUBLIC_SERVER_URL env var pattern (matches docker-compose.dev.yml default)
-                payload_url = os.getenv("PAYLOAD_PUBLIC_SERVER_URL", "http://localhost:3001")
+            # Detect if we're in Docker
+            is_docker = (
+                os.path.exists('/.dockerenv') or 
+                os.getenv('HOSTNAME', '').startswith(('litecoin-', 'payload-')) or
+                'DOCKER_CONTAINER' in os.environ
+            )
+            
+            if is_docker:
+                # Inside Docker: use service name (port 3000 is internal port)
+                payload_url = "http://payload_cms:3000"
+            else:
+                # Local development: use localhost with exposed port
+                payload_url = "http://localhost:3001"
     
     try:
         # Query Payload CMS for all published articles
