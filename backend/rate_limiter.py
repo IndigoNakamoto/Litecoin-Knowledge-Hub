@@ -44,6 +44,32 @@ def _get_ip_from_request(request: Request) -> str:
   return client_host
 
 
+def _get_rate_limit_identifier(request: Request) -> str:
+  """
+  Extract rate limit identifier from request.
+  
+  Priority:
+  1. X-Fingerprint header (fingerprint with challenge)
+  2. Authorization header (user_id if available - for future auth)
+  3. IP address (fallback)
+  
+  Returns:
+    Identifier string (fingerprint, user_id, or IP)
+  """
+  # Try to extract fingerprint from header
+  fingerprint = request.headers.get("X-Fingerprint")
+  if fingerprint:
+    # Fingerprint format: fp:challenge:hash or just hash
+    # Use the full fingerprint as identifier for rate limiting
+    return fingerprint
+  
+  # TODO: Future - extract user_id from Authorization header
+  # For now, fall back to IP
+  
+  # Fallback to IP address
+  return _get_ip_from_request(request)
+
+
 async def _check_progressive_ban(
     redis, client_ip: str, config: RateLimitConfig
 ) -> Optional[int]:
@@ -123,17 +149,82 @@ async def _get_sliding_window_count(
   return count
 
 
+# Global rate limit configuration
+GLOBAL_RATE_LIMIT_PER_MINUTE = int(os.getenv("GLOBAL_RATE_LIMIT_PER_MINUTE", "1000"))
+GLOBAL_RATE_LIMIT_PER_HOUR = int(os.getenv("GLOBAL_RATE_LIMIT_PER_HOUR", "50000"))
+ENABLE_GLOBAL_RATE_LIMIT = os.getenv("ENABLE_GLOBAL_RATE_LIMIT", "true").lower() == "true"
+
+
+async def check_global_rate_limit(redis, now: int) -> None:
+  """
+  Check global rate limits across all identifiers.
+  
+  Raises:
+    HTTPException: If global rate limit is exceeded
+  """
+  if not ENABLE_GLOBAL_RATE_LIMIT:
+    return
+  
+  # Global rate limit keys (no identifier suffix)
+  global_minute_key = "rl:global:m"
+  global_hour_key = "rl:global:h"
+  
+  # Get counts using sliding windows
+  global_minute_count = await _get_sliding_window_count(redis, global_minute_key, 60, now)
+  global_hour_count = await _get_sliding_window_count(redis, global_hour_key, 3600, now)
+  
+  # Check global limits
+  exceeded_minute = global_minute_count > GLOBAL_RATE_LIMIT_PER_MINUTE
+  exceeded_hour = global_hour_count > GLOBAL_RATE_LIMIT_PER_HOUR
+  
+  if exceeded_minute or exceeded_hour:
+    # Compute Retry-After based on sliding window
+    if exceeded_minute:
+      oldest_in_window = await redis.zrange(global_minute_key, 0, 0, withscores=True)
+      if oldest_in_window:
+        oldest_timestamp = int(oldest_in_window[0][1])
+        retry_after = max(1, 60 - (now - oldest_timestamp))
+      else:
+        retry_after = 60
+    else:
+      oldest_in_window = await redis.zrange(global_hour_key, 0, 0, withscores=True)
+      if oldest_in_window:
+        oldest_timestamp = int(oldest_in_window[0][1])
+        retry_after = max(1, 3600 - (now - oldest_timestamp))
+      else:
+        retry_after = 3600
+    
+    detail = {
+      "error": "rate_limited",
+      "message": "Service temporarily unavailable due to high demand. Please try again shortly.",
+      "limits": {
+        "per_minute": GLOBAL_RATE_LIMIT_PER_MINUTE,
+        "per_hour": GLOBAL_RATE_LIMIT_PER_HOUR,
+      },
+      "retry_after_seconds": retry_after,
+    }
+    
+    headers = {"Retry-After": str(retry_after)}
+    raise HTTPException(
+      status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+      detail=detail,
+      headers=headers,
+    )
+
+
 async def check_rate_limit(request: Request, config: RateLimitConfig) -> None:
   """
-  Enforce rate limits based on client IP and endpoint-specific configuration.
+  Enforce rate limits based on client identifier (fingerprint, user_id, or IP) and endpoint-specific configuration.
   Uses sliding window rate limiting with Redis sorted sets for accurate tracking.
   Supports progressive bans for repeated violations.
+  Checks global rate limits after individual limits.
   """
-  redis = get_redis_client()
-  client_ip = _get_ip_from_request(request)
+  redis = await get_redis_client()
+  identifier = _get_rate_limit_identifier(request)
   now = int(time.time())
 
-  # Check for existing progressive ban
+  # Check for existing progressive ban (use IP for ban tracking to prevent ban evasion)
+  client_ip = _get_ip_from_request(request)
   ban_expiry = await _check_progressive_ban(redis, client_ip, config)
   if ban_expiry:
     retry_after = ban_expiry - now
@@ -153,9 +244,13 @@ async def check_rate_limit(request: Request, config: RateLimitConfig) -> None:
       detail=detail,
       headers=headers,
     )
+  
+  # Check global rate limits AFTER individual limits
+  await check_global_rate_limit(redis, now)
 
   # Use sliding window rate limiting with Redis sorted sets
-  base_key = f"rl:{config.identifier}:{client_ip}"
+  # Use identifier (fingerprint/user_id/IP) for rate limiting
+  base_key = f"rl:{config.identifier}:{identifier}"
   minute_key = f"{base_key}:m"
   hour_key = f"{base_key}:h"
 
@@ -171,7 +266,7 @@ async def check_rate_limit(request: Request, config: RateLimitConfig) -> None:
     # Record metrics
     rate_limit_rejections_total.labels(endpoint_type=config.identifier).inc()
     
-    # Apply progressive ban if enabled
+    # Apply progressive ban if enabled (use IP for ban tracking)
     if config.enable_progressive_limits:
       ban_expiry = await _apply_progressive_ban(redis, client_ip, config)
       retry_after = ban_expiry - now
@@ -219,5 +314,8 @@ async def check_rate_limit(request: Request, config: RateLimitConfig) -> None:
       detail=detail,
       headers=headers,
     )
+  
+  # Check global rate limits AFTER individual limits
+  await check_global_rate_limit(redis, now)
 
 
