@@ -12,7 +12,7 @@ from fastapi import FastAPI, BackgroundTasks, Request, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, ValidationError # Re-add BaseModel and Field
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 import asyncio
 import time
 import uuid
@@ -51,6 +51,9 @@ from backend.middleware.security_headers import SecurityHeadersMiddleware
 from backend.monitoring.metrics import user_questions_total
 from backend.monitoring.llm_observability import setup_langsmith
 from backend.rate_limiter import RateLimitConfig, check_rate_limit
+from backend.utils.challenge import generate_challenge, validate_and_consume_challenge
+from backend.utils.turnstile import verify_turnstile_token, is_turnstile_enabled
+from backend.utils.cost_throttling import check_cost_based_throttling
 
 # Rate limit configurations for health and metrics endpoints
 # Health endpoint rate limits (higher than API endpoints, but still protected)
@@ -75,6 +78,14 @@ PROBE_RATE_LIMIT = RateLimitConfig(
     requests_per_hour=2000,
     identifier="probe",
     enable_progressive_limits=False,
+)
+
+# Challenge endpoint rate limits (prevent challenge exhaustion attacks)
+CHALLENGE_RATE_LIMIT = RateLimitConfig(
+    requests_per_minute=int(os.getenv("CHALLENGE_RATE_LIMIT_PER_MINUTE", "10")),
+    requests_per_hour=int(os.getenv("CHALLENGE_RATE_LIMIT_PER_HOUR", "100")),
+    identifier="challenge",
+    enable_progressive_limits=True,
 )
 
 # Configure structured logging
@@ -147,7 +158,7 @@ async def update_metrics_periodically():
                 llm_hourly_limit_usd.set(hourly_limit)
                 
                 # Check thresholds and send Discord alerts
-                redis_client = get_redis_client()
+                redis_client = await get_redis_client()
                 
                 # Check daily limit
                 daily_cost = usage_info["daily"]["cost_usd"]
@@ -693,6 +704,75 @@ async def readiness_endpoint(request: Request):
     from backend.monitoring.health import _get_health_checker
     return _get_health_checker().get_public_readiness()
 
+def _extract_challenge_from_fingerprint(fingerprint: str) -> Tuple[Optional[str], str]:
+    """
+    Extract challenge ID and fingerprint hash from fingerprint header.
+    
+    Fingerprint format: fp:challenge:hash
+    - fp: prefix
+    - challenge: UUID challenge ID
+    - hash: fingerprint hash
+    
+    Returns:
+        Tuple of (challenge_id, fingerprint_hash) or (None, fingerprint) if invalid format
+    """
+    if not fingerprint:
+        return None, ""
+    
+    # Check if fingerprint has the expected format: fp:challenge:hash
+    if fingerprint.startswith("fp:"):
+        parts = fingerprint.split(":", 2)
+        if len(parts) == 3:
+            prefix, challenge_id, fingerprint_hash = parts
+            if prefix == "fp" and challenge_id and fingerprint_hash:
+                return challenge_id, fingerprint_hash
+    
+    # Invalid format or no challenge - return original fingerprint
+    return None, fingerprint
+
+
+def _get_identifier_from_request(request: Request) -> str:
+    """
+    Extract identifier (fingerprint or IP) from request.
+    
+    Priority:
+    1. X-Fingerprint header (if present)
+    2. IP address (fallback)
+    
+    Returns:
+        Identifier string (fingerprint or IP)
+    """
+    # Try to extract fingerprint from header
+    fingerprint = request.headers.get("X-Fingerprint")
+    if fingerprint:
+        # For challenge generation, we use IP as identifier
+        # (challenge is not yet part of fingerprint when requesting a challenge)
+        pass
+    
+    # Fallback to IP address
+    from backend.rate_limiter import _get_ip_from_request
+    return _get_ip_from_request(request)
+
+@app.get("/api/v1/auth/challenge")
+async def challenge_endpoint(request: Request):
+    """
+    Generate a security challenge for challenge-response fingerprinting.
+    
+    Rate limited to prevent challenge exhaustion attacks (10/min, 100/hour).
+    
+    Returns:
+        Dictionary with challenge_id and expires_in_seconds
+    """
+    await check_rate_limit(request, CHALLENGE_RATE_LIMIT)
+    
+    # Extract identifier (fingerprint or IP)
+    identifier = _get_identifier_from_request(request)
+    
+    # Generate challenge
+    challenge_data = await generate_challenge(identifier)
+    
+    return JSONResponse(content=challenge_data)
+
 async def log_user_question(question: str, chat_history_length: int, endpoint_type: str):
     """
     Helper function to log user questions to MongoDB for later analysis.
@@ -773,6 +853,14 @@ STREAM_RATE_LIMIT = RateLimitConfig(
     identifier="chat_stream",
 )
 
+# Stricter rate limit for Turnstile failures (10x stricter)
+STRICT_RATE_LIMIT = RateLimitConfig(
+    requests_per_minute=6,
+    requests_per_hour=60,
+    identifier="turnstile_fallback",
+    enable_progressive_limits=True,
+)
+
 
 @app.post("/api/v1/chat/stream")
 async def chat_stream_endpoint(request: ChatRequest, background_tasks: BackgroundTasks, http_request: Request):
@@ -782,6 +870,96 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
     """
     # Rate limiting
     await check_rate_limit(http_request, STREAM_RATE_LIMIT)
+    
+    # Challenge-response fingerprinting validation
+    fingerprint = http_request.headers.get("X-Fingerprint")
+    if fingerprint:
+        challenge_id, fingerprint_hash = _extract_challenge_from_fingerprint(fingerprint)
+        if challenge_id:
+            # Validate and consume challenge
+            # Use IP as identifier since challenge was issued to IP
+            identifier = _get_identifier_from_request(http_request)
+            await validate_and_consume_challenge(challenge_id, identifier)
+        # If no challenge in fingerprint, allow for backward compatibility during rollout
+    
+    # Turnstile verification with graceful degradation
+    if is_turnstile_enabled():
+        turnstile_token = request.turnstile_token if request.turnstile_token else None
+        client_ip = http_request.client.host if http_request.client else None
+        
+        try:
+            turnstile_result = await verify_turnstile_token(
+                turnstile_token or "",
+                remoteip=client_ip
+            )
+            
+            if not turnstile_result.get("success", False):
+                # Turnstile verification failed - apply stricter rate limits instead of blocking
+                error_codes = turnstile_result.get("error-codes", [])
+                logger.warning(
+                    f"Turnstile verification failed for {client_ip}: {error_codes}. "
+                    "Applying stricter rate limits."
+                )
+                # Apply stricter rate limits (10x stricter)
+                await check_rate_limit(http_request, STRICT_RATE_LIMIT)
+                # Continue processing (don't block)
+            else:
+                logger.debug(f"Turnstile verification successful for {client_ip}")
+        except Exception as e:
+            # Cloudflare API failure - log and continue with stricter limits
+            logger.error(
+                f"Turnstile API call failed for {client_ip}: {e}. "
+                "Falling back to stricter rate limits.",
+                exc_info=True
+            )
+            # Apply stricter rate limits (10x stricter)
+            await check_rate_limit(http_request, STRICT_RATE_LIMIT)
+            # Continue processing (never return 5xx)
+    
+    # Cost-based throttling check (before LLM call)
+    fingerprint = http_request.headers.get("X-Fingerprint")
+    if fingerprint:
+        # Extract fingerprint hash (without challenge prefix) for cost tracking
+        _, fingerprint_hash = _extract_challenge_from_fingerprint(fingerprint)
+        identifier_for_cost = fingerprint_hash if fingerprint_hash else fingerprint
+        
+        # Estimate cost based on query length and chat history
+        # Rough estimation: ~1 token = 4 characters
+        # Estimate input tokens: query + chat history + context (~2000 tokens for context)
+        query_length = len(request.query)
+        chat_history_length = sum(len(msg.content) for msg in request.chat_history)
+        estimated_input_tokens = int((query_length + chat_history_length) / 4) + 2000
+        estimated_output_tokens = 500  # Default estimated output length
+        
+        # Import cost estimation function
+        from backend.monitoring.llm_observability import estimate_gemini_cost
+        from backend.rag_pipeline import LLM_MODEL_NAME
+        
+        estimated_cost = estimate_gemini_cost(
+            estimated_input_tokens,
+            estimated_output_tokens,
+            LLM_MODEL_NAME
+        )
+        
+        # Check cost-based throttling
+        is_throttled, throttle_reason = await check_cost_based_throttling(
+            identifier_for_cost,
+            estimated_cost
+        )
+        
+        if is_throttled:
+            logger.warning(
+                f"Cost-based throttling triggered for fingerprint {identifier_for_cost}. "
+                f"Reason: {throttle_reason}"
+            )
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "cost_throttled",
+                    "message": throttle_reason or "High usage detected. Please complete security verification and try again in 30 seconds.",
+                    "requires_verification": True
+                }
+            )
 
     # Generate unique request ID
     request_id = str(uuid.uuid4())
