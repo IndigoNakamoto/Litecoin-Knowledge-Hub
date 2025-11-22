@@ -38,6 +38,11 @@ async def check_cost_based_throttling(
         - is_throttled: True if fingerprint should be throttled, False otherwise
         - throttle_reason: Reason for throttling if throttled, None otherwise
     """
+    # Disable cost throttling in development mode
+    is_dev = os.getenv("ENVIRONMENT", "production").lower() == "development" or os.getenv("DEBUG", "false").lower() == "true"
+    if is_dev:
+        return False, None
+    
     if not ENABLE_COST_THROTTLING:
         return False, None
     
@@ -76,8 +81,25 @@ async def check_cost_based_throttling(
     await redis.zremrangebyscore(cost_key, 0, cutoff)
     
     # Calculate total cost in window
+    # Note: member format is "{timestamp}:{cost}", score is timestamp
+    # We need to extract cost from member string, not use the score
     all_costs = await redis.zrange(cost_key, 0, -1, withscores=True)
-    total_cost_in_window = sum(float(score) for _, score in all_costs)
+    total_cost_in_window = 0.0
+    for member, _ in all_costs:
+        # Member format: "{timestamp}:{cost}"
+        try:
+            # Handle both bytes and string types from Redis
+            if isinstance(member, bytes):
+                member_str = member.decode('utf-8')
+            else:
+                member_str = str(member)
+            # Split by colon and get the cost part (last element)
+            cost_str = member_str.split(':')[-1]
+            total_cost_in_window += float(cost_str)
+        except (ValueError, IndexError, AttributeError, TypeError) as e:
+            # If parsing fails, skip this entry (shouldn't happen, but be safe)
+            logger.warning(f"Failed to parse cost from Redis entry {member}: {e}")
+            continue
     
     # Check if adding estimated cost would exceed threshold
     new_total_cost = total_cost_in_window + estimated_cost

@@ -81,9 +81,18 @@ PROBE_RATE_LIMIT = RateLimitConfig(
 )
 
 # Challenge endpoint rate limits (prevent challenge exhaustion attacks)
+# In development mode, allow much higher limits to avoid 429 errors during rapid page loads
+is_dev = os.getenv("ENVIRONMENT", "production").lower() == "development" or os.getenv("DEBUG", "false").lower() == "true"
+if is_dev:
+    challenge_requests_per_minute = int(os.getenv("CHALLENGE_RATE_LIMIT_PER_MINUTE", "1000"))
+    challenge_requests_per_hour = int(os.getenv("CHALLENGE_RATE_LIMIT_PER_HOUR", "10000"))
+else:
+    challenge_requests_per_minute = int(os.getenv("CHALLENGE_RATE_LIMIT_PER_MINUTE", "10"))
+    challenge_requests_per_hour = int(os.getenv("CHALLENGE_RATE_LIMIT_PER_HOUR", "100"))
+
 CHALLENGE_RATE_LIMIT = RateLimitConfig(
-    requests_per_minute=int(os.getenv("CHALLENGE_RATE_LIMIT_PER_MINUTE", "10")),
-    requests_per_hour=int(os.getenv("CHALLENGE_RATE_LIMIT_PER_HOUR", "100")),
+    requests_per_minute=challenge_requests_per_minute,
+    requests_per_hour=challenge_requests_per_hour,
     identifier="challenge",
     enable_progressive_limits=True,
 )
@@ -259,11 +268,17 @@ async def lifespan(app: FastAPI):
                 published_count = rag_pipeline_instance.vector_store_manager.collection.count_documents({
                     "metadata.status": "published"
                 })
-                logger.info(f"MongoDB has {doc_count} total documents ({published_count} published)")
+                # Count only published articles that are NOT test articles (exclude payload_id starting with "test-")
+                published_non_test_count = rag_pipeline_instance.vector_store_manager.collection.count_documents({
+                    "metadata.status": "published",
+                    "metadata.payload_id": {"$not": {"$regex": "^test-", "$options": "i"}}
+                })
+                logger.info(f"MongoDB has {doc_count} total documents ({published_count} published, {published_non_test_count} published non-test)")
                 
                 # Sync if empty or below threshold (default: 10)
+                # Use published_non_test_count to exclude test articles from the threshold check
                 min_docs_threshold = int(os.getenv("MIN_DOCS_TO_SKIP_SYNC", "10"))
-                if doc_count < min_docs_threshold:
+                if published_non_test_count < min_docs_threshold:
                     logger.info(f"MongoDB has fewer than {min_docs_threshold} documents. Syncing from Payload CMS...")
                     
                     # Import sync functions
@@ -274,13 +289,22 @@ async def lifespan(app: FastAPI):
                     # Fetch published articles from Payload CMS
                     payload_url = os.getenv("PAYLOAD_PUBLIC_SERVER_URL")
                     if not payload_url:
-                        # Try to detect if we're in Docker (use service name)
-                        try:
-                            import socket
-                            socket.gethostbyname('payload_cms')
+                        # Detect if we're in Docker by checking for /.dockerenv or container hostname
+                        is_docker = (
+                            os.path.exists('/.dockerenv') or 
+                            os.getenv('HOSTNAME', '').startswith(('litecoin-', 'payload-')) or
+                            'DOCKER_CONTAINER' in os.environ
+                        )
+                        
+                        if is_docker:
+                            # Inside Docker: use service name (port 3000 is internal port)
+                            # Payload CMS service listens on 3000 inside container, exposed as 3001 on host
                             payload_url = "http://payload_cms:3000"
-                        except socket.gaierror:
+                            logger.info("Detected Docker environment, using internal service name: payload_cms:3000")
+                        else:
+                            # Local development: use localhost with exposed port
                             payload_url = "http://localhost:3001"
+                            logger.info("Detected local environment, using localhost:3001")
                     
                     logger.info(f"Fetching published articles from Payload CMS at {payload_url}...")
                     import requests
@@ -295,10 +319,16 @@ async def lifespan(app: FastAPI):
                         logger.info(f"Found {len(docs)} published articles in Payload CMS")
                         
                         if docs:
-                            # Convert to PayloadWebhookDoc objects
+                            # Convert to PayloadWebhookDoc objects, filtering out test articles
                             payload_docs = []
                             for doc in docs:
                                 try:
+                                    # Skip test articles (IDs starting with "test-")
+                                    article_id = doc.get('id', '')
+                                    if article_id.startswith('test-'):
+                                        logger.debug(f"Skipping test article: {article_id}")
+                                        continue
+                                    
                                     normalized_doc = normalize_payload_doc(doc)
                                     payload_doc = PayloadWebhookDoc(**normalized_doc)
                                     payload_docs.append(payload_doc)
@@ -346,7 +376,7 @@ async def lifespan(app: FastAPI):
                     else:
                         logger.warning(f"Failed to fetch articles from Payload CMS: {response.status_code} - {response.text}")
                 else:
-                    logger.info(f"MongoDB already has {doc_count} documents (>= {min_docs_threshold}). Skipping sync.")
+                    logger.info(f"MongoDB already has {published_non_test_count} published non-test documents (>= {min_docs_threshold}). Skipping sync.")
             else:
                 logger.warning("MongoDB not available. Skipping Payload article sync.")
         except Exception as e:
@@ -437,6 +467,14 @@ default_origins = "http://localhost:3000,https://chat.lite.space,https://www.cha
 cors_origins_env = os.getenv("CORS_ORIGINS", default_origins)
 origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
 
+# In development, allow all methods and headers for easier debugging
+# Note: Can't use ["*"] with allow_credentials=True, so we allow common localhost ports
+is_dev = os.getenv("ENVIRONMENT", "production").lower() == "development" or os.getenv("DEBUG", "false").lower() == "true"
+if is_dev:
+    # Add common localhost ports in development
+    dev_origins = ["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001"]
+    origins = list(set(origins + dev_origins))  # Combine and deduplicate
+
 # Add monitoring middleware (before CORS to capture all requests)
 app.add_middleware(MetricsMiddleware)
 
@@ -445,10 +483,10 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 app.add_middleware(
     CORSMiddleware, 
-    allow_origins=origins,  # From CORS_ORIGINS env var
+    allow_origins=origins,
     allow_credentials=True,  # Keep for future cookie-based auth
-    allow_methods=["GET", "POST", "OPTIONS"],  # Only required methods
-    allow_headers=["Content-Type", "Authorization", "Cache-Control"],  # Only required headers
+    allow_methods=["*"] if is_dev else ["GET", "POST", "OPTIONS"],  # All methods in dev
+    allow_headers=["*"] if is_dev else ["Content-Type", "Authorization", "Cache-Control", "X-Fingerprint"],  # All headers in dev
 )
 
 # Global exception handlers for error sanitization
@@ -1268,4 +1306,83 @@ async def refresh_suggested_cache_endpoint(request: Request):
         raise HTTPException(
             status_code=500,
             detail={"error": "Internal server error", "message": "Failed to refresh cache"}
+        )
+
+
+@app.post("/api/v1/admin/refresh-faiss-index")
+async def refresh_faiss_index_endpoint(request: Request):
+    """
+    Admin endpoint to manually refresh the FAISS vector index from MongoDB.
+    
+    This rebuilds the FAISS index from all documents in MongoDB, ensuring
+    the vector store is up-to-date with the latest content.
+    
+    Requires Bearer token authentication via Authorization header.
+    Example: Authorization: Bearer <ADMIN_TOKEN>
+    
+    Returns:
+        JSON response with refresh status and statistics
+    """
+    # Rate limiting
+    await check_rate_limit(request, ADMIN_CACHE_REFRESH_RATE_LIMIT)
+    
+    # Get Authorization header
+    auth_header = request.headers.get("Authorization")
+    
+    # Verify authentication
+    if not verify_admin_token(auth_header):
+        logger.warning(
+            f"Unauthorized FAISS refresh attempt from IP: {request.client.host if request.client else 'unknown'}"
+        )
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "Unauthorized", "message": "Invalid or missing admin token"}
+        )
+    
+    # Refresh FAISS index
+    try:
+        logger.info("Admin requested FAISS index refresh")
+        
+        # Get MongoDB document count before refresh
+        mongo_doc_count = 0
+        published_count = 0
+        if rag_pipeline_instance.vector_store_manager.mongodb_available:
+            mongo_doc_count = rag_pipeline_instance.vector_store_manager.collection.count_documents({})
+            published_count = rag_pipeline_instance.vector_store_manager.collection.count_documents({
+                "metadata.status": "published"
+            })
+        else:
+            raise HTTPException(
+                status_code=503,
+                detail={"error": "Service unavailable", "message": "MongoDB connection not available"}
+            )
+        
+        # Refresh the vector store (rebuilds FAISS from MongoDB)
+        rag_pipeline_instance.refresh_vector_store()
+        
+        # Get FAISS index size after refresh
+        faiss_index_size = 0
+        if hasattr(rag_pipeline_instance.vector_store_manager, 'vector_store'):
+            if hasattr(rag_pipeline_instance.vector_store_manager.vector_store, 'index'):
+                faiss_index_size = rag_pipeline_instance.vector_store_manager.vector_store.index.ntotal
+        
+        result = {
+            "status": "success",
+            "message": "FAISS index refreshed successfully",
+            "mongodb_documents": mongo_doc_count,
+            "mongodb_published": published_count,
+            "faiss_index_size": faiss_index_size,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        logger.info(f"FAISS index refreshed: {mongo_doc_count} MongoDB docs, {faiss_index_size} FAISS vectors")
+        return JSONResponse(content=result)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error refreshing FAISS index: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Internal server error", "message": f"Failed to refresh FAISS index: {str(e)}"}
         )

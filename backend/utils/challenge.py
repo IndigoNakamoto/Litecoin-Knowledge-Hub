@@ -19,7 +19,12 @@ logger = logging.getLogger(__name__)
 
 # Environment variables
 CHALLENGE_TTL_SECONDS = int(os.getenv("CHALLENGE_TTL_SECONDS", "300"))  # 5 minutes default
-MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER = int(os.getenv("MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER", "3"))
+# In development mode, allow more active challenges to avoid 429 errors during rapid page loads
+is_dev = os.getenv("ENVIRONMENT", "production").lower() == "development" or os.getenv("DEBUG", "false").lower() == "true"
+if is_dev:
+    MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER = int(os.getenv("MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER", "20"))
+else:
+    MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER = int(os.getenv("MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER", "3"))
 ENABLE_CHALLENGE_RESPONSE = os.getenv("ENABLE_CHALLENGE_RESPONSE", "true").lower() == "true"
 
 
