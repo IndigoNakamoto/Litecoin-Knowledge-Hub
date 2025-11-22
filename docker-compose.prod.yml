@@ -57,6 +57,8 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+      payload_cms:
+        condition: service_healthy
     volumes:
       - ./backend/monitoring/data:/app/backend/monitoring/data
     restart: unless-stopped
@@ -82,8 +84,6 @@ services:
       # Note: PAYLOAD_SECRET is loaded from ./payload_cms/.env via env_file above
       - NODE_ENV=production
     depends_on:
-      backend:
-        condition: service_healthy
       mongodb:
         condition: service_healthy
     restart: unless-stopped

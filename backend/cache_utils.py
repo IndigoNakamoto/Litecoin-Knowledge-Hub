@@ -246,11 +246,12 @@ class SuggestedQuestionCache:
             Dictionary representation
         """
         if isinstance(doc, dict):
-            return doc
+            # Recursively serialize the dictionary, converting datetime objects
+            return self._serialize_metadata(doc)
         elif isinstance(doc, Document):
             return {
                 "page_content": doc.page_content,
-                "metadata": doc.metadata
+                "metadata": self._serialize_metadata(doc.metadata)
             }
         else:
             # Fallback for other types
@@ -258,6 +259,37 @@ class SuggestedQuestionCache:
                 "page_content": str(doc),
                 "metadata": {}
             }
+    
+    def _serialize_metadata(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Recursively serialize metadata, converting datetime objects to ISO format strings.
+        
+        Args:
+            metadata: Dictionary that may contain datetime objects
+            
+        Returns:
+            Dictionary with datetime objects converted to strings
+        """
+        from datetime import datetime, date
+        
+        serialized = {}
+        for key, value in metadata.items():
+            if isinstance(value, datetime):
+                serialized[key] = value.isoformat()
+            elif isinstance(value, date):
+                serialized[key] = value.isoformat()
+            elif isinstance(value, dict):
+                serialized[key] = self._serialize_metadata(value)
+            elif isinstance(value, list):
+                serialized[key] = [
+                    self._serialize_metadata(item) if isinstance(item, dict) 
+                    else item.isoformat() if isinstance(item, (datetime, date))
+                    else item
+                    for item in value
+                ]
+            else:
+                serialized[key] = value
+        return serialized
     
     def _deserialize_document(self, doc_dict: Dict[str, Any]) -> Document:
         """
