@@ -16,8 +16,10 @@ else:
 
 # Now import other modules
 import asyncio
+import pytest
 from rag_pipeline import RAGPipeline
 
+@pytest.mark.asyncio
 async def test_astream_query():
     """Test the modified astream_query method."""
     try:
@@ -107,13 +109,16 @@ async def test_astream_query():
         print('✅ Source filtering implemented')
         print('✅ Caching functionality maintained')
 
-        return True
+        # Assertions for pytest
+        assert len(full_response) > 0, "Response should not be empty"
+        assert sources_count > 0, "Should have sources"
+        assert cache_match, "Cache response should match original"
 
     except Exception as e:
         print(f'❌ Error during test: {e}')
         import traceback
         traceback.print_exc()
-        return False
+        raise  # Re-raise for pytest to catch
 
 if __name__ == '__main__':
     result = asyncio.run(test_astream_query())

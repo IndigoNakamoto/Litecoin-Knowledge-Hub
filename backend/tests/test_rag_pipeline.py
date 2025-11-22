@@ -72,7 +72,8 @@ TEST_METADATA_AUTHOR = "Test Author"
 TEST_METADATA_TAG = "testing"
 
 
-def test_hierarchical_chunking_and_retrieval():
+@pytest.mark.asyncio
+async def test_hierarchical_chunking_and_retrieval():
     """
     Tests the hierarchical chunking and retrieval for Markdown documents.
     """
@@ -199,8 +200,7 @@ def test_hierarchical_chunking_and_retrieval():
             
         # 5. Formulate a specific query and assert that the correct, context-rich chunk is retrieved via RAGPipeline
         print(f"Performing RAG query via RAGPipeline: '{TEST_QUERY_HIERARCHICAL}'")
-        import asyncio
-        answer, sources, metadata = asyncio.run(rag_pipeline_instance.aquery(TEST_QUERY_HIERARCHICAL, chat_history=[]))
+        answer, sources, metadata = await rag_pipeline_instance.aquery(TEST_QUERY_HIERARCHICAL, chat_history=[])
         
         print(f"RAG Answer: {answer}")
         if sources:

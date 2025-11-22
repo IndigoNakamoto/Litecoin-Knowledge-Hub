@@ -33,6 +33,7 @@ import json
 import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch, Mock
+from langchain_core.messages import AIMessage   # ← THIS LINE WAS MISSING!
 from fastapi.testclient import TestClient
 import mongomock
 from typing import Dict, Any, List
@@ -184,28 +185,55 @@ def mock_motor_client(mock_mongo):
 
 # Mock Google LLM API
 @pytest.fixture
-def mock_llm(monkeypatch):
-    """Mock Google Generative AI for cost control and deterministic responses."""
-    mock_response = MagicMock()
-    mock_response.text = "Mock LLM response based on the provided context."
-    mock_response.usage_metadata = MagicMock()
-    mock_response.usage_metadata.prompt_token_count = 10
-    mock_response.usage_metadata.candidates_token_count = 20
-    mock_response.usage_metadata.total_token_count = 30
-    
-    mock_generate = AsyncMock(return_value=mock_response)
-    
-    # Patch the LangChain Google Generative AI
-    monkeypatch.setattr(
-        "langchain_google_genai.ChatGoogleGenerativeAI.ainvoke",
-        mock_generate
+def mock_llm():
+    """THE FINAL WORKING LLM MOCK — NO MORE COROUTINES."""
+    from langchain_core.messages import AIMessage
+
+    # Create AIMessage with proper content and metadata for token extraction
+    message = AIMessage(
+        content="Litecoin was created by Charlie Lee in October 2011 as a faster Bitcoin fork using Scrypt.",
+        response_metadata={
+            "token_usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 50
+            }
+        }
     )
-    monkeypatch.setattr(
-        "langchain_google_genai.ChatGoogleGenerativeAI.invoke",
-        Mock(return_value=mock_response)
-    )
+
+    llm = AsyncMock()
+    llm.ainvoke.return_value = message
+    llm.invoke.return_value = message
+    llm.stream.return_value = iter([message])
+
+    # THIS IS THE KEY: use MagicMock, NOT lambda or AsyncMock
+    # Return actual integers, not mocks
+    llm.get_num_tokens = MagicMock(return_value=110)
+    llm.get_num_tokens_from_messages = MagicMock(return_value=150)
+
+    return llm
+
+# Clear challenge state between tests to prevent rate limiting
+@pytest.fixture(autouse=True)
+def clear_challenge_state(mock_redis):
+    """Clear challenge state from Redis synchronously before each test to prevent rate limiting."""
+    def _clear():
+        """Helper to clear Redis keys synchronously."""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(mock_redis.delete("challenge:active:testclient"))
+            loop.run_until_complete(mock_redis.delete("challenge:active:127.0.0.1"))
+        except Exception:
+            # If Redis is not available or mocked, ignore
+            pass
+        finally:
+            loop.close()
     
-    yield mock_generate
+    # Clear before test
+    _clear()
+    yield
+    # Optional: cleanup after test too
+    _clear()
 
 # Isolated vector store with test data
 @pytest.fixture
@@ -284,15 +312,18 @@ def client(mock_redis, mock_motor_client, mock_llm, monkeypatch):
     app.dependency_overrides[dependencies.get_cms_db] = override_get_cms_db
     app.dependency_overrides[dependencies.get_user_questions_collection] = override_get_user_questions_collection
     
-    # Override Redis client (synchronous access for TestClient)
-    # Note: TestClient runs in a thread, so we need to handle async properly
-    original_get_redis = redis_client.get_redis_client
-    monkeypatch.setattr(redis_client, "get_redis_client", lambda: mock_redis)
+    # Override Redis client - CRITICAL: get_redis_client is async, so we need an async function
+    async def fake_get_redis_client():
+        return mock_redis
+    
+    # Force all modules to use mock Redis (prevents DNS resolution errors)
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:1")  # invalid on purpose
+    for module in ["redis_client", "rate_limiter", "utils.challenge", "monitoring.spend_limit"]:
+        monkeypatch.setattr(f"backend.{module}.get_redis_client", fake_get_redis_client)
     
     # Override environment variables for testing
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
     monkeypatch.setenv("MONGO_URI", "mongodb://test")
-    monkeypatch.setenv("REDIS_URL", "redis://test")
     monkeypatch.setenv("WEBHOOK_SECRET", "test-webhook-secret-key")
     
     # Create TestClient with lifespan disabled for testing
@@ -304,8 +335,6 @@ def client(mock_redis, mock_motor_client, mock_llm, monkeypatch):
     finally:
         # Cleanup overrides
         app.dependency_overrides.clear()
-        # Restore original Redis client getter
-        monkeypatch.setattr(redis_client, "get_redis_client", original_get_redis)
 
 # Helper fixture for webhook HMAC signature generation
 @pytest.fixture

@@ -28,7 +28,6 @@ if not os.getenv("MONGO_URI"):
     os.environ["MONGO_URI"] = "mongodb://test"
 
 import pytest
-import asyncio
 from backend.rag_pipeline import RAGPipeline
 from backend.data_ingestion.vector_store_manager import VectorStoreManager
 from langchain_core.documents import Document
@@ -54,11 +53,12 @@ def rag_pipeline(test_vector_store, mock_llm, monkeypatch):
     return pipeline
 
 
-def test_initial_query(rag_pipeline, test_kb_docs):
+@pytest.mark.asyncio
+async def test_initial_query(rag_pipeline, test_kb_docs):
     """Test initial query about Litecoin."""
     initial_query = "What is Litecoin?"
     
-    answer, sources, metadata = asyncio.run(rag_pipeline.aquery(initial_query, chat_history=[]))
+    answer, sources, metadata = await rag_pipeline.aquery(initial_query, chat_history=[])
     
     assert answer is not None
     assert len(answer) > 0
@@ -66,18 +66,19 @@ def test_initial_query(rag_pipeline, test_kb_docs):
     assert len(sources) >= 0  # May or may not have sources depending on mock
 
 
-def test_follow_up_pronoun_resolution(rag_pipeline, test_kb_docs):
+@pytest.mark.asyncio
+async def test_follow_up_pronoun_resolution(rag_pipeline, test_kb_docs):
     """Test that follow-up questions resolve pronouns correctly."""
     # First message establishes context
     initial_query = "Who created Litecoin?"
-    answer1, sources1, metadata1 = asyncio.run(rag_pipeline.aquery(initial_query, chat_history=[]))
+    answer1, sources1, metadata1 = await rag_pipeline.aquery(initial_query, chat_history=[])
     
     assert answer1 is not None
     
     # Follow-up with pronoun reference
     followup_query = "When did he create it?"
     chat_history = [(initial_query, answer1)]
-    answer2, sources2, metadata2 = asyncio.run(rag_pipeline.aquery(followup_query, chat_history))
+    answer2, sources2, metadata2 = await rag_pipeline.aquery(followup_query, chat_history)
     
     assert answer2 is not None
     assert len(answer2) > 0
@@ -85,21 +86,22 @@ def test_follow_up_pronoun_resolution(rag_pipeline, test_kb_docs):
     assert isinstance(sources2, list)
 
 
-def test_multi_turn_conversation(rag_pipeline, test_kb_docs):
+@pytest.mark.asyncio
+async def test_multi_turn_conversation(rag_pipeline, test_kb_docs):
     """Test multi-turn conversations maintain context."""
     # First query
     query1 = "What is Litecoin?"
-    answer1, _, _ = asyncio.run(rag_pipeline.aquery(query1, chat_history=[]))
+    answer1, _, _ = await rag_pipeline.aquery(query1, chat_history=[])
     
     # Second query
     query2 = "Who created it?"
     chat_history = [(query1, answer1)]
-    answer2, _, _ = asyncio.run(rag_pipeline.aquery(query2, chat_history))
+    answer2, _, _ = await rag_pipeline.aquery(query2, chat_history)
     
     # Third query
     query3 = "How is it different from Bitcoin?"
     chat_history.append((query2, answer2))
-    answer3, _, _ = asyncio.run(rag_pipeline.aquery(query3, chat_history))
+    answer3, _, _ = await rag_pipeline.aquery(query3, chat_history)
     
     assert answer1 is not None
     assert answer2 is not None
@@ -107,7 +109,8 @@ def test_multi_turn_conversation(rag_pipeline, test_kb_docs):
     assert len(chat_history) == 2  # Should have 2 pairs
 
 
-def test_ambiguous_reference_resolution(rag_pipeline, test_kb_docs):
+@pytest.mark.asyncio
+async def test_ambiguous_reference_resolution(rag_pipeline, test_kb_docs):
     """Test resolution of ambiguous references like 'the second one'."""
     # Simulate a conversation where AI mentioned multiple items
     simulated_history = [
@@ -118,7 +121,7 @@ def test_ambiguous_reference_resolution(rag_pipeline, test_kb_docs):
     ]
     
     ambiguous_query = "What about the second one?"
-    answer, sources, metadata = asyncio.run(rag_pipeline.aquery(ambiguous_query, simulated_history))
+    answer, sources, metadata = await rag_pipeline.aquery(ambiguous_query, simulated_history)
     
     assert answer is not None
     assert len(answer) > 0
@@ -126,7 +129,8 @@ def test_ambiguous_reference_resolution(rag_pipeline, test_kb_docs):
     assert isinstance(sources, list)
 
 
-def test_chat_history_truncation(rag_pipeline, monkeypatch):
+@pytest.mark.asyncio
+async def test_chat_history_truncation(rag_pipeline, monkeypatch):
     """Test that chat history is truncated at MAX_CHAT_HISTORY_PAIRS."""
     import os
     # Set MAX_CHAT_HISTORY_PAIRS to 2 for testing
@@ -142,26 +146,28 @@ def test_chat_history_truncation(rag_pipeline, monkeypatch):
     
     # The pipeline should truncate to the last 2 pairs
     query = "What is Litecoin?"
-    answer, _, _ = asyncio.run(rag_pipeline.aquery(query, long_history))
+    answer, _, _ = await rag_pipeline.aquery(query, long_history)
     
     assert answer is not None
     # Verify truncation happened (internal check - the pipeline should handle this)
 
 
-def test_empty_chat_history(rag_pipeline):
+@pytest.mark.asyncio
+async def test_empty_chat_history(rag_pipeline):
     """Test query with empty chat history."""
     query = "What is Litecoin?"
-    answer, sources, metadata = asyncio.run(rag_pipeline.aquery(query, chat_history=[]))
+    answer, sources, metadata = await rag_pipeline.aquery(query, chat_history=[])
     
     assert answer is not None
     assert len(answer) > 0
     assert isinstance(sources, list)
 
 
-def test_chat_history_format(rag_pipeline):
+@pytest.mark.asyncio
+async def test_chat_history_format(rag_pipeline):
     """Test that chat history is in the correct format (list of tuples)."""
     query1 = "What is Litecoin?"
-    answer1, _, _ = asyncio.run(rag_pipeline.aquery(query1, chat_history=[]))
+    answer1, _, _ = await rag_pipeline.aquery(query1, chat_history=[])
     
     # Chat history should be list of (query, answer) tuples
     chat_history = [(query1, answer1)]

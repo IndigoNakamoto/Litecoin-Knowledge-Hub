@@ -71,10 +71,12 @@ async def test_get_current_usage_with_costs(mock_redis_client):
 @pytest.mark.asyncio
 async def test_check_spend_limit_allows_request_below_limit(mock_redis_client):
     """Test that requests below the limit are allowed."""
-    mock_redis_client.get = AsyncMock(return_value="2.0")
+    # Use return_value so it works for all calls (check_spend_limit + get_current_usage)
+    mock_redis_client.get = AsyncMock(return_value="0.5")  # Always return low value
+    mock_redis_client.hget = AsyncMock(return_value="0")  # Token counts default to 0
     
     with patch("backend.monitoring.spend_limit.get_redis_client", return_value=mock_redis_client):
-        allowed, error_msg, usage_info = await check_spend_limit(1.0, "test-model")
+        allowed, error_msg, usage_info = await check_spend_limit(0.4, "test-model")
         
         assert allowed is True
         assert error_msg is None
@@ -84,14 +86,22 @@ async def test_check_spend_limit_allows_request_below_limit(mock_redis_client):
 @pytest.mark.asyncio
 async def test_check_spend_limit_blocks_request_above_daily_limit(mock_redis_client):
     """Test that requests exceeding daily limit are blocked."""
-    # Set daily cost close to limit
-    daily_cost = DAILY_SPEND_LIMIT_USD - 0.5
-    mock_redis_client.get = AsyncMock(side_effect=[str(daily_cost), "0.0"])
+    # Set daily cost close to limit - use side_effect to return different values for hourly vs daily
+    daily_cost = DAILY_SPEND_LIMIT_USD - 0.5  # 4.5
+    async def get_side_effect(key):
+        # Return daily cost for daily key, low value for hourly key
+        if "daily" in str(key):
+            return str(daily_cost)
+        else:
+            return "0.0"  # Hourly is low, so daily limit is checked first
+    
+    mock_redis_client.get = AsyncMock(side_effect=get_side_effect)
+    mock_redis_client.hget = AsyncMock(return_value="0")  # Token counts default to 0
     
     with patch("backend.monitoring.spend_limit.get_redis_client", return_value=mock_redis_client):
         # Request that would exceed limit (with 10% buffer)
-        estimated_cost = 1.0  # With 10% buffer = 1.1, which would exceed
-        allowed, error_msg, usage_info = await check_spend_limit(estimated_cost, "test-model")
+        # 4.5 + 0.6*1.1 = 5.16 > 5.0 → blocked
+        allowed, error_msg, usage_info = await check_spend_limit(0.6, "test-model")
         
         assert allowed is False
         assert error_msg is not None
@@ -101,14 +111,22 @@ async def test_check_spend_limit_blocks_request_above_daily_limit(mock_redis_cli
 @pytest.mark.asyncio
 async def test_check_spend_limit_blocks_request_above_hourly_limit(mock_redis_client):
     """Test that requests exceeding hourly limit are blocked."""
-    # Set hourly cost close to limit
-    hourly_cost = HOURLY_SPEND_LIMIT_USD - 0.1
-    mock_redis_client.get = AsyncMock(side_effect=["0.0", str(hourly_cost)])
+    # Set hourly cost close to limit - use a function to return different values based on key
+    hourly_cost = HOURLY_SPEND_LIMIT_USD - 0.1  # 0.9
+    async def get_side_effect(key):
+        # Return hourly cost for hourly key, 0.0 for daily key
+        if "hourly" in str(key):
+            return str(hourly_cost)
+        else:
+            return "0.0"
+    
+    mock_redis_client.get = AsyncMock(side_effect=get_side_effect)
+    mock_redis_client.hget = AsyncMock(return_value="0")  # Token counts default to 0
     
     with patch("backend.monitoring.spend_limit.get_redis_client", return_value=mock_redis_client):
         # Request that would exceed limit (with 10% buffer)
-        estimated_cost = 0.5  # With 10% buffer = 0.55, which would exceed
-        allowed, error_msg, usage_info = await check_spend_limit(estimated_cost, "test-model")
+        # 0.9 + 0.2*1.1 = 1.12 > 1.0 → blocked
+        allowed, error_msg, usage_info = await check_spend_limit(0.2, "test-model")
         
         assert allowed is False
         assert error_msg is not None
@@ -118,6 +136,10 @@ async def test_check_spend_limit_blocks_request_above_hourly_limit(mock_redis_cl
 @pytest.mark.asyncio
 async def test_check_spend_limit_allows_zero_cost(mock_redis_client):
     """Test that zero cost requests are always allowed."""
+    # Zero cost path calls get_current_usage() which needs get() and hget()
+    mock_redis_client.get = AsyncMock(return_value="0.0")
+    mock_redis_client.hget = AsyncMock(return_value="0")
+    
     with patch("backend.monitoring.spend_limit.get_redis_client", return_value=mock_redis_client):
         allowed, error_msg, usage_info = await check_spend_limit(0.0, "test-model")
         
@@ -202,7 +224,9 @@ async def test_get_current_usage_handles_redis_error(mock_redis_client):
 @pytest.mark.asyncio
 async def test_check_spend_limit_handles_redis_error(mock_redis_client):
     """Test that check_spend_limit handles Redis errors gracefully."""
+    # First call to get() raises, but get_current_usage() in except block also needs mocks
     mock_redis_client.get = AsyncMock(side_effect=Exception("Redis error"))
+    mock_redis_client.hget = AsyncMock(return_value="0")  # For get_current_usage() in error path
     
     with patch("backend.monitoring.spend_limit.get_redis_client", return_value=mock_redis_client):
         # Should allow request on error (graceful degradation)
