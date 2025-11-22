@@ -1,9 +1,12 @@
 import os
 from typing import Optional
+from contextvars import ContextVar
 
 import redis.asyncio as redis
 
-_redis_client: Optional[redis.Redis] = None
+# Use ContextVar to allow per-context (per-test) Redis clients
+# This solves the "different event loop" problem in async tests
+_redis_client: ContextVar[Optional[redis.Redis]] = ContextVar("redis_client", default=None)
 
 
 def get_redis_url() -> str:
@@ -26,24 +29,34 @@ def get_redis_url() -> str:
   return redis_url
 
 
-def get_redis_client() -> redis.Redis:
+async def get_redis_client() -> redis.Redis:
   """
-  Get a shared async Redis client instance.
+  Get a shared async Redis client instance for the current context.
+  Uses ContextVar to allow per-test mocking in pytest-asyncio tests.
   This is safe to use across the app; redis-py manages connection pooling.
   """
-  global _redis_client
-  if _redis_client is None:
-    _redis_client = redis.from_url(get_redis_url(), encoding="utf-8", decode_responses=True)
-  return _redis_client
+  client = _redis_client.get()
+  if client is None:
+    client = redis.from_url(get_redis_url(), encoding="utf-8", decode_responses=True)
+    _redis_client.set(client)
+  return client
+
+
+def _set_test_redis_client(client: redis.Redis) -> None:
+  """
+  Internal helper function to set a test Redis client.
+  Used by pytest fixtures to inject mock Redis clients per test context.
+  """
+  _redis_client.set(client)
 
 
 async def close_redis_client() -> None:
   """
   Gracefully close the Redis client on application shutdown.
   """
-  global _redis_client
-  if _redis_client is not None:
-    await _redis_client.aclose()
-    _redis_client = None
+  client = _redis_client.get()
+  if client is not None:
+    await client.aclose()
+    _redis_client.set(None)
 
 
