@@ -64,6 +64,7 @@ These should be stored in service-specific `.env` files and never committed to g
 | `PAYLOAD_SECRET` | Payload CMS | Payload CMS secret key |
 | `WEBHOOK_SECRET` | Both | Shared secret for webhook HMAC signature verification (must be same in both services) |
 | `ADMIN_TOKEN` | Backend | Bearer token for admin endpoints (e.g., cache refresh) |
+| `TURNSTILE_SECRET_KEY` | Backend | Cloudflare Turnstile secret key (required if `ENABLE_TURNSTILE=true`) |
 | `CLOUDFLARE_TUNNEL_TOKEN` | Production | Cloudflare tunnel token (optional) |
 | `MONGO_ROOT_USERNAME` | Docker | MongoDB root/admin username (default: `admin`) |
 | `MONGO_ROOT_PASSWORD` | Docker | **REQUIRED** - MongoDB root/admin password (generate with `openssl rand -base64 32`) |
@@ -116,8 +117,22 @@ These variables are usually the same across environments but can be overridden.
 | `DAILY_SPEND_LIMIT_USD` | `5.00` | Daily LLM spend limit in USD |
 | `HOURLY_SPEND_LIMIT_USD` | `1.00` | Hourly LLM spend limit in USD |
 | `DISCORD_WEBHOOK_URL` | (none) | Discord webhook URL for spend limit alerts (optional) |
+| `CHALLENGE_TTL_SECONDS` | `300` | Challenge TTL in seconds (5 minutes) for challenge-response fingerprinting |
+| `CHALLENGE_RATE_LIMIT_PER_MINUTE` | `10` | Maximum challenges per IP per minute |
+| `CHALLENGE_RATE_LIMIT_PER_HOUR` | `100` | Maximum challenges per IP per hour |
+| `MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER` | `3` | Maximum active challenges per fingerprint/IP |
+| `ENABLE_CHALLENGE_RESPONSE` | `true` | Enable challenge-response fingerprinting |
+| `GLOBAL_RATE_LIMIT_PER_MINUTE` | `1000` | Global rate limit (aggregate requests per minute across all identifiers) |
+| `GLOBAL_RATE_LIMIT_PER_HOUR` | `50000` | Global rate limit (aggregate requests per hour across all identifiers) |
+| `ENABLE_GLOBAL_RATE_LIMIT` | `true` | Enable global rate limiting |
+| `TURNSTILE_SECRET_KEY` | (none) | Cloudflare Turnstile secret key (required if `ENABLE_TURNSTILE=true`) |
+| `ENABLE_TURNSTILE` | `false` | Enable Cloudflare Turnstile verification |
+| `HIGH_COST_THRESHOLD_USD` | `10.0` | Cost threshold in USD that triggers throttling (per fingerprint in 10-minute window) |
+| `HIGH_COST_WINDOW_SECONDS` | `600` | Cost tracking window in seconds (10 minutes) |
+| `ENABLE_COST_THROTTLING` | `true` | Enable cost-based throttling |
+| `COST_THROTTLE_DURATION_SECONDS` | `30` | Duration in seconds that a fingerprint is throttled after exceeding cost threshold |
 
-**Where to set:** Root-level `.env.*` files (for spend limits, set in `backend/.env`)
+**Where to set:** Root-level `.env.*` files (for spend limits and abuse prevention features, set in `backend/.env`)
 
 ### 5. Monitoring (Optional)
 
