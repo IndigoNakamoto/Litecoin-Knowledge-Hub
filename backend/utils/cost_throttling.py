@@ -16,7 +16,7 @@ from backend.redis_client import get_redis_client
 logger = logging.getLogger(__name__)
 
 # Environment variables
-HIGH_COST_THRESHOLD_USD = float(os.getenv("HIGH_COST_THRESHOLD_USD", "10.0"))
+HIGH_COST_THRESHOLD_USD = float(os.getenv("HIGH_COST_THRESHOLD_USD", "0.10"))
 HIGH_COST_WINDOW_SECONDS = int(os.getenv("HIGH_COST_WINDOW_SECONDS", "600"))  # 10 minutes default
 ENABLE_COST_THROTTLING = os.getenv("ENABLE_COST_THROTTLING", "true").lower() == "true"
 COST_THROTTLE_DURATION_SECONDS = int(os.getenv("COST_THROTTLE_DURATION_SECONDS", "30"))  # 30 seconds throttle duration
