@@ -11,7 +11,7 @@ from langchain_core.documents import Document
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain_community.retrievers import BM25Retriever
 from langchain.retrievers import EnsembleRetriever
-from langchain.chains import create_history_aware_retriever
+from langchain.chains import create_history_aware_retriever, create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from data_ingestion.vector_store_manager import VectorStoreManager
 from cache_utils import query_cache
@@ -55,15 +55,6 @@ except ImportError:
     async def record_spend(*args, **kwargs):
         return {}
 
-# --- Environment Variable Checks ---
-google_api_key = os.getenv("GOOGLE_API_KEY")
-if not google_api_key:
-    raise ValueError("GOOGLE_API_KEY environment variable not set!")
-
-MONGO_URI = os.getenv("MONGO_URI")
-if not MONGO_URI:
-    raise ValueError("MONGO_URI environment variable not set!")
-
 # --- Constants ---
 DB_NAME = os.getenv("MONGO_DB_NAME", "litecoin_rag_db")
 COLLECTION_NAME = os.getenv("MONGO_COLLECTION_NAME", "litecoin_docs")
@@ -71,8 +62,10 @@ LLM_MODEL_NAME = "gemini-2.5-flash-lite-preview-09-2025"  #
 # Maximum number of chat history pairs (human-AI exchanges) to include in context
 # This prevents token overflow and keeps context manageable. Default: 10 pairs (20 messages)
 MAX_CHAT_HISTORY_PAIRS = int(os.getenv("MAX_CHAT_HISTORY_PAIRS", "2"))
+# Retriever k value (number of documents to retrieve)
+RETRIEVER_K = int(os.getenv("RETRIEVER_K", "8"))
 NO_KB_MATCH_RESPONSE = (
-    "I couldn’t find any relevant content in our knowledge base yet. "
+    "I couldn't find any relevant content in our knowledge base yet. "
 )
 
 # --- RAG Prompt Templates ---
@@ -85,9 +78,8 @@ QA_WITH_HISTORY_PROMPT = ChatPromptTemplate.from_messages(
     ]
 )
 
-# 2. RAG prompt for final answer generation
-RAG_PROMPT_TEMPLATE = """
-You are a neutral, factual expert on Litecoin, a peer-to-peer decentralized cryptocurrency. Your primary goal is to provide comprehensive, well-structured, and educational answers. Your responses must be based **exclusively** on the provided context. Do not speculate or add external knowledge.
+# 2. System instruction for RAG prompt (defined separately for robustness)
+SYSTEM_INSTRUCTION = """You are a neutral, factual expert on Litecoin, a peer-to-peer decentralized cryptocurrency. Your primary goal is to provide comprehensive, well-structured, and educational answers. Your responses must be based **exclusively** on the provided context. Do not speculate or add external knowledge.
 
 !!! NEVER mention "context", "documents", "sources", or "retrieved information" under any circumstances. Just answer as the expert. !!!
 
@@ -135,25 +127,15 @@ Before **MWEB**, **Litecoin** transactions were public (like Bitcoin's). This up
 ## Limitations
 Just so you know, the context mentions that while **MWEB** is a big improvement, it doesn't guarantee 100% anonymity, as advanced analysis might still be possible.
 
----
+---"""
 
-{context}
-
-{chat_history}
-
-User: {input}
-"""
-# Create rag_prompt for document chain (only needs context and input, chat_history is handled by history-aware retriever)
-# Extract the system prompt part (everything before {context})
-system_prompt = RAG_PROMPT_TEMPLATE.split("{context}")[0].strip()
-# Remove {chat_history} and {input} from the system prompt since we'll add them back properly
-# We need to remove these to ensure the template only has 'context' and 'input' variables
-system_prompt = system_prompt.replace("{chat_history}", "").replace("{input}", "").strip()
-# Construct the document prompt template with only context and input variables
-# This template will be used by create_stuff_documents_chain which expects 'context' and 'input'
-# The 'context' variable will be filled with retrieved documents by create_stuff_documents_chain
-document_prompt_template = system_prompt + "\n\n{context}\n\nUser: {input}"
-rag_prompt = ChatPromptTemplate.from_template(document_prompt_template)
+# 3. RAG prompt for final answer generation with chat history support
+RAG_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", SYSTEM_INSTRUCTION),
+    ("system", "Context:\n{context}"),
+    MessagesPlaceholder("chat_history"),
+    ("human", "{input}"),
+])
 
 def format_docs(docs: List[Document]) -> str:
     """Helper function to format a list of documents into a single string."""
@@ -207,7 +189,13 @@ class RAGPipeline:
         self._setup_retrievers()
         
         # Create document combining chain for final answer generation
-        self.async_document_chain = create_stuff_documents_chain(self.llm, rag_prompt)
+        document_chain = create_stuff_documents_chain(self.llm, RAG_PROMPT)
+        
+        # Create full retrieval chain that passes chat_history to final generation
+        self.rag_chain = create_retrieval_chain(
+            self.history_aware_retriever,
+            document_chain
+        )
 
     def _load_published_docs_from_mongo(self) -> List[Document]:
         """Safely load all published documents from MongoDB with fallback."""
@@ -243,15 +231,15 @@ class RAGPipeline:
         if all_published_docs:
             self.bm25_retriever = BM25Retriever.from_documents(
                 all_published_docs,
-                k=12
+                k=RETRIEVER_K
             )
-            logger.info("BM25 retriever initialized")
+            logger.info(f"BM25 retriever initialized with k={RETRIEVER_K}")
         else:
             self.bm25_retriever = None
             logger.warning("BM25 retriever disabled: no published documents loaded")
 
         # 3. Semantic retriever with filter
-        search_kwargs = {"k": 12}
+        search_kwargs = {"k": RETRIEVER_K}
         if self.vector_store_manager.mongodb_available:
             # Note: FAISS doesn't support metadata filtering directly, but we filter after retrieval
             pass
@@ -305,7 +293,8 @@ class RAGPipeline:
 
     def _build_prompt_text(self, query_text: str, context_text: str) -> str:
         """Reconstruct the prompt text fed to the LLM for token accounting."""
-        return RAG_PROMPT_TEMPLATE.format(context=context_text, chat_history="", input=query_text)
+        # Build prompt text from the new RAG_PROMPT template structure
+        return f"{SYSTEM_INSTRUCTION}\n\nContext:\n{context_text}\n\nUser: {query_text}"
     
     def _build_prompt_text_with_history(
         self, query_text: str, context_text: str, chat_history: List[BaseMessage]
@@ -319,11 +308,8 @@ class RAGPipeline:
             elif isinstance(msg, AIMessage):
                 history_text += f"Assistant: {msg.content}\n"
         
-        return RAG_PROMPT_TEMPLATE.format(
-            context=context_text,
-            chat_history=history_text,
-            input=query_text
-        )
+        # Build prompt text from the new RAG_PROMPT template structure
+        return f"{SYSTEM_INSTRUCTION}\n\nContext:\n{context_text}\n\n{history_text}User: {query_text}"
 
     def _estimate_token_usage(self, prompt_text: str, answer_text: str) -> Tuple[int, int]:
         """
@@ -462,8 +448,12 @@ class RAGPipeline:
             # RECREATE ALL RETRIEVERS (this is the critical fix!)
             self._setup_retrievers()
             
-            # Rebuild the document chain (in case LLM changed, though unlikely)
-            self.async_document_chain = create_stuff_documents_chain(self.llm, rag_prompt)
+            # Rebuild the document chain and retrieval chain (in case LLM changed, though unlikely)
+            document_chain = create_stuff_documents_chain(self.llm, RAG_PROMPT)
+            self.rag_chain = create_retrieval_chain(
+                self.history_aware_retriever,
+                document_chain
+            )
             
             logger.info("Vector store and hybrid retrievers refreshed")
 
@@ -548,6 +538,7 @@ class RAGPipeline:
                     converted_chat_history.append(AIMessage(content=ai_msg))
 
             # === UNIFIED HYBRID + HISTORY-AWARE RETRIEVAL ===
+            # First, do a quick retrieval check to see if we have published sources
             retrieval_start = time.time()
             context_docs = await self.history_aware_retriever.ainvoke({
                 "input": query_text,
@@ -586,8 +577,8 @@ class RAGPipeline:
             # Pre-flight spend limit check (before LLM API call)
             if MONITORING_ENABLED:
                 try:
-                    # Estimate cost before making API call
-                    prompt_text = self._build_prompt_text(query_text, context_text)
+                    # Estimate cost before making API call (include chat history in estimation)
+                    prompt_text = self._build_prompt_text_with_history(query_text, context_text, converted_chat_history)
                     input_tokens_est, _ = self._estimate_token_usage(prompt_text, "")
                     # Use max expected output tokens for worst-case estimation (2048 tokens)
                     max_output_tokens = 2048
@@ -619,18 +610,29 @@ class RAGPipeline:
                     # Log error but allow request (graceful degradation)
                     logger.warning(f"Error in spend limit check: {e}", exc_info=True)
 
-            # Generate answer using document chain (expects List[Document])
+            # Generate answer using retrieval chain (includes retrieval + generation with chat_history)
             llm_start = time.time()
-            result = await self.async_document_chain.ainvoke({
-                "context": context_docs,  # List[Document], not string!
-                "input": query_text
+            result = await self.rag_chain.ainvoke({
+                "input": query_text,
+                "chat_history": converted_chat_history
             })
-            # Extract answer content (result is an AIMessage)
-            answer = result.content if hasattr(result, "content") else str(result)
+            # Extract answer and context from result
+            answer = result["answer"]
+            if hasattr(answer, "content"):
+                answer = answer.content
+            else:
+                answer = str(answer)
+            
+            # Get context documents from result (already retrieved by chain)
+            context_docs_from_chain = result.get("context", [])
             llm_duration = time.time() - llm_start
 
-            # Use retrieved docs as sources
-            sources = context_docs
+            # Filter published sources from chain result
+            published_sources = [
+                doc for doc in context_docs_from_chain
+                if doc.metadata.get("status") == "published"
+            ]
+            sources = published_sources
 
             # Initialize token usage variables (needed for metadata dict)
             input_tokens = 0
@@ -648,10 +650,11 @@ class RAGPipeline:
                 ).observe(total_duration)
                 
                 # Extract actual token usage from LLM response, fallback to estimation
-                input_tokens, output_tokens = self._extract_token_usage_from_llm_response(result)
+                answer_obj = result.get("answer")
+                input_tokens, output_tokens = self._extract_token_usage_from_llm_response(answer_obj)
                 if input_tokens == 0 and output_tokens == 0:
-                    # Fallback to estimation if metadata not available
-                    prompt_text = self._build_prompt_text(query_text, context_text)
+                    # Fallback to estimation if metadata not available (reuse pre-flight estimation if available)
+                    prompt_text = self._build_prompt_text_with_history(query_text, context_text, converted_chat_history)
                     input_tokens, output_tokens = self._estimate_token_usage(
                         prompt_text,
                         answer,
@@ -694,6 +697,9 @@ class RAGPipeline:
             }
 
             return answer, published_sources, metadata
+        except HTTPException as he:
+            # Re-raise HTTPExceptions (e.g., 429 for spend limits)
+            raise he
         except Exception as e:
             # Log full error details for debugging but don't expose to user
             logger.error(f"Error during async RAG query execution: {e}", exc_info=True)
@@ -878,6 +884,9 @@ class RAGPipeline:
                         }
                         yield {"type": "complete", "error": True}
                         return
+                except HTTPException:
+                    # Re-raise HTTPExceptions from spend limit check
+                    raise
                 except Exception as e:
                     # Log error but allow request (graceful degradation)
                     logger.warning(f"Error in spend limit check: {e}", exc_info=True)
@@ -885,20 +894,27 @@ class RAGPipeline:
             # 3. TRUE STREAMING GENERATION
             llm_start = time.time()
             full_answer_accumulator = ""
+            answer_obj = None  # Store answer object for metadata extraction
             
-            # Use async_document_chain.astream() directly for true streaming
-            # create_stuff_documents_chain expects 'context' to be a list of Document objects, not a formatted string
-            async for chunk in self.async_document_chain.astream({
-                "context": context_docs,  # Pass Document objects, not formatted string
-                "input": query_text
+            # Use rag_chain.astream() for true streaming with chat_history support
+            async for chunk in self.rag_chain.astream({
+                "input": query_text,
+                "chat_history": converted_chat_history
             }):
                 # Extract content from chunk
+                # rag_chain.astream() yields dicts with "answer" key containing AIMessageChunk
                 content = ""
-                if isinstance(chunk, str):
+                if isinstance(chunk, dict) and "answer" in chunk:
+                    answer_obj = chunk["answer"]
+                    if hasattr(answer_obj, "content"):
+                        content = answer_obj.content
+                    elif isinstance(answer_obj, str):
+                        content = answer_obj
+                elif isinstance(chunk, str):
                     content = chunk
-                elif isinstance(chunk, dict) and "answer" in chunk:
-                    content = chunk["answer"]
                 elif hasattr(chunk, "content"):
+                    # Direct AIMessageChunk
+                    answer_obj = chunk
                     content = chunk.content
                 
                 if content:
@@ -915,14 +931,32 @@ class RAGPipeline:
             estimated_cost = 0.0
             
             if MONITORING_ENABLED:
-                # Calculate metrics using accumulated answer
-                prompt_text = self._build_prompt_text_with_history(
-                    query_text, context_text, converted_chat_history
-                )
-                input_tokens, output_tokens = self._estimate_token_usage(
-                    prompt_text,
-                    full_answer_accumulator
-                )
+                # Extract actual token usage from answer object if available, otherwise estimate
+                if answer_obj:
+                    input_tokens, output_tokens = self._extract_token_usage_from_llm_response(answer_obj)
+                    if input_tokens == 0 and output_tokens == 0:
+                        # Fallback to estimation if metadata not available
+                        prompt_text = self._build_prompt_text_with_history(
+                            query_text, context_text, converted_chat_history
+                        )
+                        input_tokens, output_tokens = self._estimate_token_usage(
+                            prompt_text,
+                            full_answer_accumulator
+                        )
+                        logger.debug("Using estimated token counts (metadata not available)")
+                    else:
+                        logger.debug(f"Using actual token counts: input={input_tokens}, output={output_tokens}")
+                else:
+                    # Fallback to estimation if no answer object
+                    prompt_text = self._build_prompt_text_with_history(
+                        query_text, context_text, converted_chat_history
+                    )
+                    input_tokens, output_tokens = self._estimate_token_usage(
+                        prompt_text,
+                        full_answer_accumulator
+                    )
+                    logger.debug("Using estimated token counts (no answer object)")
+                
                 estimated_cost = estimate_gemini_cost(
                     input_tokens,
                     output_tokens,
@@ -969,6 +1003,9 @@ class RAGPipeline:
             # Signal completion
             yield {"type": "complete", "from_cache": False}
 
+        except HTTPException as he:
+            # Re-raise HTTPExceptions (e.g., 429 for spend limits)
+            raise he
         except Exception as e:
             # Log full error details for debugging but don't expose to user
             logger.error(f"Error during streaming RAG query execution: {e}", exc_info=True)
