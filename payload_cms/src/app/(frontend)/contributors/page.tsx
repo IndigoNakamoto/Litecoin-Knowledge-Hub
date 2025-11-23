@@ -16,7 +16,7 @@ export default function ContributorsPage() {
           <h2>Getting Started</h2>
           <p>
             Contributing to the Litecoin Knowledge Hub is a great way to share your knowledge and help 
-            the community grow. Whether you're an expert developer, educator, or enthusiast, your 
+            the community grow. Whether you&apos;re an expert developer, educator, or enthusiast, your 
             contributions are valuable.
           </p>
         </div>

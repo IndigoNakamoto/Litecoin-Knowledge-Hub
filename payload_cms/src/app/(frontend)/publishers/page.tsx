@@ -79,7 +79,7 @@ export default function PublishersPage() {
         </div>
 
         <div className="card" style={{ marginTop: '2rem' }}>
-          <h2>What We Don't Publish</h2>
+          <h2>What We Don&apos;t Publish</h2>
           <ul style={{ paddingLeft: '1.5rem', lineHeight: '2' }}>
             <li>Promotional or advertising content</li>
             <li>Misleading or inaccurate information</li>
