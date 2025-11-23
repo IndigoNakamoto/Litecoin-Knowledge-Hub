@@ -1,6 +1,9 @@
 #!/bin/sh
 set -e
 
+# Ensure .next directory exists FIRST before doing anything else
+mkdir -p /app/.next
+
 # Fix permissions for .next directory if it exists (from named volume)
 # Aggressively clean and fix permissions before Next.js starts
 if [ -d "/app/.next" ]; then
@@ -13,16 +16,24 @@ if [ -d "/app/.next" ]; then
     # This handles cases where files have restrictive permissions
     find /app/.next -type f ! -perm -u+w -delete 2>/dev/null || true
     find /app/.next -type d ! -perm -u+w -exec chmod u+w {} \; 2>/dev/null || true
-    
-    # Fix permissions on remaining files and directories
-    chmod -R 777 /app/.next 2>/dev/null || true
-    chown -R node:node /app/.next 2>/dev/null || true
 fi
 
 # Ensure .next directory exists with proper permissions
-mkdir -p /app/.next
+# Create all necessary subdirectories
+mkdir -p /app/.next/static
+mkdir -p /app/.next/cache
+mkdir -p /app/.next/server
+mkdir -p /app/.next/types
+mkdir -p /app/.next/cache/webpack
+
+# Set permissions - make sure node user can write
+# Do this recursively to ensure all subdirectories have correct permissions
 chmod -R 777 /app/.next 2>/dev/null || true
 chown -R node:node /app/.next 2>/dev/null || true
+
+# Double-check the base directory permissions
+chmod 777 /app/.next 2>/dev/null || true
+chown node:node /app/.next 2>/dev/null || true
 
 # Switch to node user and execute the command
 # Ensure PATH includes /usr/local/bin where pnpm is installed
