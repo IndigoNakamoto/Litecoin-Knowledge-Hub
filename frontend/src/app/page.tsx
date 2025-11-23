@@ -36,7 +36,6 @@ export default function Home() {
   const eventSourceRef = useRef<EventSource | null>(null);
   const chatWindowRef = useRef<ChatWindowRef>(null);
   const lastUserMessageIdRef = useRef<string | null>(null);
-  const challengeRefreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
   // Helper function to ensure we have a fresh challenge and fingerprint
   const ensureFreshFingerprint = async (): Promise<string | null> => {
@@ -60,8 +59,15 @@ export default function Home() {
           return fp;
         }
       } else if (response.status === 429) {
-        // Rate limited - don't proceed with request
-        throw new Error("Rate limited: Too many challenge requests. Please wait a moment and try again.");
+        // Rate limited - extract error message from response
+        try {
+          const errorData = await response.json();
+          const errorMessage = errorData?.detail?.message || "Rate limited: Too many challenge requests. Please wait a moment and try again.";
+          throw new Error(errorMessage);
+        } catch {
+          // If parsing fails, use default message
+          throw new Error("Rate limited: Too many challenge requests. Please wait a moment and try again.");
+        }
       } else {
         // Other error - fallback to fingerprint without challenge (backward compatibility)
         console.debug("Challenge fetch failed with status:", response.status);
@@ -99,25 +105,8 @@ export default function Home() {
             // Generate fingerprint with challenge
             const fp = await getFingerprintWithChallenge(challengeId);
             setFingerprint(fp);
-            
-            // Schedule challenge refresh every 4 minutes (before 5-min expiry)
-            challengeRefreshIntervalRef.current = setInterval(async () => {
-              try {
-                const refreshResponse = await fetch(`${backendUrl}/api/v1/auth/challenge`);
-                if (refreshResponse.ok) {
-                  const refreshData = await refreshResponse.json();
-                  const newChallengeId = refreshData.challenge;
-                  
-                  if (newChallengeId && newChallengeId !== "disabled") {
-                    const newFp = await getFingerprintWithChallenge(newChallengeId);
-                    setFingerprint(newFp);
-                  }
-                }
-              } catch (error) {
-                console.debug("Failed to refresh challenge:", error);
-                // Continue with existing challenge/fingerprint on error
-              }
-            }, 4 * 60 * 1000); // 4 minutes
+            // Note: No background refresh needed - challenges are fetched on-demand before each request
+            // via ensureFreshFingerprint() in handleSendMessage()
           } else {
             // Challenge disabled, generate fingerprint without challenge (backward compatibility)
             const fp = await getFingerprint();
@@ -137,13 +126,6 @@ export default function Home() {
     };
     
     fetchChallengeAndGenerateFingerprint();
-    
-    // Cleanup interval on unmount
-    return () => {
-      if (challengeRefreshIntervalRef.current) {
-        clearInterval(challengeRefreshIntervalRef.current);
-      }
-    };
   }, []);
 
   // Check usage status periodically
