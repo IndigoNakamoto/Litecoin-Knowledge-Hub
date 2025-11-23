@@ -7,6 +7,7 @@ import { handleServerFunctions, RootLayout } from '@payloadcms/next/layouts'
 import React from 'react'
 
 import { importMap } from './admin/importMap.js'
+import AdminLoginNavWrapper from '@/components/AdminLoginNavWrapper'
 import './custom.scss'
 
 type Args = {
@@ -23,9 +24,12 @@ const serverFunction: ServerFunctionClient = async function (args) {
 }
 
 const Layout = ({ children }: Args) => (
-  <RootLayout config={config} importMap={importMap} serverFunction={serverFunction}>
-    {children}
-  </RootLayout>
+  <>
+    <AdminLoginNavWrapper />
+    <RootLayout config={config} importMap={importMap} serverFunction={serverFunction}>
+      {children}
+    </RootLayout>
+  </>
 )
 
 export default Layout
