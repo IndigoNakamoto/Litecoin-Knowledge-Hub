@@ -49,6 +49,7 @@ services:
       # Development-specific overrides
       # Note: GOOGLE_API_KEY is loaded from ./backend/.env via env_file above
       - NODE_ENV=development
+      - ENVIRONMENT=development
       # Use Docker service name for Payload CMS (internal port 3000)
       # This allows backend to connect to Payload CMS inside Docker network
       - PAYLOAD_PUBLIC_SERVER_URL=http://payload_cms:3000
