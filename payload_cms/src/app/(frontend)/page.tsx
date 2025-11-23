@@ -1,11 +1,9 @@
 import { headers as getHeaders } from 'next/headers'
-import Image from 'next/image'
 import { getPayload } from 'payload'
 import React from 'react'
-import { fileURLToPath } from 'url'
+import Link from 'next/link'
 
 import config from '@/payload.config'
-import './styles.css'
 
 export default async function HomePage() {
   const headers = await getHeaders()
@@ -13,47 +11,76 @@ export default async function HomePage() {
   const payload = await getPayload({ config: payloadConfig })
   const { user } = await payload.auth({ headers })
 
-  const fileURL = `vscode://file/${fileURLToPath(import.meta.url)}`
-
   return (
-    <div className="home">
-      <div className="content">
-        <picture>
-          <source srcSet="https://raw.githubusercontent.com/payloadcms/payload/main/packages/ui/src/assets/payload-favicon.svg" />
-          <Image
-            alt="Payload Logo"
-            height={65}
-            src="https://raw.githubusercontent.com/payloadcms/payload/main/packages/ui/src/assets/payload-favicon.svg"
-            width={65}
-          />
-        </picture>
-        {!user && <h1>Welcome to your new project.</h1>}
-        {user && <h1>Welcome back, {user.email}</h1>}
-        <div className="links">
-          <a
-            className="admin"
-            href={payloadConfig.routes.admin}
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            Go to admin panel
-          </a>
-          <a
-            className="docs"
-            href="https://payloadcms.com/docs"
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            Documentation
-          </a>
+    <div className="container">
+      <div className="hero">
+        <h1>Litecoin Knowledge Hub</h1>
+        <p>
+          Welcome to the Litecoin Knowledge Hub CMS. Manage content, collaborate with contributors, 
+          and publish articles that help the Litecoin community learn and grow.
+        </p>
+        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <Link href="/admin" className="btn btn-primary">
+            Go to Admin Panel
+          </Link>
+          <Link href="/contributors" className="btn btn-outline">
+            For Contributors
+          </Link>
         </div>
       </div>
-      <div className="footer">
-        <p>Update this page by editing</p>
-        <a className="codeLink" href={fileURL}>
-          <code>app/(frontend)/page.tsx</code>
-        </a>
+
+      <div className="section">
+        <div className="grid grid-3">
+          <div className="card">
+            <h3>For Contributors</h3>
+            <p>
+              Learn how to contribute articles, documentation, and knowledge to the Litecoin Knowledge Hub. 
+              Share your expertise with the community.
+            </p>
+            <Link href="/contributors" className="btn btn-secondary" style={{ marginTop: '1rem' }}>
+              Learn More →
+            </Link>
+          </div>
+
+          <div className="card">
+            <h3>For Publishers</h3>
+            <p>
+              Guidelines and resources for publishers looking to share content through the Knowledge Hub. 
+              Understand our publishing process and standards.
+            </p>
+            <Link href="/publishers" className="btn btn-secondary" style={{ marginTop: '1rem' }}>
+              Learn More →
+            </Link>
+          </div>
+
+          <div className="card">
+            <h3>Tips & Best Practices</h3>
+            <p>
+              Discover tips, best practices, and guidelines for creating high-quality content that 
+              benefits the Litecoin community.
+            </p>
+            <Link href="/tips" className="btn btn-secondary" style={{ marginTop: '1rem' }}>
+              Learn More →
+            </Link>
+          </div>
+        </div>
       </div>
+
+      {user && (
+        <div className="section">
+          <div className="card" style={{ textAlign: 'center' }}>
+            <h3>Welcome back, {user.email}!</h3>
+            <p>You&apos;re logged in and ready to manage content.</p>
+            <Link href="/admin" className="btn btn-primary" style={{ marginTop: '1rem' }}>
+              Open Admin Panel
+            </Link>
+          </div>
+        </div>
+      )}
+
+      <footer className="footer">
+        <p>Litecoin Knowledge Hub CMS - Powered by the Litecoin Foundation</p>
+      </footer>
     </div>
   )
 }
