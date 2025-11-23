@@ -48,8 +48,8 @@ export default buildConfig({
     },
     components: {
       graphics: {
-        Logo,
-        Icon,
+        Logo: Logo as any,
+        Icon: Icon as any,
       },
     },
   },
