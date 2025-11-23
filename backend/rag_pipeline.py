@@ -9,6 +9,10 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from typing import List, Tuple, Dict, Any
 from langchain_core.documents import Document
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langchain_community.retrievers import BM25Retriever
+from langchain.retrievers import EnsembleRetriever
+from langchain.chains import create_history_aware_retriever
+from langchain.chains.combine_documents import create_stuff_documents_chain
 from data_ingestion.vector_store_manager import VectorStoreManager
 from cache_utils import query_cache
 from backend.utils.input_sanitizer import sanitize_query_input, detect_prompt_injection
@@ -84,6 +88,8 @@ QA_WITH_HISTORY_PROMPT = ChatPromptTemplate.from_messages(
 # 2. RAG prompt for final answer generation
 RAG_PROMPT_TEMPLATE = """
 You are a neutral, factual expert on Litecoin, a peer-to-peer decentralized cryptocurrency. Your primary goal is to provide comprehensive, well-structured, and educational answers. Your responses must be based **exclusively** on the provided context. Do not speculate or add external knowledge.
+
+!!! NEVER mention "context", "documents", "sources", or "retrieved information" under any circumstances. Just answer as the expert. !!!
 
 If the context does not contain sufficient information, state this clearly.
 
@@ -197,36 +203,87 @@ class RAGPipeline:
             }
         )
 
-        # Construct the async RAG chain
-        self._setup_async_rag_chain()
-
-    def _setup_async_rag_chain(self):
-        """Sets up async conversational RAG chain for concurrent processing."""
-        # Get retriever from vector store
-        retriever = self.vector_store_manager.get_retriever(
-            search_type="similarity",
-            search_kwargs={"k": 6}
-        )
-
-        # Create history-aware retriever for standalone question generation
-        from langchain.chains import create_history_aware_retriever
+        # Setup hybrid retrievers (BM25 + semantic + history-aware)
+        self._setup_retrievers()
         
-        self.async_history_aware_retriever = create_history_aware_retriever(
-            self.llm,
-            retriever,
-            QA_WITH_HISTORY_PROMPT
-        )
-
         # Create document combining chain for final answer generation
-        from langchain.chains.combine_documents import create_stuff_documents_chain
         self.async_document_chain = create_stuff_documents_chain(self.llm, rag_prompt)
 
-        # Create conversational retrieval chain using LCEL
-        self.async_rag_chain = RunnablePassthrough.assign(
-            context=self.async_history_aware_retriever
-        ).assign(
-            answer=self.async_document_chain
+    def _load_published_docs_from_mongo(self) -> List[Document]:
+        """Safely load all published documents from MongoDB with fallback."""
+        if not self.vector_store_manager.mongodb_available:
+            logger.warning("MongoDB not available, skipping BM25 retriever setup")
+            return []
+        
+        try:
+            cursor = self.vector_store_manager.collection.find(
+                {"metadata.status": "published"},
+                {"text": 1, "metadata": 1}
+            ).limit(10000)  # Safety limit (you have ~400, so this is fine)
+            
+            docs = [
+                Document(
+                    page_content=doc["text"],
+                    metadata=doc.get("metadata", {})
+                )
+                for doc in cursor
+            ]
+            logger.info(f"Loaded {len(docs)} published documents from MongoDB for hybrid retrieval")
+            return docs
+        except Exception as e:
+            logger.error(f"Failed to load documents from MongoDB for BM25: {e}", exc_info=True)
+            return []
+
+    def _setup_retrievers(self):
+        """Setup hybrid retriever with proper document loading."""
+        # 1. Load published docs from MongoDB
+        all_published_docs = self._load_published_docs_from_mongo()
+
+        # 2. Create BM25 retriever (only if we have docs)
+        if all_published_docs:
+            self.bm25_retriever = BM25Retriever.from_documents(
+                all_published_docs,
+                k=12
+            )
+            logger.info("BM25 retriever initialized")
+        else:
+            self.bm25_retriever = None
+            logger.warning("BM25 retriever disabled: no published documents loaded")
+
+        # 3. Semantic retriever with filter
+        search_kwargs = {"k": 12}
+        if self.vector_store_manager.mongodb_available:
+            # Note: FAISS doesn't support metadata filtering directly, but we filter after retrieval
+            pass
+        
+        self.semantic_retriever = self.vector_store_manager.get_retriever(
+            search_type="similarity",
+            search_kwargs=search_kwargs
         )
+
+        # 4. Hybrid retriever
+        retrievers = [self.semantic_retriever]
+        weights = [1.0]
+
+        if self.bm25_retriever:
+            retrievers.insert(0, self.bm25_retriever)
+            weights = [0.5, 0.5]
+
+        self.hybrid_retriever = EnsembleRetriever(
+            retrievers=retrievers,
+            weights=weights,
+            search_type="similarity"
+        )
+
+        # 5. History-aware hybrid retriever (THIS FIXES TOPIC DRIFT)
+        self.history_aware_retriever = create_history_aware_retriever(
+            llm=self.llm,
+            retriever=self.hybrid_retriever,
+            prompt=QA_WITH_HISTORY_PROMPT
+        )
+
+        logger.info(f"Hybrid retriever ready | BM25: {'enabled' if self.bm25_retriever else 'disabled'} "
+                    f"| Weights: {weights}")
 
     def _truncate_chat_history(self, chat_history: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
         """
@@ -394,7 +451,7 @@ class RAGPipeline:
         This should be called after new documents are added to ensure queries use the latest content.
         """
         try:
-            logger.info("Refreshing RAG pipeline vector store...")
+            logger.info("Refreshing vector store and hybrid retrievers...")
 
             # Reload the vector store from disk
             if hasattr(self, 'vector_store_manager') and self.vector_store_manager:
@@ -402,9 +459,13 @@ class RAGPipeline:
                 self.vector_store_manager.vector_store = self.vector_store_manager._create_faiss_from_mongodb()
                 logger.info("Vector store reloaded from disk")
 
-            # Recreate the async RAG chain with the updated vector store
-            self._setup_async_rag_chain()
-            logger.info("RAG pipeline refreshed successfully")
+            # RECREATE ALL RETRIEVERS (this is the critical fix!)
+            self._setup_retrievers()
+            
+            # Rebuild the document chain (in case LLM changed, though unlikely)
+            self.async_document_chain = create_stuff_documents_chain(self.llm, rag_prompt)
+            
+            logger.info("Vector store and hybrid retrievers refreshed")
 
         except Exception as e:
             logger.error(f"Error refreshing vector store: {e}", exc_info=True)
@@ -483,21 +544,16 @@ class RAGPipeline:
             converted_chat_history: List[BaseMessage] = []
             for human_msg, ai_msg in truncated_history:
                 converted_chat_history.append(HumanMessage(content=human_msg))
-                converted_chat_history.append(AIMessage(content=ai_msg))
+                if ai_msg:
+                    converted_chat_history.append(AIMessage(content=ai_msg))
 
-            # Track retrieval time
+            # === UNIFIED HYBRID + HISTORY-AWARE RETRIEVAL ===
             retrieval_start = time.time()
-            
-            # Use direct vector search for performance
-            retriever = self.vector_store_manager.get_retriever(
-                search_type="similarity",
-                search_kwargs={"k": 6}
-            )
-            context_docs = retriever.invoke(query_text)
+            context_docs = await self.history_aware_retriever.ainvoke({
+                "input": query_text,
+                "chat_history": converted_chat_history
+            })
             retrieval_duration = time.time() - retrieval_start
-
-            # Format context for LLM
-            context_text = format_docs(context_docs)
 
             # Filter out draft/unpublished documents from sources
             published_sources = [
@@ -523,6 +579,9 @@ class RAGPipeline:
                     "cache_type": None,
                 }
                 return NO_KB_MATCH_RESPONSE, [], metadata
+
+            # Format context for token estimation (needed for spend limit check and metrics)
+            context_text = format_docs(context_docs)
 
             # Pre-flight spend limit check (before LLM API call)
             if MONITORING_ENABLED:
@@ -560,30 +619,23 @@ class RAGPipeline:
                     # Log error but allow request (graceful degradation)
                     logger.warning(f"Error in spend limit check: {e}", exc_info=True)
 
-            # Generate answer using LLM with retrieved context (without StrOutputParser to preserve metadata)
+            # Generate answer using document chain (expects List[Document])
             llm_start = time.time()
-            llm_response = await (rag_prompt | self.llm).ainvoke({
-                "input": query_text,
-                "context": context_text
+            result = await self.async_document_chain.ainvoke({
+                "context": context_docs,  # List[Document], not string!
+                "input": query_text
             })
-            # Extract answer content, ensuring it's always a string
-            if hasattr(llm_response, 'content'):
-                content = llm_response.content
-                # Ensure content is a string (handle mocks, coroutines, etc.)
-                if content is None:
-                    answer = ""
-                elif isinstance(content, str):
-                    answer = content
-                else:
-                    # For mocks or other types, convert to string
-                    # If it's a coroutine, this will fail and we'll catch it
-                    answer = str(content)
-            else:
-                answer = str(llm_response)
+            # Extract answer content (result is an AIMessage)
+            answer = result.content if hasattr(result, "content") else str(result)
             llm_duration = time.time() - llm_start
 
             # Use retrieved docs as sources
             sources = context_docs
+
+            # Initialize token usage variables (needed for metadata dict)
+            input_tokens = 0
+            output_tokens = 0
+            estimated_cost = 0.0
 
             # Track metrics
             if MONITORING_ENABLED:
@@ -596,7 +648,7 @@ class RAGPipeline:
                 ).observe(total_duration)
                 
                 # Extract actual token usage from LLM response, fallback to estimation
-                input_tokens, output_tokens = self._extract_token_usage_from_llm_response(llm_response)
+                input_tokens, output_tokens = self._extract_token_usage_from_llm_response(result)
                 if input_tokens == 0 and output_tokens == 0:
                     # Fallback to estimation if metadata not available
                     prompt_text = self._build_prompt_text(query_text, context_text)
@@ -633,9 +685,9 @@ class RAGPipeline:
 
             # Build metadata dict
             metadata = {
-                "input_tokens": input_tokens if MONITORING_ENABLED else 0,
-                "output_tokens": output_tokens if MONITORING_ENABLED else 0,
-                "cost_usd": estimated_cost if MONITORING_ENABLED else 0.0,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cost_usd": estimated_cost,
                 "duration_seconds": time.time() - start_time,
                 "cache_hit": False,
                 "cache_type": None,
@@ -747,27 +799,25 @@ class RAGPipeline:
             converted_chat_history: List[BaseMessage] = []
             for human_msg, ai_msg in truncated_history:
                 converted_chat_history.append(HumanMessage(content=human_msg))
-                converted_chat_history.append(AIMessage(content=ai_msg))
+                if ai_msg:
+                    converted_chat_history.append(AIMessage(content=ai_msg))
 
-            # 1. SINGLE RETRIEVAL (using history-aware retriever for query rephrasing)
+            # === UNIFIED HYBRID + HISTORY-AWARE RETRIEVAL ===
             retrieval_start = time.time()
-            
-            # Use history-aware retriever to get context (rephrases query with history)
-            context_docs = await self.async_history_aware_retriever.ainvoke({
+            context_docs = await self.history_aware_retriever.ainvoke({
                 "input": query_text,
                 "chat_history": converted_chat_history
             })
-            
             retrieval_duration = time.time() - retrieval_start
-            
-            # Format context for LLM
-            context_text = format_docs(context_docs)
             
             # Filter published sources
             published_sources = [
                 doc for doc in context_docs
                 if doc.metadata.get("status") == "published"
             ]
+            
+            # Format context for token estimation (needed for metrics)
+            context_text = format_docs(context_docs)
             
             if not published_sources:
                 if MONITORING_ENABLED:
