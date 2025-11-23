@@ -24,8 +24,17 @@ is_dev = os.getenv("ENVIRONMENT", "production").lower() == "development" or os.g
 if is_dev:
     MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER = int(os.getenv("MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER", "100"))
 else:
-    MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER = int(os.getenv("MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER", "3"))
+    # Increased from 4 to 15 to accommodate normal usage patterns (page loads + multiple messages)
+    MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER = int(os.getenv("MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER", "15"))
 ENABLE_CHALLENGE_RESPONSE = os.getenv("ENABLE_CHALLENGE_RESPONSE", "true").lower() == "true"
+
+# Rate limit on challenge requests (seconds between requests)
+# Prevents rapid accumulation of challenges
+CHALLENGE_REQUEST_RATE_LIMIT_SECONDS = int(os.getenv("CHALLENGE_REQUEST_RATE_LIMIT_SECONDS", "3"))  # 3 seconds default
+
+# Progressive ban durations (in seconds)
+# 1st violation: 1 minute, 2nd violation: 5 minutes
+CHALLENGE_BAN_DURATIONS = [60, 300]  # 1min, 5min
 
 
 async def generate_challenge(identifier: str) -> Dict[str, Any]:
@@ -58,19 +67,106 @@ async def generate_challenge(identifier: str) -> Dict[str, Any]:
     # Use sorted set with expiry timestamp as score
     await redis.zremrangebyscore(active_challenges_key, 0, now - CHALLENGE_TTL_SECONDS)
     
+    # Rate limit: Check if identifier has requested a challenge too recently
+    rate_limit_key = f"challenge:ratelimit:{identifier}"
+    last_request_time = await redis.get(rate_limit_key)
+    if last_request_time:
+        last_request_int = int(last_request_time)
+        time_since_last = now - last_request_int
+        if time_since_last < CHALLENGE_REQUEST_RATE_LIMIT_SECONDS:
+            retry_after = CHALLENGE_REQUEST_RATE_LIMIT_SECONDS - time_since_last
+            logger.debug(
+                f"Challenge request rate limited for identifier {identifier}: "
+                f"last_request={last_request_int}, time_since={time_since_last}s, "
+                f"limit={CHALLENGE_REQUEST_RATE_LIMIT_SECONDS}s, retry_after={retry_after}s"
+            )
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "rate_limited",
+                    "message": f"Please wait {retry_after} seconds before requesting another challenge.",
+                    "retry_after_seconds": retry_after
+                }
+            )
+    
+    # Update rate limit timestamp
+    await redis.setex(rate_limit_key, CHALLENGE_REQUEST_RATE_LIMIT_SECONDS + 1, now)
+    
+    # Check if identifier is currently banned
+    ban_key = f"challenge:ban:{identifier}"
+    ban_expiry = await redis.get(ban_key)
+    if ban_expiry:
+        ban_expiry_int = int(ban_expiry)
+        if ban_expiry_int > now:
+            retry_after = ban_expiry_int - now
+            violation_count_key = f"challenge:violations:{identifier}"
+            violation_count = await redis.get(violation_count_key)
+            violation_count = int(violation_count) if violation_count else 1
+            
+            logger.warning(
+                f"Challenge generation blocked: identifier {identifier} is banned. "
+                f"Violation count: {violation_count}, Ban expires in {retry_after}s"
+            )
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "too_many_challenges",
+                    "message": f"Too many active security challenges. Please wait {retry_after} seconds before trying again.",
+                    "retry_after_seconds": retry_after,
+                    "ban_expires_at": ban_expiry_int,
+                    "violation_count": violation_count
+                }
+            )
+        else:
+            # Ban expired, clean it up
+            await redis.delete(ban_key)
+    
     # Check current active challenge count
     current_active_count = await redis.zcard(active_challenges_key)
     if current_active_count >= MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER:
+        # Get violation count and increment
+        violation_count_key = f"challenge:violations:{identifier}"
+        violation_count = await redis.incr(violation_count_key)
+        await redis.expire(violation_count_key, 3600)  # Keep violation count for 1 hour
+        
+        # Determine ban duration based on violation count (progressive)
+        ban_index = min(violation_count - 1, len(CHALLENGE_BAN_DURATIONS) - 1)
+        ban_duration = CHALLENGE_BAN_DURATIONS[ban_index]
+        ban_expiry = now + ban_duration
+        
+        # Apply ban
+        await redis.setex(ban_key, ban_duration, ban_expiry)
+        
         logger.warning(
-            f"Too many active challenges for identifier {identifier}: {current_active_count}"
+            f"Too many active challenges for identifier {identifier}: "
+            f"active_count={current_active_count}, limit={MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER}, "
+            f"violation_count={violation_count}, ban_duration={ban_duration}s, "
+            f"ban_expires_at={ban_expiry}"
         )
+        
         raise HTTPException(
             status_code=429,
             detail={
                 "error": "too_many_challenges",
-                "message": "Too many active security challenges. Please wait a moment and try again."
+                "message": f"Too many active security challenges. You have been temporarily banned for {ban_duration} seconds. Please wait before trying again.",
+                "retry_after_seconds": ban_duration,
+                "ban_expires_at": ban_expiry,
+                "violation_count": violation_count
             }
         )
+    
+    # Reset violation count on successful challenge generation (reward good behavior)
+    # Only reset if there was a previous ban that has expired
+    violation_count_key = f"challenge:violations:{identifier}"
+    existing_violations = await redis.get(violation_count_key)
+    if existing_violations:
+        # Check if ban has expired (if no active ban, reset violations after successful generation)
+        ban_key = f"challenge:ban:{identifier}"
+        active_ban = await redis.get(ban_key)
+        if not active_ban:
+            # No active ban, reset violation count to reward good behavior
+            await redis.delete(violation_count_key)
+            logger.debug(f"Reset violation count for identifier {identifier} after successful challenge generation")
     
     # Generate unique challenge ID (64 hex chars = 32 bytes)
     challenge_id = secrets.token_hex(32)

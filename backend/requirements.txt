@@ -1,6 +1,7 @@
 fastapi
 uvicorn
 pymongo
+motor
 langchain==0.3.25
 langchain-core==0.3.65
 langchain-community==0.3.25
