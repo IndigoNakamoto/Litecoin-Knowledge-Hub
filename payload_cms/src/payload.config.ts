@@ -12,6 +12,8 @@ import { Media } from './collections/Media'
 import { Article } from './collections/Article'
 import { Category } from './collections/Category'
 import { SuggestedQuestions } from './collections/SuggestedQuestions'
+import Logo from './components/admin/Logo'
+import Icon from './components/admin/Icon'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -43,6 +45,12 @@ export default buildConfig({
     autoLogin: false, // Disable auto-login for security
     importMap: {
       baseDir: path.resolve(dirname),
+    },
+    components: {
+      graphics: {
+        Logo,
+        Icon,
+      },
     },
   },
   collections: [Users, Media, Article, Category, SuggestedQuestions],
