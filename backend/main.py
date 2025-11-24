@@ -28,6 +28,10 @@ from backend.data_models import ChatRequest, ChatMessage, UserQuestion, LLMReque
 from backend.api.v1.sync.payload import router as payload_sync_router
 from backend.api.v1.admin.usage import router as admin_router
 from backend.api.v1.admin.llm_logs import router as admin_logs_router
+from backend.api.v1.admin.auth import router as admin_auth_router
+from backend.api.v1.admin.redis import router as admin_redis_router
+from backend.api.v1.admin.settings import router as admin_settings_router
+from backend.api.v1.admin.cache import router as admin_cache_router
 from backend.dependencies import get_user_questions_collection, get_llm_request_logs_collection
 from bson import ObjectId
 from fastapi.encoders import jsonable_encoder # Import jsonable_encoder
@@ -51,7 +55,7 @@ from backend.middleware.security_headers import SecurityHeadersMiddleware
 from backend.monitoring.metrics import user_questions_total
 from backend.monitoring.llm_observability import setup_langsmith
 from backend.rate_limiter import RateLimitConfig, check_rate_limit
-from backend.utils.challenge import generate_challenge, validate_and_consume_challenge, ENABLE_CHALLENGE_RESPONSE
+from backend.utils.challenge import generate_challenge, validate_and_consume_challenge
 from backend.utils.turnstile import verify_turnstile_token, is_turnstile_enabled
 from backend.utils.cost_throttling import check_cost_based_throttling
 
@@ -463,16 +467,33 @@ app.json_encoders = {
 
 # CORS configuration - supports both development and production
 # Default origins include localhost for development and production domains
-default_origins = "http://localhost:3000,https://chat.lite.space,https://www.chat.lite.space"
-cors_origins_env = os.getenv("CORS_ORIGINS", default_origins)
+# Admin frontend runs locally, so add localhost ports via CORS_ORIGINS or ADMIN_FRONTEND_URL when needed
+default_origins = "http://localhost:3000,https://chat.lite.space,https://www.chat.lite.space,http://localhost:3003,http://127.0.0.1:3003"
+cors_origins_env = os.getenv("CORS_ORIGINS", "").strip()
+# If CORS_ORIGINS is empty or not set, use defaults
+if not cors_origins_env:
+    cors_origins_env = default_origins
 origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+
+# Add admin frontend URL if specified (allows admin frontend to run on any localhost port)
+admin_frontend_url = os.getenv("ADMIN_FRONTEND_URL", "").strip()
+if admin_frontend_url and admin_frontend_url not in origins:
+    origins.append(admin_frontend_url)
+    logger.info(f"Added admin frontend URL to CORS origins: {admin_frontend_url}")
+
+# Always add localhost:3003 for admin frontend (runs locally even in production)
+# This ensures admin frontend can access the backend regardless of environment
+if "http://localhost:3003" not in origins:
+    origins.append("http://localhost:3003")
+if "http://127.0.0.1:3003" not in origins:
+    origins.append("http://127.0.0.1:3003")
 
 # In development, allow all methods and headers for easier debugging
 # Note: Can't use ["*"] with allow_credentials=True, so we allow common localhost ports
 is_dev = os.getenv("ENVIRONMENT", "production").lower() == "development" or os.getenv("DEBUG", "false").lower() == "true"
 if is_dev:
-    # Add common localhost ports in development
-    dev_origins = ["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001"]
+    # Add common localhost ports in development (including admin frontend on 3002 and 3003)
+    dev_origins = ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003", "http://127.0.0.1:3000", "http://127.0.0.1:3001", "http://127.0.0.1:3002", "http://127.0.0.1:3003"]
     origins = list(set(origins + dev_origins))  # Combine and deduplicate
 
 # Add monitoring middleware (before CORS to capture all requests)
@@ -558,6 +579,10 @@ except (ImportError, AttributeError) as e:
 app.include_router(payload_sync_router, prefix="/api/v1/sync", tags=["Payload Sync"])
 app.include_router(admin_router, prefix="/api/v1/admin", tags=["Admin"])
 app.include_router(admin_logs_router, prefix="/api/v1/admin", tags=["Admin"])
+app.include_router(admin_auth_router, prefix="/api/v1/admin/auth", tags=["Admin"])
+app.include_router(admin_redis_router, prefix="/api/v1/admin/redis", tags=["Admin"])
+app.include_router(admin_settings_router, prefix="/api/v1/admin/settings", tags=["Admin"])
+app.include_router(admin_cache_router, prefix="/api/v1/admin/cache", tags=["Admin"])
 
 # Import cache utilities and suggested questions utility
 from backend.cache_utils import suggested_question_cache
@@ -910,6 +935,14 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
     await check_rate_limit(http_request, STREAM_RATE_LIMIT)
     
     # Challenge-response fingerprinting validation
+    # Read enable_challenge_response setting dynamically
+    from backend.utils.settings_reader import get_setting_from_redis_or_env
+    from backend.redis_client import get_redis_client
+    redis = await get_redis_client()
+    enable_challenge_response = await get_setting_from_redis_or_env(
+        redis, "enable_challenge_response", "ENABLE_CHALLENGE_RESPONSE", True, bool
+    )
+    
     fingerprint = http_request.headers.get("X-Fingerprint")
     if fingerprint:
         challenge_id, fingerprint_hash = _extract_challenge_from_fingerprint(fingerprint)
@@ -918,7 +951,7 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
             # Use IP as identifier since challenge was issued to IP
             identifier = _get_identifier_from_request(http_request)
             await validate_and_consume_challenge(challenge_id, identifier)
-        elif ENABLE_CHALLENGE_RESPONSE:
+        elif enable_challenge_response:
             # Challenge required but not provided - reject request
             logger.warning(f"Request missing challenge in fingerprint (challenge-response enabled). Fingerprint format: {fingerprint[:50]}...")
             raise HTTPException(
@@ -929,7 +962,7 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
                 }
             )
         # If challenge-response disabled, allow requests without challenges (backward compatibility)
-    elif ENABLE_CHALLENGE_RESPONSE:
+    elif enable_challenge_response:
         # No fingerprint header at all - reject request
         logger.warning("Request missing X-Fingerprint header (challenge-response enabled)")
         raise HTTPException(
