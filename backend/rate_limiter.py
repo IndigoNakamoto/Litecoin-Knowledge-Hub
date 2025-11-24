@@ -327,8 +327,5 @@ async def check_rate_limit(request: Request, config: RateLimitConfig) -> None:
       detail=detail,
       headers=headers,
     )
-  
-  # Check global rate limits AFTER individual limits
-  await check_global_rate_limit(redis, now)
 
 
