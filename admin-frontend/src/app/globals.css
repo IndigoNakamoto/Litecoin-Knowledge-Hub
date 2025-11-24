@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@theme {
+  /* Background colors */
+  --color-background: #f8f9fa;
+  --color-foreground: #1a1a1a;
+  
+  /* Card colors - white background with dark text */
+  --color-card: #ffffff;
+  --color-card-foreground: #1a1a1a;
+  
+  /* Muted colors - darker for better contrast */
+  --color-muted: #f1f3f5;
+  --color-muted-foreground: #495057;
+  
+  /* Border colors */
+  --color-border: #dee2e6;
+  --color-input: #dee2e6;
+  --color-ring: #0066cc;
+  
+  /* Primary colors for buttons */
+  --color-primary: #0066cc;
+  --color-primary-foreground: #ffffff;
+  
+  /* Secondary colors */
+  --color-secondary: #e9ecef;
+  --color-secondary-foreground: #1a1a1a;
+  
+  /* Destructive colors */
+  --color-destructive: #dc3545;
+  --color-destructive-foreground: #ffffff;
+  
+  /* Accent colors */
+  --color-accent: #e9ecef;
+  --color-accent-foreground: #1a1a1a;
+  
+  /* Fonts */
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+  :root {
+  --background: var(--color-background);
+  --foreground: var(--color-foreground);
+  --card: var(--color-card);
+  --card-foreground: var(--color-card-foreground);
+  --muted: var(--color-muted);
+  --muted-foreground: var(--color-muted-foreground);
+  --border: var(--color-border);
+  --input: var(--color-input);
+  --ring: var(--color-ring);
+  --primary: var(--color-primary);
+  --primary-foreground: var(--color-primary-foreground);
+  --secondary: var(--color-secondary);
+  --secondary-foreground: var(--color-secondary-foreground);
+  --destructive: var(--color-destructive);
+  --destructive-foreground: var(--color-destructive-foreground);
+  --accent: var(--color-accent);
+  --accent-foreground: var(--color-accent-foreground);
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}

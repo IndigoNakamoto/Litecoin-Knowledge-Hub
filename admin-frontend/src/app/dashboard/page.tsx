@@ -1,0 +1,43 @@
+"use client";
+
+import { AuthGuard } from "@/components/AuthGuard";
+import { Dashboard } from "@/components/Dashboard";
+import { BansThrottles } from "@/components/BansThrottles";
+import { AbusePreventionSettings } from "@/components/AbusePreventionSettings";
+import { SuggestedQuestionsCache } from "@/components/SuggestedQuestionsCache";
+import { Button } from "@/components/ui/button";
+import { authApi } from "@/lib/api";
+import { useRouter } from "next/navigation";
+import { LogOut } from "lucide-react";
+
+export default function DashboardPage() {
+  const router = useRouter();
+
+  const handleLogout = () => {
+    authApi.logout();
+    router.push("/");
+  };
+
+  return (
+    <AuthGuard>
+      <div className="min-h-screen bg-background">
+        <header className="bg-card border-b border-border shadow-sm">
+          <div className="container mx-auto px-4 py-4 flex justify-between items-center">
+            <h1 className="text-2xl font-bold text-card-foreground">Admin Panel</h1>
+            <Button variant="outline" onClick={handleLogout}>
+              <LogOut className="h-4 w-4 mr-2" />
+              Logout
+            </Button>
+          </div>
+        </header>
+        <main className="container mx-auto px-4 py-8 space-y-8">
+          <Dashboard />
+          <BansThrottles />
+          <AbusePreventionSettings />
+          <SuggestedQuestionsCache />
+        </main>
+      </div>
+    </AuthGuard>
+  );
+}
+
