@@ -32,8 +32,9 @@ These variables differ based on the environment (localhost vs Docker service nam
 | `BACKEND_URL` | `http://localhost:8000` | `http://litecoin-backend:8000` | `http://litecoin-backend:8000` | Backend API URL (internal) |
 | `PAYLOAD_PUBLIC_SERVER_URL` | `http://localhost:3001` | `http://localhost:3001` | `https://cms.lite.space` | Payload CMS public URL |
 | `FRONTEND_URL` | `http://localhost:3000` | `http://localhost:3000` | `https://chat.lite.space` | Frontend URL (for CORS/CSRF) |
-| `NEXT_PUBLIC_BACKEND_URL` | `http://localhost:8000` | `http://localhost:8000` | `https://api.lite.space` | Backend URL exposed to browser |
+| `NEXT_PUBLIC_BACKEND_URL` | `http://localhost:8000` | `http://localhost:8000` | `https://api.lite.space` | Backend URL exposed to browser (used by frontend and admin frontend) |
 | `NEXT_PUBLIC_PAYLOAD_URL` | `http://localhost:3001` | `http://localhost:3001` | `https://cms.lite.space` | Payload URL exposed to browser |
+| `ADMIN_FRONTEND_URL` | `http://localhost:3003` | `http://localhost:3003` | `http://localhost:3003` (local) | Admin frontend URL - runs locally. Backend automatically adds this to CORS origins. Can also be added to CORS_ORIGINS if needed. |
 
 **Where to set:** Root-level `.env.*` files
 
@@ -106,7 +107,7 @@ These variables are usually the same across environments but can be overridden.
 | `MONGO_DATABASE_NAME` | `litecoin_rag_db` | MongoDB database name (alias) |
 | `CMS_ARTICLES_COLLECTION_NAME` | `cms_articles` | CMS articles collection name |
 | `EMBEDDING_MODEL` | `text-embedding-004` | Embedding model name |
-| `CORS_ORIGINS` | Varies by env | CORS allowed origins (comma-separated) |
+| `CORS_ORIGINS` | `http://localhost:3000,https://chat.lite.space,https://www.chat.lite.space` | CORS allowed origins (comma-separated). Default includes frontend URLs. In development, common localhost ports (3000-3003) are automatically added. The backend also automatically adds `ADMIN_FRONTEND_URL` to CORS origins if set. When running admin frontend locally against production backend, either set `ADMIN_FRONTEND_URL` or add the admin frontend URL to this variable. |
 | `RATE_LIMIT_PER_MINUTE` | `20` | Rate limit per minute |
 | `RATE_LIMIT_PER_HOUR` | `300` | Rate limit per hour |
 | `PAYLOAD_URL` | `https://cms.lite.space` | Payload CMS URL for fetching suggested questions |
@@ -240,6 +241,7 @@ These variables are usually the same across environments but can be overridden.
    - `FRONTEND_URL=https://chat.lite.space`
    - `NEXT_PUBLIC_BACKEND_URL=https://api.lite.space`
    - `NEXT_PUBLIC_PAYLOAD_URL=https://cms.lite.space`
+   - `CORS_ORIGINS=https://chat.lite.space,https://www.chat.lite.space` (or set `ADMIN_FRONTEND_URL=http://localhost:3003` to automatically add admin frontend to CORS)
 
 4. Update connection strings in `.env.docker.prod` with authentication:
    - `MONGO_URI=mongodb://litecoin_app:${MONGO_APP_PASSWORD}@mongodb:27017/litecoin_rag_db?authSource=litecoin_rag_db`

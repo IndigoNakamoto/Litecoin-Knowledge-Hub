@@ -95,10 +95,10 @@ echo "   NEXT_PUBLIC_PAYLOAD_URL=$PROD_PAYLOAD_URL"
 echo ""
 echo "🔨 Building all services with --no-cache (clean rebuild)..."
 echo "   This ensures all dependencies are freshly installed and"
-echo "   NEXT_PUBLIC_* variables are correctly baked into the frontend build."
+echo "   NEXT_PUBLIC_* variables are correctly baked into the frontend builds."
 echo ""
 
-# Build all services with --no-cache, explicitly passing build args for frontend
+# Build all services with --no-cache, explicitly passing build args for frontend and admin-frontend
 # Note: "$@" is intentionally excluded from build command to ensure --no-cache cannot be overridden
 $DOCKER_COMPOSE -f docker-compose.prod.yml build --no-cache \
   --build-arg NEXT_PUBLIC_BACKEND_URL="$PROD_BACKEND_URL" \
@@ -119,6 +119,14 @@ setup_cron_job
 
 echo ""
 echo "🚀 Starting services..."
+echo ""
+echo "📋 Service URLs:"
+echo "   Frontend: http://localhost:3000 (via Cloudflare)"
+echo "   Backend API: http://localhost:8000 (via Cloudflare)"
+echo "   Payload CMS: http://localhost:3001 (via Cloudflare)"
+echo "   Grafana: http://localhost:3002 (local only)"
+echo "   Admin Frontend: http://localhost:3003 (local only, not via Cloudflare)"
+echo "   Prometheus: http://localhost:9090 (local only)"
 echo ""
 
 # Start services (pass through any additional arguments like -d for detached mode)
