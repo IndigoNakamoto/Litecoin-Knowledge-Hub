@@ -17,20 +17,8 @@ from backend.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
 
-# Environment variables
-CHALLENGE_TTL_SECONDS = int(os.getenv("CHALLENGE_TTL_SECONDS", "300"))  # 5 minutes default
-# In development mode, allow more active challenges to avoid 429 errors during rapid page loads
-is_dev = os.getenv("ENVIRONMENT", "production").lower() == "development" or os.getenv("DEBUG", "false").lower() == "true"
-if is_dev:
-    MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER = int(os.getenv("MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER", "100"))
-else:
-    # Increased from 4 to 15 to accommodate normal usage patterns (page loads + multiple messages)
-    MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER = int(os.getenv("MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER", "15"))
-ENABLE_CHALLENGE_RESPONSE = os.getenv("ENABLE_CHALLENGE_RESPONSE", "true").lower() == "true"
-
-# Rate limit on challenge requests (seconds between requests)
-# Prevents rapid accumulation of challenges
-CHALLENGE_REQUEST_RATE_LIMIT_SECONDS = int(os.getenv("CHALLENGE_REQUEST_RATE_LIMIT_SECONDS", "3"))  # 3 seconds default
+# Environment variables (will be read dynamically from Redis/env)
+# These are defaults, actual values are read in functions that need them
 
 # Progressive ban durations (in seconds)
 # 1st violation: 1 minute, 2nd violation: 5 minutes
@@ -50,22 +38,50 @@ async def generate_challenge(identifier: str) -> Dict[str, Any]:
     Raises:
         HTTPException: If identifier has too many active challenges
     """
-    if not ENABLE_CHALLENGE_RESPONSE:
+    # Read settings from Redis with env fallback
+    from backend.utils.settings_reader import get_setting_from_redis_or_env
+    from backend.redis_client import get_redis_client
+    
+    redis = await get_redis_client()
+    
+    enable_challenge_response = await get_setting_from_redis_or_env(
+        redis, "enable_challenge_response", "ENABLE_CHALLENGE_RESPONSE", True, bool
+    )
+    
+    if not enable_challenge_response:
         # If disabled, return a dummy challenge (for backward compatibility)
+        challenge_ttl_seconds = await get_setting_from_redis_or_env(
+            redis, "challenge_ttl_seconds", "CHALLENGE_TTL_SECONDS", 300, int
+        )
         return {
             "challenge": "disabled",
-            "expires_in_seconds": CHALLENGE_TTL_SECONDS
+            "expires_in_seconds": challenge_ttl_seconds
         }
     
     redis = await get_redis_client()
     now = int(time.time())
+    
+    # Read settings from Redis with env fallback
+    challenge_ttl_seconds = await get_setting_from_redis_or_env(
+        redis, "challenge_ttl_seconds", "CHALLENGE_TTL_SECONDS", 300, int
+    )
+    challenge_request_rate_limit_seconds = await get_setting_from_redis_or_env(
+        redis, "challenge_request_rate_limit_seconds", "CHALLENGE_REQUEST_RATE_LIMIT_SECONDS", 3, int
+    )
+    
+    # In development mode, allow more active challenges to avoid 429 errors during rapid page loads
+    is_dev = os.getenv("ENVIRONMENT", "production").lower() == "development" or os.getenv("DEBUG", "false").lower() == "true"
+    default_max_challenges = 100 if is_dev else 15
+    max_active_challenges_per_identifier = await get_setting_from_redis_or_env(
+        redis, "max_active_challenges_per_identifier", "MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER", default_max_challenges, int
+    )
     
     # Track active challenges per identifier
     active_challenges_key = f"challenge:active:{identifier}"
     
     # Remove expired challenges from active set
     # Use sorted set with expiry timestamp as score
-    await redis.zremrangebyscore(active_challenges_key, 0, now - CHALLENGE_TTL_SECONDS)
+    await redis.zremrangebyscore(active_challenges_key, 0, now - challenge_ttl_seconds)
     
     # Rate limit: Check if identifier has requested a challenge too recently
     rate_limit_key = f"challenge:ratelimit:{identifier}"
@@ -73,12 +89,12 @@ async def generate_challenge(identifier: str) -> Dict[str, Any]:
     if last_request_time:
         last_request_int = int(last_request_time)
         time_since_last = now - last_request_int
-        if time_since_last < CHALLENGE_REQUEST_RATE_LIMIT_SECONDS:
-            retry_after = CHALLENGE_REQUEST_RATE_LIMIT_SECONDS - time_since_last
+        if time_since_last < challenge_request_rate_limit_seconds:
+            retry_after = challenge_request_rate_limit_seconds - time_since_last
             logger.debug(
                 f"Challenge request rate limited for identifier {identifier}: "
                 f"last_request={last_request_int}, time_since={time_since_last}s, "
-                f"limit={CHALLENGE_REQUEST_RATE_LIMIT_SECONDS}s, retry_after={retry_after}s"
+                f"limit={challenge_request_rate_limit_seconds}s, retry_after={retry_after}s"
             )
             raise HTTPException(
                 status_code=429,
@@ -90,7 +106,7 @@ async def generate_challenge(identifier: str) -> Dict[str, Any]:
             )
     
     # Update rate limit timestamp
-    await redis.setex(rate_limit_key, CHALLENGE_REQUEST_RATE_LIMIT_SECONDS + 1, now)
+    await redis.setex(rate_limit_key, challenge_request_rate_limit_seconds + 1, now)
     
     # Check if identifier is currently banned
     ban_key = f"challenge:ban:{identifier}"
@@ -123,7 +139,7 @@ async def generate_challenge(identifier: str) -> Dict[str, Any]:
     
     # Check current active challenge count
     current_active_count = await redis.zcard(active_challenges_key)
-    if current_active_count >= MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER:
+    if current_active_count >= max_active_challenges_per_identifier:
         # Get violation count and increment
         violation_count_key = f"challenge:violations:{identifier}"
         violation_count = await redis.incr(violation_count_key)
@@ -139,7 +155,7 @@ async def generate_challenge(identifier: str) -> Dict[str, Any]:
         
         logger.warning(
             f"Too many active challenges for identifier {identifier}: "
-            f"active_count={current_active_count}, limit={MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER}, "
+            f"active_count={current_active_count}, limit={max_active_challenges_per_identifier}, "
             f"violation_count={violation_count}, ban_duration={ban_duration}s, "
             f"ban_expires_at={ban_expiry}"
         )
@@ -170,23 +186,23 @@ async def generate_challenge(identifier: str) -> Dict[str, Any]:
     
     # Generate unique challenge ID (64 hex chars = 32 bytes)
     challenge_id = secrets.token_hex(32)
-    expiry_time = now + CHALLENGE_TTL_SECONDS
+    expiry_time = now + challenge_ttl_seconds
     
     # Store challenge in Redis with its expiry
     # Key: challenge:{challenge_id} -> value: identifier
     challenge_key = f"challenge:{challenge_id}"
-    await redis.setex(challenge_key, CHALLENGE_TTL_SECONDS, identifier)
+    await redis.setex(challenge_key, challenge_ttl_seconds, identifier)
     
     # Add to active challenges sorted set for this identifier
     # Score is expiry time, member is challenge_id
     await redis.zadd(active_challenges_key, {challenge_id: expiry_time})
-    await redis.expire(active_challenges_key, CHALLENGE_TTL_SECONDS + 60)  # Cleanup after TTL
+    await redis.expire(active_challenges_key, challenge_ttl_seconds + 60)  # Cleanup after TTL
     
     logger.debug(f"Generated challenge {challenge_id} for identifier {identifier}")
     
     return {
         "challenge": challenge_id,
-        "expires_in_seconds": CHALLENGE_TTL_SECONDS
+        "expires_in_seconds": challenge_ttl_seconds
     }
 
 
@@ -204,7 +220,17 @@ async def validate_and_consume_challenge(challenge_id: str, identifier: str) -> 
     Raises:
         HTTPException: If challenge is invalid, missing, or already consumed
     """
-    if not ENABLE_CHALLENGE_RESPONSE:
+    # Read settings from Redis with env fallback
+    from backend.utils.settings_reader import get_setting_from_redis_or_env
+    from backend.redis_client import get_redis_client
+    
+    redis = await get_redis_client()
+    
+    enable_challenge_response = await get_setting_from_redis_or_env(
+        redis, "enable_challenge_response", "ENABLE_CHALLENGE_RESPONSE", True, bool
+    )
+    
+    if not enable_challenge_response:
         # If disabled, always allow (for backward compatibility)
         return True
     
@@ -260,10 +286,23 @@ async def cleanup_expired_challenges():
     Cleanup expired challenges from Redis (maintenance task).
     This can be called periodically to clean up stale challenge data.
     """
-    if not ENABLE_CHALLENGE_RESPONSE:
-        return
+    # Read settings from Redis with env fallback
+    from backend.utils.settings_reader import get_setting_from_redis_or_env
+    from backend.redis_client import get_redis_client
     
     redis = await get_redis_client()
+    
+    enable_challenge_response = await get_setting_from_redis_or_env(
+        redis, "enable_challenge_response", "ENABLE_CHALLENGE_RESPONSE", True, bool
+    )
+    
+    if not enable_challenge_response:
+        return
+    
+    challenge_ttl_seconds = await get_setting_from_redis_or_env(
+        redis, "challenge_ttl_seconds", "CHALLENGE_TTL_SECONDS", 300, int
+    )
+    
     now = int(time.time())
     
     # Cleanup expired challenges from active sets
@@ -279,7 +318,7 @@ async def cleanup_expired_challenges():
             cursor, keys = await redis.scan(cursor, match=pattern, count=100)
             for key in keys:
                 # Remove expired challenges
-                removed = await redis.zremrangebyscore(key, 0, now - CHALLENGE_TTL_SECONDS)
+                removed = await redis.zremrangebyscore(key, 0, now - challenge_ttl_seconds)
                 cleaned_count += removed
             
             if cursor == 0:

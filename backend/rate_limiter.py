@@ -149,10 +149,8 @@ async def _get_sliding_window_count(
   return count
 
 
-# Global rate limit configuration
-GLOBAL_RATE_LIMIT_PER_MINUTE = int(os.getenv("GLOBAL_RATE_LIMIT_PER_MINUTE", "1000"))
-GLOBAL_RATE_LIMIT_PER_HOUR = int(os.getenv("GLOBAL_RATE_LIMIT_PER_HOUR", "50000"))
-ENABLE_GLOBAL_RATE_LIMIT = os.getenv("ENABLE_GLOBAL_RATE_LIMIT", "true").lower() == "true"
+# Global rate limit configuration (will be read dynamically from Redis/env)
+# These are defaults, actual values are read in check_global_rate_limit()
 
 
 async def check_global_rate_limit(redis, now: int) -> None:
@@ -162,8 +160,23 @@ async def check_global_rate_limit(redis, now: int) -> None:
   Raises:
     HTTPException: If global rate limit is exceeded
   """
-  if not ENABLE_GLOBAL_RATE_LIMIT:
+  # Read settings from Redis with env fallback
+  from backend.utils.settings_reader import get_setting_from_redis_or_env
+  
+  enable_global_rate_limit = await get_setting_from_redis_or_env(
+    redis, "enable_global_rate_limit", "ENABLE_GLOBAL_RATE_LIMIT", True, bool
+  )
+  
+  if not enable_global_rate_limit:
     return
+  
+  global_rate_limit_per_minute = await get_setting_from_redis_or_env(
+    redis, "global_rate_limit_per_minute", "GLOBAL_RATE_LIMIT_PER_MINUTE", 1000, int
+  )
+  
+  global_rate_limit_per_hour = await get_setting_from_redis_or_env(
+    redis, "global_rate_limit_per_hour", "GLOBAL_RATE_LIMIT_PER_HOUR", 50000, int
+  )
   
   # Global rate limit keys (no identifier suffix)
   global_minute_key = "rl:global:m"
@@ -174,8 +187,8 @@ async def check_global_rate_limit(redis, now: int) -> None:
   global_hour_count = await _get_sliding_window_count(redis, global_hour_key, 3600, now)
   
   # Check global limits
-  exceeded_minute = global_minute_count > GLOBAL_RATE_LIMIT_PER_MINUTE
-  exceeded_hour = global_hour_count > GLOBAL_RATE_LIMIT_PER_HOUR
+  exceeded_minute = global_minute_count > global_rate_limit_per_minute
+  exceeded_hour = global_hour_count > global_rate_limit_per_hour
   
   if exceeded_minute or exceeded_hour:
     # Compute Retry-After based on sliding window
@@ -198,8 +211,8 @@ async def check_global_rate_limit(redis, now: int) -> None:
       "error": "rate_limited",
       "message": "Service temporarily unavailable due to high demand. Please try again shortly.",
       "limits": {
-        "per_minute": GLOBAL_RATE_LIMIT_PER_MINUTE,
-        "per_hour": GLOBAL_RATE_LIMIT_PER_HOUR,
+        "per_minute": global_rate_limit_per_minute,
+        "per_hour": global_rate_limit_per_hour,
       },
       "retry_after_seconds": retry_after,
     }
