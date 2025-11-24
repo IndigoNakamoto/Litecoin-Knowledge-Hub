@@ -54,6 +54,11 @@ services:
       - NODE_ENV=production
       # Internal Docker service URL for Payload CMS (for suggested questions cache)
       - PAYLOAD_URL=http://payload_cms:3000
+      # CORS origins - defaults include chat.lite.space
+      # Add admin frontend URL via CORS_ORIGINS or ADMIN_FRONTEND_URL when running admin locally
+      # Example: CORS_ORIGINS=https://chat.lite.space,http://localhost:3003
+      # Or set: ADMIN_FRONTEND_URL=http://localhost:3003 (automatically added to CORS)
+      - CORS_ORIGINS=${CORS_ORIGINS}
     depends_on:
       mongodb:
         condition: service_healthy
@@ -160,6 +165,31 @@ services:
     depends_on:
       prometheus:
         condition: service_started
+
+  admin_frontend:
+    build:
+      context: ./admin-frontend
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL:-https://api.lite.space}
+    container_name: litecoin-admin-frontend
+    ports:
+      - "3003:3000"
+    env_file:
+      - ./.env.docker.prod
+    environment:
+      # Production-specific overrides
+      - NODE_ENV=production
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "const rawHost = process.env.HOST || process.env.HOSTNAME || '127.0.0.1'; const host = ['0.0.0.0', '::', '::0', '::ffff:0:0'].includes(rawHost) ? '127.0.0.1' : rawHost; require('http').get(`http://${host}:3000`, (r) => {process.exit(r.statusCode === 200 ? 0 : 1)}).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   cloudflared:
     image: cloudflare/cloudflared:latest
