@@ -799,18 +799,33 @@ def _get_identifier_from_request(request: Request) -> str:
     Extract identifier (fingerprint or IP) from request.
     
     Priority:
-    1. X-Fingerprint header (if present)
+    1. X-Fingerprint header (if present) - extract stable hash part for rate limiting
     2. IP address (fallback)
     
     Returns:
-        Identifier string (fingerprint or IP)
+        Identifier string (fingerprint hash or IP)
     """
     # Try to extract fingerprint from header
     fingerprint = request.headers.get("X-Fingerprint")
     if fingerprint:
-        # For challenge generation, we use IP as identifier
-        # (challenge is not yet part of fingerprint when requesting a challenge)
-        pass
+        # Extract stable identifier from fingerprint
+        # Fingerprint format: fp:challenge:hash or just hash
+        # For rate limiting challenge requests, we want a stable identifier
+        # that doesn't change when requesting a new challenge
+        if fingerprint.startswith("fp:"):
+            # Format: fp:challenge:hash
+            # Extract the hash part (last 32 chars after last colon)
+            parts = fingerprint.split(":")
+            if len(parts) >= 3:
+                # Use the hash part as stable identifier
+                return parts[-1]
+            else:
+                # Malformed, use full fingerprint
+                return fingerprint
+        else:
+            # Format: just hash (no challenge prefix)
+            # Use the hash directly as stable identifier
+            return fingerprint
     
     # Fallback to IP address
     from backend.rate_limiter import _get_ip_from_request
@@ -828,7 +843,8 @@ async def challenge_endpoint(request: Request):
     """
     await check_rate_limit(request, CHALLENGE_RATE_LIMIT)
     
-    # Extract identifier (fingerprint or IP)
+    # Extract identifier (fingerprint hash or IP)
+    # _get_identifier_from_request already handles fingerprint extraction correctly
     identifier = _get_identifier_from_request(request)
     
     # Generate challenge
@@ -948,8 +964,9 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
         challenge_id, fingerprint_hash = _extract_challenge_from_fingerprint(fingerprint)
         if challenge_id:
             # Validate and consume challenge
-            # Use IP as identifier since challenge was issued to IP
-            identifier = _get_identifier_from_request(http_request)
+            # Use the fingerprint hash as identifier (stable across requests)
+            # If no hash extracted (fingerprint_hash == fingerprint), fall back to IP
+            identifier = fingerprint_hash if fingerprint_hash and fingerprint_hash != fingerprint else _get_identifier_from_request(http_request)
             await validate_and_consume_challenge(challenge_id, identifier)
         elif enable_challenge_response:
             # Challenge required but not provided - reject request

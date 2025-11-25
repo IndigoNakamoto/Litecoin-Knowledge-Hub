@@ -39,22 +39,39 @@ export default function Home() {
   
   // Helper function to ensure we have a fresh challenge and fingerprint
   const ensureFreshFingerprint = async (): Promise<string | null> => {
+    // FIX: Ensure we have a base fingerprint to send, even if state is null
+    let currentFp = _fingerprint;
+    if (!currentFp) {
+      // Generate a base fingerprint immediately if state is not yet ready
+      console.debug("Generated base fingerprint for challenge request (state was null)");
+      currentFp = await getFingerprint();
+    }
+    
     try {
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-      const response = await fetch(`${backendUrl}/api/v1/auth/challenge`);
+      
+      // Always send X-Fingerprint header so backend uses hash instead of IP
+      const headers: Record<string, string> = {};
+      if (currentFp) {
+        headers["X-Fingerprint"] = currentFp;
+      }
+      const response = await fetch(`${backendUrl}/api/v1/auth/challenge`, {
+        headers,
+      });
       
       if (response.ok) {
         const data = await response.json();
         const challengeId = data.challenge;
         
         if (challengeId && challengeId !== "disabled") {
-          // Generate fingerprint with challenge
-          const fp = await getFingerprintWithChallenge(challengeId);
+          // Generate fingerprint with challenge using the same base hash we sent to the challenge endpoint
+          const fp = await getFingerprintWithChallenge(challengeId, currentFp);
           setFingerprint(fp);
           return fp;
         } else {
           // Challenge disabled, generate fingerprint without challenge (backward compatibility)
-          const fp = await getFingerprint();
+          // If we generated one locally above, use it, otherwise generate new
+          const fp = currentFp || await getFingerprint();
           setFingerprint(fp);
           return fp;
         }
@@ -71,7 +88,8 @@ export default function Home() {
       } else {
         // Other error - fallback to fingerprint without challenge (backward compatibility)
         console.debug("Challenge fetch failed with status:", response.status);
-        const fp = await getFingerprint();
+        // If we generated one locally above, use it, otherwise generate new
+        const fp = currentFp || await getFingerprint();
         setFingerprint(fp);
         return fp;
       }
@@ -82,7 +100,8 @@ export default function Home() {
       }
       // Other errors - fallback to fingerprint without challenge (backward compatibility)
       console.debug("Failed to fetch challenge:", error);
-      const fp = await getFingerprint();
+      // If we generated one locally above, use it, otherwise generate new
+      const fp = currentFp || await getFingerprint();
       setFingerprint(fp);
       return fp;
     }
@@ -93,34 +112,54 @@ export default function Home() {
   // Fetch challenge and generate fingerprint on mount
   useEffect(() => {
     const fetchChallengeAndGenerateFingerprint = async () => {
+      // FIX: Ensure we have a base fingerprint to send, even if state is null
+      let currentFp = _fingerprint;
+      if (!currentFp) {
+        // Generate a base fingerprint immediately if state is not yet ready
+        console.debug("Generated base fingerprint for challenge request on mount (state was null)");
+        currentFp = await getFingerprint();
+      }
+      
       try {
         const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-        const response = await fetch(`${backendUrl}/api/v1/auth/challenge`);
+        
+        // Always send X-Fingerprint header so backend uses hash instead of IP
+        const headers: Record<string, string> = {};
+        if (currentFp) {
+          headers["X-Fingerprint"] = currentFp;
+        }
+        
+        const response = await fetch(`${backendUrl}/api/v1/auth/challenge`, {
+          headers,
+        });
         
         if (response.ok) {
           const data = await response.json();
           const challengeId = data.challenge;
           
           if (challengeId && challengeId !== "disabled") {
-            // Generate fingerprint with challenge
-            const fp = await getFingerprintWithChallenge(challengeId);
+            // Generate fingerprint with challenge using the same base hash we sent to the challenge endpoint
+            const fp = await getFingerprintWithChallenge(challengeId, currentFp);
             setFingerprint(fp);
             // Note: No background refresh needed - challenges are fetched on-demand before each request
             // via ensureFreshFingerprint() in handleSendMessage()
           } else {
             // Challenge disabled, generate fingerprint without challenge (backward compatibility)
-            const fp = await getFingerprint();
+            // If we generated one locally above, use it, otherwise generate new
+            const fp = currentFp || await getFingerprint();
             setFingerprint(fp);
           }
         } else {
           // Challenge fetch failed, generate fingerprint without challenge (backward compatibility)
-          const fp = await getFingerprint();
+          // If we generated one locally above, use it, otherwise generate new
+          const fp = currentFp || await getFingerprint();
           setFingerprint(fp);
         }
       } catch (error) {
         console.debug("Failed to fetch challenge:", error);
         // Generate fingerprint without challenge (backward compatibility)
-        const fp = await getFingerprint();
+        // If we generated one locally above, use it, otherwise generate new
+        const fp = currentFp || await getFingerprint();
         setFingerprint(fp);
       }
     };
