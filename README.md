@@ -68,7 +68,15 @@ The project has successfully completed the implementation of the core RAG pipeli
 
 ## **Architectural Overview**
 
-The architecture is designed around two primary workflows: **Content Ingestion** (managed via Payload CMS) and **User Query Processing** (the RAG pipeline).
+The architecture has evolved into a production-grade platform organized around three primary workflows: Content Ingestion (Knowledge Base), User Query Processing (RAG Pipeline), and System Governance (Dynamic Configuration & Security).
+
+Content Ingestion: Managed via Payload CMS, where verified contributors author content that is automatically synced, chunked, and embedded into the vector store.
+
+User Query Processing: A security-first RAG pipeline that passes user requests through an Abuse Prevention Middleware (fingerprinting, rate limiting) before they reach the expensive LLM/Vector search logic.
+
+System Governance: A dedicated Admin Dashboard and API that allows operators to control system behavior (spend limits, maintenance mode, user bans) in real-time via Redis, without requiring code deployments.
+
+Redis serves as the central nervous system, acting not just as a cache, but as the authoritative state store for dynamic settings and rate limit counters.
 
 ```mermaid
 flowchart TD
