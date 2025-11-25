@@ -185,8 +185,9 @@ User Request
 1. Frontend Requests Challenge
    │
    ├─→ GET /api/v1/auth/challenge
-   ├─→ Server generates challenge (UUID + timestamp)
-   └─→ Challenge stored in Redis (TTL: 5 minutes)
+   ├─→ Server generates challenge (64-char hex string)
+   ├─→ Challenge stored in Redis with identifier (TTL: 5 minutes)
+   └─→ Rate limited: 3 seconds between requests per identifier
 
 2. Frontend Generates Fingerprint (Before Each Request)
    │
@@ -201,12 +202,13 @@ User Request
 3. Backend Validation Pipeline
    │
    ├─→ Verify Turnstile token (if enabled)
-   ├─→ Extract challenge from fingerprint
-   ├─→ Validate challenge exists and not expired
-   ├─→ Consume challenge (one-time use)
-   ├─→ Analyze request behavior (timing, patterns)
-   ├─→ Check query uniqueness (deduplication)
-   ├─→ Apply individual rate limits
+   │   └─→ On failure: Apply stricter rate limits (never return 5xx)
+   ├─→ Extract challenge from fingerprint (format: fp:challenge:hash)
+   ├─→ Extract fingerprint hash (stable identifier for tracking)
+   ├─→ Validate challenge exists and issued to correct identifier
+   ├─→ Consume challenge (one-time use, deleted from Redis)
+   ├─→ Check cost-based throttling (uses fingerprint hash for stable tracking)
+   ├─→ Apply individual rate limits (uses fingerprint hash or IP)
    └─→ Apply global rate limits
 
 4. Request Processing
@@ -214,6 +216,11 @@ User Request
    ├─→ All checks passed
    └─→ Process API request
 ```
+
+**Key Implementation Details**:
+- **Identifier Usage**: Fingerprint hash (without challenge prefix) is used as stable identifier for rate limiting and cost tracking. This ensures consistent tracking across requests even when challenges change.
+- **Challenge Format**: `fp:challenge:hash` where challenge is 64-character hex string and hash is the fingerprint hash.
+- **Cost Tracking**: Uses fingerprint hash (stable) to track spending across requests, not the full fingerprint with challenge.
 
 ---
 
@@ -337,7 +344,7 @@ User Request
   - Configurable threshold: `QUERY_DEDUP_THRESHOLD` (default: 10)
   - Configurable window: `QUERY_DEDUP_WINDOW_SECONDS` (default: 3600)
 
-### TR-7: Per-Fingerprint Spend Cap (Endgame)
+### TR-8: Per-Fingerprint Spend Cap (Endgame - Optional)
 - **Requirement**: Limit LLM costs per fingerprint/device instead of global
 - **Priority**: Critical (Financial unabusability)
 - **Details**:
@@ -348,40 +355,58 @@ User Request
   - **This makes financial abuse impossible** — endgame solution
   - Implementation: Change spend limit keys in `monitoring/spend_limit.py` to include fingerprint
 
-### TR-8: Per-Identifier Challenge Issuance Limit
+### TR-9: Per-Identifier Challenge Issuance Limit
 - **Requirement**: Limit active challenges per identifier (fingerprint/IP)
 - **Priority**: High (Minimal set item #3)
 - **Details**:
-  - Max 3 active challenges per identifier at once
+  - Max 15 active challenges per identifier at once (production), 100 (development)
   - Prevents challenge prefetching abuse (requesting 1000 challenges ahead of time)
-  - Redis set: `challenge:active:{identifier}` tracks active challenges
+  - Redis sorted set: `challenge:active:{identifier}` tracks active challenges with expiry timestamps
+  - Progressive bans: 1 minute (1st violation), 5 minutes (2nd+ violations)
+  - Rate limiting: 3 seconds between challenge requests per identifier
   - Remove from set when challenge consumed or expired
   - Return 429 if limit exceeded
-  - Configurable: `MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER` (default: 3)
+  - Configurable: `MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER` (default: 15 in prod, 100 in dev)
+  - Settings read dynamically from Redis with environment variable fallback
 
-### TR-9: Graceful Turnstile Degradation
+### TR-10: Graceful Turnstile Degradation
 - **Requirement**: Fallback to stricter rate limits if Turnstile fails (never return 5xx)
 - **Priority**: High (Minimal set item #4)
 - **Details**:
-  - Wrap Turnstile verification in try/except
+  - Turnstile verification returns error dictionaries instead of raising exceptions
   - If verification fails → apply 10x stricter rate limits instead of blocking
-  - If Turnstile API fails → apply stricter rate limits instead of returning 5xx
+  - If Turnstile API fails (timeout, network error, internal error) → apply stricter rate limits instead of returning 5xx
   - Ensures zero downtime during Cloudflare incidents
   - Stricter limits: 6/min, 60/hour (instead of 60/min, 1000/hour)
   - Log warnings but continue processing
+  - All error cases handled gracefully: timeout, network error, internal error
 
-### TR-10: Cost-Based Throttling Trigger
-- **Requirement**: Throttle fingerprints that spend >$10 in <10 min
+### TR-11: Cost-Based Throttling Trigger
+- **Requirement**: Throttle fingerprints that spend >threshold in <10 min
 - **Priority**: Critical (Minimal set item #5 - Ultimate killswitch)
 - **Details**:
-  - Track recent spending per fingerprint in 10-minute sliding window
-  - Redis sorted set: `llm:cost:recent:{fingerprint}` with timestamp scores
-  - If total cost >= threshold ($10) → throttle for 30 seconds
+  - Track recent spending per fingerprint hash (stable identifier) in 10-minute sliding window
+  - Redis sorted set: `llm:cost:recent:{fingerprint_hash}` with timestamp scores
+  - If total cost >= threshold ($0.10 default) → throttle for 30 seconds
   - Throttling: Return 429 with `requires_verification: true` (force visible Turnstile)
   - Makes abuse actively lose money (forced delays + verification)
-  - Configurable: `HIGH_COST_THRESHOLD_USD` (default: 10.0), `HIGH_COST_WINDOW_SECONDS` (default: 600)
+  - Lower threshold ($0.10) provides earlier detection of abuse patterns
+  - Disabled in development mode
+  - Configurable: `HIGH_COST_THRESHOLD_USD` (default: 0.10), `HIGH_COST_WINDOW_SECONDS` (default: 600)
+  - Settings read dynamically from Redis with environment variable fallback
 
-### TR-6: Enhanced Logging & Metrics
+### TR-6: Dynamic Configuration System
+- **Requirement**: Runtime configuration without service restart
+- **Priority**: High
+- **Details**:
+  - Settings stored in Redis: `admin:settings:abuse_prevention`
+  - Environment variable fallback for deployment flexibility
+  - Type-safe value conversion (int, float, bool, str)
+  - Caching to minimize Redis calls
+  - All abuse prevention settings configurable at runtime
+  - Implementation: `backend/utils/settings_reader.py`
+
+### TR-7: Enhanced Logging & Metrics
 - **Requirement**: Track all security events for monitoring
 - **Priority**: Medium
 - **Details**:
@@ -422,117 +447,22 @@ frontend/
 
 Challenge generation and validation utility:
 
-```python
-import os
-import uuid
-import time
-import hashlib
-import logging
-from typing import Optional, Dict, Any
-from backend.redis_client import get_redis_client
+**Key Features**:
+- Uses `secrets.token_hex(32)` for challenge generation (64 hex characters = 32 bytes)
+- Progressive bans: 1 minute (1st violation), 5 minutes (2nd+ violations)
+- Rate limiting: 3 seconds between challenge requests per identifier
+- Max active challenges: 15 in production, 100 in development
+- Challenge validation verifies identifier match (prevents cross-identifier reuse)
+- Dynamic configuration: All settings read from Redis with environment variable fallback
 
-logger = logging.getLogger(__name__)
+**Implementation Highlights**:
+- Challenge format: 64-character hex string (not UUID)
+- Stores challenge with identifier in Redis: `challenge:{challenge_id}` → identifier
+- Tracks active challenges per identifier: `challenge:active:{identifier}` (Redis sorted set)
+- One-time use: Challenge deleted after validation
+- Identifier verification: Ensures challenge was issued to the correct identifier
 
-# Challenge configuration
-CHALLENGE_TTL_SECONDS = int(os.getenv("CHALLENGE_TTL_SECONDS", "300"))  # 5 minutes
-CHALLENGE_RATE_LIMIT = int(os.getenv("CHALLENGE_RATE_LIMIT", "10"))  # Per IP per minute
-
-def generate_challenge() -> Dict[str, Any]:
-    """
-    Generate a new challenge for fingerprint generation.
-    
-    Returns:
-        Dict with 'challenge' (UUID string) and 'expires_at' (timestamp)
-    """
-    challenge_id = str(uuid.uuid4())
-    expires_at = int(time.time()) + CHALLENGE_TTL_SECONDS
-    
-    # Store challenge in Redis with TTL
-    redis = get_redis_client()
-    challenge_key = f"challenge:{challenge_id}"
-    
-    # Store challenge data (expires_at for validation)
-    challenge_data = {
-        "expires_at": expires_at,
-        "created_at": int(time.time()),
-        "used": False,
-    }
-    
-    # Use Redis hash for challenge data
-    redis.hset(challenge_key, mapping=challenge_data)
-    redis.expire(challenge_key, CHALLENGE_TTL_SECONDS)
-    
-    logger.debug(f"Generated challenge: {challenge_id} (expires at {expires_at})")
-    
-    return {
-        "challenge": challenge_id,
-        "expires_at": expires_at,
-    }
-
-
-async def validate_and_consume_challenge(challenge_id: str) -> bool:
-    """
-    Validate a challenge and mark it as consumed (one-time use).
-    
-    Args:
-        challenge_id: The challenge UUID to validate
-        
-    Returns:
-        True if challenge is valid and not yet used, False otherwise
-    """
-    if not challenge_id:
-        logger.warning("Challenge ID missing in request")
-        return False
-    
-    redis = get_redis_client()
-    challenge_key = f"challenge:{challenge_id}"
-    
-    # Check if challenge exists
-    challenge_data = await redis.hgetall(challenge_key)
-    if not challenge_data:
-        logger.warning(f"Challenge not found: {challenge_id}")
-        return False
-    
-    # Check if already used
-    if challenge_data.get("used") == "True":
-        logger.warning(f"Challenge already used: {challenge_id}")
-        return False
-    
-    # Check expiration
-    expires_at = int(challenge_data.get("expires_at", 0))
-    now = int(time.time())
-    if now >= expires_at:
-        logger.warning(f"Challenge expired: {challenge_id}")
-        await redis.delete(challenge_key)
-        return False
-    
-    # Mark as used (one-time use)
-    await redis.hset(challenge_key, "used", "True")
-    await redis.expire(challenge_key, 60)  # Keep for 1 minute after use for logging
-    
-    logger.debug(f"Challenge validated and consumed: {challenge_id}")
-    return True
-
-
-def extract_challenge_from_fingerprint(fingerprint: str) -> Optional[str]:
-    """
-    Extract challenge from fingerprint (if stored in format: fp:challenge:hash).
-    
-    Args:
-        fingerprint: Fingerprint string (format: fp:challenge:hash or fp:hash)
-        
-    Returns:
-        Challenge ID if present, None otherwise
-    """
-    if not fingerprint or not fingerprint.startswith("fp:"):
-        return None
-    
-    parts = fingerprint.split(":")
-    if len(parts) >= 3:
-        # Format: fp:challenge:hash
-        return parts[1]
-    return None
-```
+See `backend/utils/challenge.py` for full implementation.
 
 #### `utils/behavioral_analysis.py` (NEW)
 
@@ -810,99 +740,35 @@ async def check_rate_limit(request: Request, config: RateLimitConfig) -> None:
 
 Add challenge endpoint and integrate enhancements:
 
-```python
-from backend.utils.challenge import generate_challenge, validate_and_consume_challenge, extract_challenge_from_fingerprint
-from backend.utils.behavioral_analysis import analyze_request_behavior
-from backend.utils.query_deduplication import check_query_deduplication
+**Key Implementation Details**:
 
-@app.get("/api/v1/auth/challenge")
-async def get_challenge(request: Request):
-    """
-    Generate a challenge for fingerprint generation.
-    Prevents fingerprint replay attacks.
-    """
-    # Rate limit challenge requests (prevent exhaustion)
-    await check_rate_limit(request, RateLimitConfig(
-        requests_per_minute=10,
-        requests_per_hour=100,
-        identifier="challenge",
-        enable_progressive_limits=False,
-    ))
-    
-    challenge_data = generate_challenge()
-    return challenge_data
+1. **Challenge Endpoint** (`GET /api/v1/auth/challenge`, line 834):
+   - Rate limited to prevent challenge exhaustion
+   - Uses identifier (fingerprint hash or IP) for challenge generation
+   - Returns challenge with `expires_in_seconds`
 
+2. **Challenge Validation** (lines 953-991):
+   - Extracts challenge from fingerprint format: `fp:challenge:hash`
+   - Uses fingerprint hash (stable identifier) for validation
+   - Verifies challenge was issued to the correct identifier
+   - Rejects requests with missing/invalid/expired challenges
 
-@app.post("/api/v1/chat/stream")
-async def chat_stream_endpoint(
-    request: ChatRequest,
-    background_tasks: BackgroundTasks,
-    http_request: Request
-):
-    """
-    Enhanced streaming endpoint with advanced abuse prevention.
-    """
-    # 1. Rate limiting (includes global limits)
-    await check_rate_limit(http_request, STREAM_RATE_LIMIT)
-    
-    # 2. Turnstile verification (if enabled)
-    if is_turnstile_enabled():
-        client_ip = http_request.client.host if http_request.client else None
-        turnstile_result = await verify_turnstile_token(
-            request.turnstile_token or "",
-            remoteip=client_ip
-        )
-        if not turnstile_result.get("success", False):
-            # ... existing Turnstile error handling ...
-            pass
-    
-    # 3. Challenge validation (if fingerprinting enabled)
-    fingerprint = http_request.headers.get("X-Fingerprint")
-    if fingerprint and ENABLE_FINGERPRINTING:
-        challenge_id = extract_challenge_from_fingerprint(fingerprint)
-        if challenge_id:
-            is_valid = await validate_and_consume_challenge(challenge_id)
-            if not is_valid:
-                logger.warning(f"Invalid or reused challenge: {challenge_id}")
-                raise HTTPException(
-                    status_code=403,
-                    detail={
-                        "error": "Verification failed",
-                        "message": "Invalid security challenge. Please refresh and try again."
-                    }
-                )
-    
-    # 4. Behavioral analysis
-    identifier = _get_rate_limit_identifier(http_request)  # From rate_limiter.py
-    behavior_result = await analyze_request_behavior(identifier, time.time())
-    if behavior_result["is_suspicious"]:
-        logger.warning(
-            f"Suspicious behavior detected: {identifier}, "
-            f"risk_score={behavior_result['risk_score']:.2f}, "
-            f"reasons={behavior_result['reasons']}"
-        )
-        # Optionally block or flag for additional verification
-        # For now, log and allow (can be enhanced to block high-risk scores)
-    
-    # 5. Query deduplication
-    is_blocked, occurrence_count = await check_query_deduplication(request.query)
-    if is_blocked:
-        logger.warning(
-            f"Query deduplication block: query repeated {occurrence_count} times"
-        )
-        raise HTTPException(
-            status_code=429,
-            detail={
-                "error": "rate_limited",
-                "message": "This query has been submitted too frequently. Please try a different question.",
-                "retry_after_seconds": 60,
-            },
-            headers={"Retry-After": "60"},
-        )
-    
-    # 6. Process request (existing logic)
-    # ... rest of endpoint logic ...
-```
+3. **Turnstile Graceful Degradation** (lines 993-1025):
+   - Turnstile verification returns error dictionaries (no exceptions)
+   - On failure: applies `STRICT_RATE_LIMIT` (6/min, 60/hour)
+   - Never returns 5xx errors, always continues processing
+
+4. **Cost-Based Throttling** (lines 1027-1069):
+   - Uses fingerprint hash (without challenge prefix) for stable tracking
+   - Estimates cost before LLM call
+   - Throttles if threshold exceeded ($0.10 default)
+   - Returns 429 with `requires_verification: true`
+
+5. **Dynamic Configuration**:
+   - All feature flags and settings read from Redis with env fallback
+   - Uses `get_setting_from_redis_or_env()` for runtime configuration
+
+See `backend/main.py` for full implementation.
 
 ### Frontend Implementation
 
@@ -994,35 +860,43 @@ export default function Home() {
 
 ## Configuration
 
+### Dynamic Configuration System
+
+All abuse prevention settings can be configured in two ways:
+1. **Redis** (runtime configuration, no restart required): Settings stored in `admin:settings:abuse_prevention` Redis key
+2. **Environment Variables** (fallback): Used if Redis setting not found
+
+Settings are read dynamically using `backend/utils/settings_reader.py` which provides:
+- Runtime configuration changes without service restart
+- Environment variable fallback for deployment flexibility
+- Type-safe value conversion (int, float, bool, str)
+- Caching to minimize Redis calls
+
 ### Environment Variables
 
 #### Backend Configuration
 
-Add to `backend/.env`:
+Add to `backend/.env` (used as fallback if Redis settings not available):
 
 ```bash
 # Challenge Configuration
 CHALLENGE_TTL_SECONDS=300  # Challenge expiration (5 minutes)
-CHALLENGE_RATE_LIMIT=10    # Challenges per IP per minute
+CHALLENGE_REQUEST_RATE_LIMIT_SECONDS=3  # Seconds between challenge requests per identifier
+MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER=15  # Max active challenges (15 prod, 100 dev)
 
 # Global Rate Limiting
 GLOBAL_RATE_LIMIT_PER_MINUTE=1000  # Aggregate requests per minute
 GLOBAL_RATE_LIMIT_PER_HOUR=50000   # Aggregate requests per hour
 
-# Query Deduplication
-QUERY_DEDUP_THRESHOLD=10           # Max occurrences per query
-QUERY_DEDUP_WINDOW_SECONDS=3600    # Deduplication window (1 hour)
-
-# Behavioral Analysis
-MIN_REQUEST_INTERVAL_SECONDS=2     # Minimum time between requests
-REGULARITY_THRESHOLD_MS=100        # Max variance for regular patterns
-BEHAVIORAL_ANALYSIS_ENABLED=true   # Enable/disable behavioral analysis
+# Cost-Based Throttling
+HIGH_COST_THRESHOLD_USD=0.10  # Cost threshold that triggers throttling (default: $0.10)
+HIGH_COST_WINDOW_SECONDS=600  # Sliding window duration (10 minutes)
+COST_THROTTLE_DURATION_SECONDS=30  # Throttle duration when triggered
 
 # Feature Flags
 ENABLE_CHALLENGE_RESPONSE=true     # Enable challenge-response fingerprinting
 ENABLE_GLOBAL_RATE_LIMIT=true      # Enable global rate limiting
-ENABLE_QUERY_DEDUP=true            # Enable query deduplication
-ENABLE_BEHAVIORAL_ANALYSIS=true    # Enable behavioral analysis
+ENABLE_COST_THROTTLING=true        # Enable cost-based throttling
 ```
 
 ### Configuration by Environment
@@ -1292,9 +1166,9 @@ These 5 things provide **99.9% of the security benefit** and are fully operation
 |----------|---------|--------|----------------------|
 | **1** | **Challenge-response fingerprinting** (one-time challenge bound into fingerprint) | ✅ **IMPLEMENTED** | Backend: `backend/utils/challenge.py`, endpoint: `/api/v1/auth/challenge`<br>Frontend: Challenge fetching and fingerprint generation with challenge<br>One-time use validation, 5-minute TTL |
 | **2** | **Global rate limiting** (aggregate across all identifiers) | ✅ **IMPLEMENTED** | `backend/rate_limiter.py` - `check_global_rate_limit()`<br>Configurable: 1000/min, 50000/hour (default)<br>Checked after individual rate limits |
-| **3** | **Per-identifier challenge issuance limit** (max 3 active challenges per fingerprint/IP) | ✅ **IMPLEMENTED** | `backend/utils/challenge.py` - `MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER`<br>Production: 3 active challenges max<br>Development: 20 active challenges max |
+| **3** | **Per-identifier challenge issuance limit** (max active challenges per fingerprint/IP) | ✅ **IMPLEMENTED** | `backend/utils/challenge.py` - `MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER`<br>Production: 15 active challenges max<br>Development: 100 active challenges max<br>Progressive bans: 1min, 5min<br>Rate limit: 3 seconds between challenge requests |
 | **4** | **Graceful Turnstile degradation** (if Turnstile fails → stricter rate limits, no 5xx) | ✅ **IMPLEMENTED** | `backend/main.py` - Try/except around Turnstile verification<br>Falls back to `STRICT_RATE_LIMIT` (6/min, 60/hour)<br>Never returns 5xx errors |
-| **5** | **Cost-based throttling trigger** (if fingerprint spends >$10 in <10 min → 30s delay) | ✅ **IMPLEMENTED** | `backend/utils/cost_throttling.py` - `check_cost_based_throttling()`<br>Threshold: $10 in 10 minutes (configurable)<br>Throttle duration: 30 seconds<br>Returns 429 with `requires_verification: true` |
+| **5** | **Cost-based throttling trigger** (if fingerprint spends >threshold in <10 min → 30s delay) | ✅ **IMPLEMENTED** | `backend/utils/cost_throttling.py` - `check_cost_based_throttling()`<br>Threshold: $0.10 in 10 minutes (configurable, default)<br>Throttle duration: 30 seconds<br>Returns 429 with `requires_verification: true`<br>Disabled in development mode |
 
 **Total Protection**: 99.9% ✅  
 **Status**: Production-ready and active 🎯
@@ -1310,16 +1184,25 @@ These 5 things provide **99.9% of the security benefit** and are fully operation
 **Status**: ✅ **Production-ready**
 
 **Implementation**:
-1. ✅ Challenge endpoint: `GET /api/v1/auth/challenge` (in `backend/main.py`)
+1. ✅ Challenge endpoint: `GET /api/v1/auth/challenge` (in `backend/main.py` line 834)
 2. ✅ Frontend includes challenge in fingerprint generation (`frontend/src/app/page.tsx`)
 3. ✅ Backend validates challenge is one-time use (`backend/utils/challenge.py`)
 4. ✅ Rejects requests with reused/expired challenges
 5. ✅ Frontend fetches fresh challenge before each request (challenges are consumed after use)
 6. ✅ Background refresh every 4 minutes as fallback (before 5-min expiry)
 
+**Key Features**:
+- Challenge generation: Uses `secrets.token_hex(32)` (64 hex characters = 32 bytes)
+- Challenge validation: Verifies challenge was issued to the correct identifier (prevents cross-identifier reuse)
+- Progressive bans: 1 minute (1st violation), 5 minutes (2nd+ violations)
+- Rate limiting: 3 seconds between challenge requests per identifier
+- Max active challenges: 15 in production, 100 in development
+- Dynamic configuration: All settings read from Redis with environment variable fallback
+
 **Files**:
-- Backend: `backend/utils/challenge.py`, `backend/main.py` (endpoint at line 794)
+- Backend: `backend/utils/challenge.py`, `backend/main.py` (endpoint at line 834)
 - Frontend: `frontend/src/app/page.tsx` (challenge fetching), `frontend/src/lib/utils/fingerprint.ts` (fingerprint generation)
+- Settings: `backend/utils/settings_reader.py` (dynamic configuration system)
 
 ---
 
@@ -1330,11 +1213,12 @@ These 5 things provide **99.9% of the security benefit** and are fully operation
 **Status**: ✅ **Production-ready**
 
 **Implementation**: 
-- ✅ `check_global_rate_limit()` function in `backend/rate_limiter.py` (lines 158-212)
+- ✅ `check_global_rate_limit()` function in `backend/rate_limiter.py` (lines 156-225)
 - ✅ Tracks `rl:global:m` and `rl:global:h` keys using Redis sorted sets
-- ✅ Checked after individual rate limits (line 249, 319)
+- ✅ Checked after individual rate limits (line 262)
 - ✅ Configurable thresholds: `GLOBAL_RATE_LIMIT_PER_MINUTE` (1000), `GLOBAL_RATE_LIMIT_PER_HOUR` (50000)
 - ✅ Feature flag: `ENABLE_GLOBAL_RATE_LIMIT` (default: true)
+- ✅ Dynamic configuration: Settings read from Redis with environment variable fallback
 
 ---
 
@@ -1345,16 +1229,20 @@ These 5 things provide **99.9% of the security benefit** and are fully operation
 **Status**: ✅ **Production-ready**
 
 **Implementation**: 
-- ✅ Implemented in `backend/utils/challenge.py` (lines 22-27, 54-73)
+- ✅ Implemented in `backend/utils/challenge.py` (lines 28-206)
 - ✅ Uses Redis sorted set to track active challenges per identifier
-- ✅ Production limit: 3 active challenges max
-- ✅ Development limit: 20 active challenges max (to avoid 429 errors during rapid page loads)
+- ✅ Production limit: 15 active challenges max
+- ✅ Development limit: 100 active challenges max (to avoid 429 errors during rapid page loads)
 - ✅ Challenges removed from active set when consumed or expired
+- ✅ Progressive bans: 1 minute (1st violation), 5 minutes (2nd+ violations)
+- ✅ Rate limiting: 3 seconds between challenge requests per identifier
 - ✅ Returns 429 with clear error message when limit exceeded
 
 **Configuration**:
-- Environment variable: `MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER` (default: 3 in prod, 20 in dev)
+- Redis setting: `max_active_challenges_per_identifier` (default: 15 in prod, 100 in dev)
+- Environment variable: `MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER` (fallback)
 - Automatically adjusted based on `ENVIRONMENT` or `DEBUG` env vars
+- All settings read dynamically from Redis with environment variable fallback
 
 ---
 
@@ -1365,43 +1253,50 @@ These 5 things provide **99.9% of the security benefit** and are fully operation
 **Status**: ✅ **Production-ready**
 
 **Implementation**: 
-- ✅ Implemented in `backend/main.py` (lines 923-955)
-- ✅ Try/except wrapper around Turnstile verification
+- ✅ Implemented in `backend/main.py` (lines 993-1025)
+- ✅ Turnstile verification returns error dictionaries instead of raising exceptions (`backend/utils/turnstile.py`)
 - ✅ On verification failure: applies `STRICT_RATE_LIMIT` (6/min, 60/hour) instead of blocking
-- ✅ On API failure: logs error and applies stricter limits, never returns 5xx
+- ✅ On API failure (timeout, network error): logs error and applies stricter limits, never returns 5xx
 - ✅ Continues processing requests with stricter rate limits
+- ✅ All error cases handled gracefully (timeout, network error, internal error)
 
 **Configuration**:
-- `STRICT_RATE_LIMIT` defined in `backend/main.py` (lines 894-900)
+- `STRICT_RATE_LIMIT` defined in `backend/main.py` (lines 936-941)
 - Stricter limits: 6 requests/minute, 60 requests/hour (10x stricter than normal)
 - Progressive bans enabled
 
-**Result**: ✅ During Cloudflare outages, legitimate users continue with stricter limits instead of complete blockage.
+**Result**: ✅ During Cloudflare outages, legitimate users continue with stricter limits instead of complete blockage. Zero downtime.
 
 ---
 
 #### Priority 5: Cost-Based Throttling Trigger ✅ **IMPLEMENTED**
 
-**What**: If fingerprint spends >$10 in <10 min → 30s delay + requires verification  
+**What**: If fingerprint spends >threshold ($0.10 default) in <10 min → 30s delay + requires verification  
 **Why**: The ultimate killswitch — makes abuse actively lose money  
 **Status**: ✅ **Production-ready**
 
 **Implementation**: 
 - ✅ Implemented in `backend/utils/cost_throttling.py`
-- ✅ Function: `check_cost_based_throttling()` (lines 25-129)
-- ✅ Tracks spending per fingerprint in 10-minute sliding window using Redis sorted sets
+- ✅ Function: `check_cost_based_throttling()` (lines 22-145)
+- ✅ Tracks spending per fingerprint hash (stable identifier) in 10-minute sliding window using Redis sorted sets
 - ✅ Throttles for 30 seconds when threshold exceeded
 - ✅ Returns 429 with `requires_verification: true` flag
-- ✅ Integrated in `backend/main.py` chat_stream_endpoint (lines 957-1000)
+- ✅ Integrated in `backend/main.py` chat_stream_endpoint (lines 1027-1069)
 - ✅ Disabled in development mode (to avoid 429 errors during testing)
+- ✅ Uses fingerprint hash (without challenge prefix) for stable cost tracking across requests
 
 **Configuration**:
-- `HIGH_COST_THRESHOLD_USD`: $10.0 (default) - Cost threshold that triggers throttling
-- `HIGH_COST_WINDOW_SECONDS`: 600 (10 minutes) - Sliding window duration
-- `COST_THROTTLE_DURATION_SECONDS`: 30 - Throttle duration when triggered
-- `ENABLE_COST_THROTTLING`: true (default) - Feature flag
+- Redis setting: `high_cost_threshold_usd` (default: $0.10) - Cost threshold that triggers throttling
+- Environment variable: `HIGH_COST_THRESHOLD_USD` (fallback)
+- Redis setting: `high_cost_window_seconds` (default: 600) - Sliding window duration
+- Environment variable: `HIGH_COST_WINDOW_SECONDS` (fallback)
+- Redis setting: `cost_throttle_duration_seconds` (default: 30) - Throttle duration when triggered
+- Environment variable: `COST_THROTTLE_DURATION_SECONDS` (fallback)
+- Redis setting: `enable_cost_throttling` (default: true) - Feature flag
+- Environment variable: `ENABLE_COST_THROTTLING` (fallback)
+- All settings read dynamically from Redis with environment variable fallback
 
-**Result**: ✅ Attackers spending >$10 in 10 minutes get throttled (30s delay + requires verification). Makes abuse actively lose money.
+**Result**: ✅ Attackers spending >$0.10 in 10 minutes get throttled (30s delay + requires verification). Makes abuse actively lose money. Lower threshold provides earlier detection of abuse patterns.
 
 ---
 
@@ -1494,7 +1389,7 @@ Get **98% of the security with 50% of the effort** by implementing in this exact
 
 **Implementation** (✅ Complete): `backend/utils/cost_throttling.py`
 - ✅ Tracks spending per fingerprint in 10-minute sliding window
-- ✅ Throttles for 30 seconds when $10 threshold exceeded
+- ✅ Throttles for 30 seconds when threshold exceeded ($0.10 default)
 - ✅ Returns 429 with `requires_verification: true` flag
 - ✅ Integrated in `backend/main.py` chat_stream_endpoint (lines 957-1000)
 
@@ -1642,24 +1537,40 @@ This combination makes abuse **unprofitable** and **time-consuming** — attacke
 
 ## Changelog
 
-### 2025-01-XX - MVP Implementation Complete
+### 2025-01-XX - MVP Implementation Complete (Updated)
 - ✅ **Challenge-response fingerprinting** - Fully implemented and in production
-  - Backend: `backend/utils/challenge.py`, endpoint `/api/v1/auth/challenge`
+  - Backend: `backend/utils/challenge.py`, endpoint `/api/v1/auth/challenge` (line 834)
   - Frontend: Challenge fetching and fingerprint generation with challenge
   - One-time use validation, 5-minute TTL, per-identifier limits
+  - Challenge format: 64-character hex string (`secrets.token_hex(32)`)
+  - Progressive bans: 1 minute (1st violation), 5 minutes (2nd+ violations)
+  - Rate limiting: 3 seconds between challenge requests
+  - Max active challenges: 15 (production), 100 (development)
+  - Identifier verification: Prevents cross-identifier challenge reuse
 - ✅ **Global rate limiting** - Fully implemented and in production
-  - `backend/rate_limiter.py` - `check_global_rate_limit()` function
+  - `backend/rate_limiter.py` - `check_global_rate_limit()` function (lines 156-225)
   - Configurable limits: 1000/min, 50000/hour (default)
+  - Dynamic configuration: Settings read from Redis with env fallback
 - ✅ **Per-identifier challenge issuance limit** - Fully implemented
-  - Max 3 active challenges per identifier (production), 20 (development)
+  - Max 15 active challenges per identifier (production), 100 (development)
+  - Progressive bans for violations
   - Prevents challenge prefetching abuse
 - ✅ **Graceful Turnstile degradation** - Fully implemented
-  - Try/except wrapper with fallback to stricter rate limits
+  - Turnstile verification returns error dictionaries (no exceptions)
+  - Fallback to stricter rate limits (6/min, 60/hour)
   - Never returns 5xx errors during Cloudflare incidents
+  - All error cases handled gracefully (timeout, network error, internal error)
 - ✅ **Cost-based throttling trigger** - Fully implemented
-  - `backend/utils/cost_throttling.py` - Tracks spending per fingerprint
-  - Threshold: $10 in 10 minutes, 30-second throttle duration
+  - `backend/utils/cost_throttling.py` - Tracks spending per fingerprint hash
+  - Threshold: $0.10 in 10 minutes (configurable, default)
+  - 30-second throttle duration
   - Returns 429 with `requires_verification: true` flag
+  - Disabled in development mode
+  - Dynamic configuration: Settings read from Redis with env fallback
+- ✅ **Dynamic Configuration System** - Fully implemented
+  - `backend/utils/settings_reader.py` - Runtime configuration from Redis
+  - Environment variable fallback for all settings
+  - No service restart required for configuration changes
 
 ### 2025-01-XX - Feature Documentation
 - Created comprehensive advanced abuse prevention feature documentation
