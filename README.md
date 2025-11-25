@@ -76,6 +76,13 @@ flowchart TD
     %% Node Definitions
     %% -------------------
 
+    subgraph "Governance & Control (New)"
+        style Governance fill:#E1D5E7,stroke:#9673A6,color:#333,stroke-width:2px
+        ADMIN_USER("fa:fa-user-shield Admin"):::adminStyle
+        ADMIN_FE("fa:fa-window-maximize Admin Dashboard"):::adminStyle
+        ADMIN_API("fa:fa-cogs Admin API"):::adminStyle
+    end
+
     subgraph "User Interface"
         style UI fill:#D5E8D4,stroke:#82B366,color:#333,stroke-width:2px
         U("fa:fa-user User"):::uiStyle
@@ -84,59 +91,56 @@ flowchart TD
 
     subgraph "Application Backend (FastAPI)"
         style Backend fill:#DAE8FC,stroke:#6C8EBF,color:#333,stroke-width:2px
-        API("fa:fa-cloud FastAPI Backend"):::backendStyle
+        MW("fa:fa-shield-alt Security Middleware\n(Auth, Abuse, Rate Limit)"):::backendStyle
+        API("fa:fa-cloud FastAPI Router"):::backendStyle
         RAG("fa:fa-brain Langchain RAG Orchestrator"):::backendStyle
-        LLM("fa:fa-robot LLM (e.g., Gemini Pro)"):::backendStyle
+        LLM("fa:fa-robot LLM (Gemini 2.5)"):::backendStyle
     end
 
-    subgraph "Content Ingestion & Processing"
-        style Ingestion fill:#FFE6CC,stroke:#D79B00,color:#333,stroke-width:2px
-        SYNC("fa:fa-sync-alt Content Sync Service"):::ingestionStyle
-        PROC("fa:fa-cogs Embedding Processor"):::ingestionStyle
-        CHUNK("fa:fa-vector-square Hierarchical Chunking & Embedding"):::ingestionStyle
+    subgraph "State & Configuration"
+        style Redis fill:#F8CECC,stroke:#B85450,color:#333,stroke-width:2px
+        REDIS("fa:fa-memory Redis\n(Settings, Limits, Cache)"):::storageStyle
     end
 
-    subgraph "Content Management System (Payload)"
+    subgraph "Content Ingestion (Payload CMS)"
         style CMS fill:#E6E0F8,stroke:#A094C4,color:#333,stroke-width:2px
-        AUTHORS("fa:fa-users Foundation Team & Contributors"):::cmsStyle
-        ADMIN("fa:fa-desktop Payload Admin Panel"):::cmsStyle
-        PAYLOAD_DB("fa:fa-database Payload DB (MongoDB)"):::cmsStyle
-        HOOK("fa:fa-bell Payload 'afterChange' Hook"):::cmsStyle
-        PAYLOAD_API("fa:fa-code Payload REST/GraphQL API"):::cmsStyle
+        AUTHORS("fa:fa-users Contributors"):::cmsStyle
+        PAYLOAD("fa:fa-edit Payload CMS"):::cmsStyle
+        SYNC("fa:fa-sync-alt Sync Service"):::ingestionStyle
     end
 
-    subgraph "Data Stores"
-        style Storage fill:#F8CECC,stroke:#B85450,color:#333,stroke-width:2px
-        VDB("fa:fa-layer-group Vector Store (FAISS/MongoDB Atlas Hybrid)"):::storageStyle
+    subgraph "Data Persistence"
+        style Storage fill:#FFE6CC,stroke:#D79B00,color:#333,stroke-width:2px
+        VDB("fa:fa-layer-group Vector Store"):::storageStyle
+        MONGO("fa:fa-database MongoDB\n(Logs, Users)"):::storageStyle
     end
 
     %% -------------------
     %% Connection Definitions
     %% -------------------
 
-    %% Flow 1: Content Ingestion & Indexing
-    AUTHORS -- "Create/Publish Content" --> ADMIN
-    ADMIN -- "Saves to" --> PAYLOAD_DB
-    ADMIN -- "On Publish/Update" --> HOOK
-    HOOK -- "Triggers Sync Service" --> SYNC
-    SYNC -- "Fetches full content via" --> PAYLOAD_API
-    PAYLOAD_API -- "Returns Content" --> SYNC
-    SYNC -- "Sends to Processor" --> PROC
-    PROC -- "Parses & Chunks" --> CHUNK
-    CHUNK -- "Embeds (Local OSS: all-MiniLM-L6-v2) & Stores" --> VDB
+    %% Flow 1: Governance (The Control Loop)
+    ADMIN_USER --> ADMIN_FE
+    ADMIN_FE --> ADMIN_API
+    ADMIN_API -- "Writes Config/Bans" --> REDIS
+    ADMIN_API -- "Read/Write" --> MONGO
 
-    %% Flow 2: User Query & RAG
-    U -- "Submits Query" --> FE
-    FE -- "Sends API Request" --> API
-    API -- "Forwards to" --> RAG
-    RAG -- "1 Embeds Query & Performs Vector Search" --> VDB
-    VDB -- "2 Returns Relevant Context" --> RAG
-    RAG -- "3 Constructs Prompt w/ Context" --> LLM
-    LLM -- "4 Generates Response" --> RAG
-    RAG -- "5 Returns Structured Answer" --> API
-    API -- "Streams Response" --> FE
-    FE -- "Displays Answer" --> U
+    %% Flow 2: User Query (The Application Loop)
+    U --> FE
+    FE --> MW
+    MW -- "1. Check Limits/Fingerprint" --> REDIS
+    REDIS -- "Allow/Deny" --> MW
+    MW -- "2. Forward Safe Request" --> API
+    API -- "3. Check Feature Flags" --> REDIS
+    API --> RAG
+    RAG -- "4. Retrieve Context" --> VDB
+    RAG --> LLM
+    API -- "5. Log Interaction" --> MONGO
 
+    %% Flow 3: Content (The Data Loop)
+    AUTHORS --> PAYLOAD
+    PAYLOAD -- "AfterChange Hook" --> SYNC
+    SYNC --> VDB
 
     %% -------------------
     %% Class-Based Styling
@@ -146,6 +150,7 @@ flowchart TD
     classDef ingestionStyle fill:#FFE6CC,stroke:#333,color:#333
     classDef cmsStyle fill:#E6E0F8,stroke:#333,color:#333
     classDef storageStyle fill:#F8CECC,stroke:#333,color:#333
+    classDef adminStyle fill:#E1D5E7,stroke:#333,color:#333
 ```
 
 ## **Major Milestones & Timelines**
