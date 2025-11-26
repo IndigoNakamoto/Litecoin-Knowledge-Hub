@@ -219,5 +219,5 @@ allow_headers=["*"],
 
 - [FastAPI CORS Middleware Documentation](https://fastapi.tiangolo.com/tutorial/cors/)
 - [OWASP CORS Security Guide](https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html#cross-origin-resource-sharing)
-- Red Team Assessment: `docs/RED_TEAM_ASSESSMENT_COMBINED.md`
+- Red Team Assessment: `docs/security/RED_TEAM_ASSESSMENT_COMBINED.md`
 

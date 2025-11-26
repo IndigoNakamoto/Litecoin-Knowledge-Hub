@@ -628,6 +628,6 @@ Deployment is successful when:
 - [Google Cloud Run Documentation](https://cloud.google.com/run/docs)
 - [Cloud Run Pricing](https://cloud.google.com/run/pricing)
 - [MongoDB Atlas Setup](https://www.mongodb.com/docs/atlas/getting-started/)
-- [Capacity Planning Guide](./CAPACITY_PLANNING.md)
+- [Capacity Planning Guide](../planning/CAPACITY_PLANNING.md)
 - [Cloud Deployment Readiness](./CLOUD_DEPLOYMENT_READINESS.md)
 

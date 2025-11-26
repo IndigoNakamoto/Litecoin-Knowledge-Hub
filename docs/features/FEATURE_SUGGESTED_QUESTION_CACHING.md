@@ -1104,7 +1104,7 @@ If issues occur:
 - `backend/main.py` - Updated chat endpoints, added cache refresh function and admin endpoint
 - `backend/monitoring/metrics.py` - Added Prometheus metrics for suggested question cache
 - `backend/monitoring/__init__.py` - Exported new metrics
-- `docs/ENVIRONMENT_VARIABLES.md` - Documented new environment variables
+- `docs/setup/ENVIRONMENT_VARIABLES.md` - Documented new environment variables
 
 ### Key Implementation Details
 - Cache uses Redis with 24-hour TTL (configurable via `SUGGESTED_QUESTION_CACHE_TTL`)

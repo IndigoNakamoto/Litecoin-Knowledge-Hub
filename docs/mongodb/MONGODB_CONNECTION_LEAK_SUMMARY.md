@@ -108,8 +108,8 @@ Shutdown:
 
 ## Files to Review
 
-1. `docs/MONGODB_CONNECTION_LEAK_INVESTIGATION.md` - Full investigation report
-2. `docs/MONGODB_CONNECTION_FLOW.md` - Visual connection flow diagrams
+1. `docs/mongodb/MONGODB_CONNECTION_LEAK_INVESTIGATION.md` - Full investigation report
+2. `docs/mongodb/MONGODB_CONNECTION_FLOW.md` - Visual connection flow diagrams
 3. `backend/api/v1/sync/payload.py` - Per-request instance creation
 4. `backend/data_ingestion/vector_store_manager.py` - Connection pool creation
 5. `backend/main.py` - Missing cleanup in lifespan

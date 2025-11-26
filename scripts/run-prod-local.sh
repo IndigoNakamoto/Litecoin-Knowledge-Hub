@@ -29,7 +29,7 @@ if [ ! -f "$ENV_PROD_LOCAL_FILE" ]; then
     echo "You can copy from the template:"
     echo "  cp .env.example .env.prod-local"
     echo ""
-    echo "Then update the values as needed. See docs/ENVIRONMENT_VARIABLES.md for details."
+    echo "Then update the values as needed. See docs/setup/ENVIRONMENT_VARIABLES.md for details."
     exit 1
 fi
 

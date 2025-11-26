@@ -19,7 +19,7 @@ All notable changes and completed milestones for the Litecoin Knowledge Hub proj
   * Cost-based throttling trigger provides financial unabusability (ultimate killswitch)
   * Provides 99.9% protection - all MVP items complete and in production
   * Optional enhancements (behavioral analysis, query deduplication) not yet implemented
-  * See [FEATURE_ADVANCED_ABUSE_PREVENTION.md](./docs/FEATURE_ADVANCED_ABUSE_PREVENTION.md) for details
+  * See [FEATURE_ADVANCED_ABUSE_PREVENTION.md](./docs/features/FEATURE_ADVANCED_ABUSE_PREVENTION.md) for details
 * **Question Logging System (11/21/2025)**
   * Implemented user question logging to MongoDB for analytics and insights
   * Questions are accessible via direct MongoDB queries for internal analysis (public API endpoints removed for security - see CRIT-NEW-1)
@@ -35,21 +35,21 @@ All notable changes and completed milestones for the Litecoin Knowledge Hub proj
   * Sanitized health check endpoints and added rate limiting
   * Removed all debug code from production builds
   * All public launch blockers resolved, including MongoDB and Redis authentication (CRIT-3, CRIT-4)
-  * See [RED_TEAM_ASSESSMENT_COMBINED.md](./docs/RED_TEAM_ASSESSMENT_COMBINED.md) for complete details
+  * See [RED_TEAM_ASSESSMENT_COMBINED.md](./docs/security/RED_TEAM_ASSESSMENT_COMBINED.md) for complete details
 * **LLM Spend Limit Monitoring (11/19/2025)**
   * Implemented multi-layered cost control system with daily/hourly spend limits
   * Pre-flight cost estimation prevents billing overages
   * Prometheus metrics and Grafana dashboards for cost tracking
   * Discord webhook alerts at 80% and 100% thresholds
   * Hard stops prevent any cost overages
-  * See [FEATURE_SPEND_LIMIT_MONITORING.md](./docs/FEATURE_SPEND_LIMIT_MONITORING.md) for details
+  * See [FEATURE_SPEND_LIMIT_MONITORING.md](./docs/features/FEATURE_SPEND_LIMIT_MONITORING.md) for details
 * **Suggested Question Caching (11/19/2025)**
   * Implemented Redis-based cache layer for suggested questions
   * 24-hour TTL with pre-population on startup
   * Provides instant responses (<100ms) for common questions
   * Automatic cache refresh via cron job (every 48 hours)
   * Comprehensive Prometheus metrics and Grafana integration
-  * See [FEATURE_SUGGESTED_QUESTION_CACHING.md](./docs/FEATURE_SUGGESTED_QUESTION_CACHING.md) for details
+  * See [FEATURE_SUGGESTED_QUESTION_CACHING.md](./docs/features/FEATURE_SUGGESTED_QUESTION_CACHING.md) for details
 * **Monitoring & Observability Infrastructure (11/8/2025)**
   * Implemented comprehensive Prometheus metrics system tracking HTTP requests, RAG pipeline performance, LLM costs, cache performance, and vector store health
   * Set up Grafana dashboards with pre-configured panels for key metrics visualization

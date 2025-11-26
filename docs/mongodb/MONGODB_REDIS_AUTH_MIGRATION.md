@@ -344,9 +344,9 @@ After completing this migration:
 
 ## Related Documentation
 
-- [Environment Variables Documentation](./ENVIRONMENT_VARIABLES.md)
-- [Red Team Security Assessment](./RED_TEAM_ASSESSMENT_COMBINED.md) - See CRIT-3 and CRIT-4
-- [Docker Environment Switching Guide](./DOCKER_ENV_SWITCHING.md)
+- [Environment Variables Documentation](../setup/ENVIRONMENT_VARIABLES.md)
+- [Red Team Security Assessment](../security/RED_TEAM_ASSESSMENT_COMBINED.md) - See CRIT-3 and CRIT-4
+- [Docker Environment Switching Guide](../deployment/DOCKER_ENV_SWITCHING.md)
 
 ## Support
 

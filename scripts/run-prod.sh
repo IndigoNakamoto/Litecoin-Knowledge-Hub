@@ -30,7 +30,7 @@ if [ ! -f "$ENV_PROD_FILE" ]; then
   echo "To create .env.docker.prod:"
   echo "  cp .env.example .env.docker.prod"
   echo ""
-  echo "See docs/ENVIRONMENT_VARIABLES.md for details."
+  echo "See docs/setup/ENVIRONMENT_VARIABLES.md for details."
   echo ""
   read -p "Continue anyway? (y/N) " -n 1 -r
   echo

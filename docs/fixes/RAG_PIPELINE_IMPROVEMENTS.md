@@ -912,7 +912,7 @@ Before merging changes, verify:
   - `backend/utils/input_sanitizer.py` (security)
   - `backend/cache_utils.py` (caching)
 - **Related Documentation**:
-  - `docs/FEATURE_SPEND_LIMIT_MONITORING.md`
+  - `docs/features/FEATURE_SPEND_LIMIT_MONITORING.md`
   - `docs/monitoring/monitoring-guide.md`
   - `docs/architecture/high_level_design.md`
 

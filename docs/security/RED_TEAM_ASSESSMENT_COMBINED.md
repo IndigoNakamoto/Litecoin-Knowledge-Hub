@@ -194,8 +194,8 @@ The bot is now **public-hardened enough** that even a hostile security incident 
 5. ✅ Health check updated to conditionally use authentication
 6. ✅ User creation script created: `scripts/create-mongo-users.js`
 7. ✅ Helper scripts created: `scripts/setup-mongo-auth.sh`, `scripts/verify-mongo-auth.sh`
-8. ✅ Migration guide created: `docs/MONGODB_REDIS_AUTH_MIGRATION.md`
-9. ✅ Documentation updated: `docs/ENVIRONMENT_VARIABLES.md`
+8. ✅ Migration guide created: `docs/mongodb/MONGODB_REDIS_AUTH_MIGRATION.md`
+9. ✅ Documentation updated: `docs/setup/ENVIRONMENT_VARIABLES.md`
 
 **Implementation Details:**
 - **Docker Compose:** Conditional authentication based on `MONGO_ROOT_PASSWORD` environment variable
@@ -328,8 +328,8 @@ if not expected_token:
 **Implementation Details:**
 - **Backend:** `backend/main.py:162-168` - CORS middleware configuration updated
 - **Testing:** `test-cors.sh` - Comprehensive test suite (all 7 tests passing)
-- **Documentation:** `docs/CRIT-8_FIX_PLAN.md` - Implementation plan
-- **Testing Guide:** `docs/CRIT-8_TESTING_GUIDE.md` - Testing procedures
+- **Documentation:** `docs/fixes/CRIT-8_FIX_PLAN.md` - Implementation plan
+- **Testing Guide:** `docs/testing/CRIT-8_TESTING_GUIDE.md` - Testing procedures
 
 **Security Impact:**
 - ✅ Only required HTTP methods allowed (GET, POST, OPTIONS)

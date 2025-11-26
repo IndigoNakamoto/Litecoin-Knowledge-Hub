@@ -25,9 +25,9 @@ The project has successfully completed the implementation of the core RAG pipeli
 | **Payload CMS Integration** | ✅ **IMPLEMENTED** - Complete content lifecycle management system with draft→publish→unpublish→delete workflows, real-time webhook synchronization, automated content filtering, and Foundation-controlled editorial oversight ensuring knowledge base quality and accuracy. |
 | **Monitoring & Observability** | ✅ **IMPLEMENTED** - Comprehensive monitoring infrastructure with Prometheus metrics, Grafana dashboards, health checks, structured logging, and LLM observability (LangSmith integration). Tracks RAG pipeline performance, LLM costs, cache performance, and system health. |
 | **Question Logging** | ✅ **IMPLEMENTED** - All user questions are logged to MongoDB for analysis, enabling insights into user needs, query patterns, and system usage. Questions are accessible via direct MongoDB queries for internal analysis. |
-| **LLM Spend Limit Monitoring** | ✅ **IMPLEMENTED** - Multi-layered cost control system with daily/hourly spend limits, pre-flight cost estimation, Prometheus metrics, and Discord alerting. Prevents billing overages with hard stops. Cost estimates: $485/million questions (without cache), TBD (with cache). See [FEATURE_SPEND_LIMIT_MONITORING.md](./docs/FEATURE_SPEND_LIMIT_MONITORING.md) for details. |
-| **Suggested Question Caching** | ✅ **IMPLEMENTED** - Redis-based cache layer for suggested questions with 24-hour TTL, pre-populated on startup, providing instant responses (<100ms) for common questions. See [FEATURE_SUGGESTED_QUESTION_CACHING.md](./docs/FEATURE_SUGGESTED_QUESTION_CACHING.md) for details. |
-| **Security Hardening** | ⚠️ **NEARLY COMPLETE** - Comprehensive security review and hardening completed. 15 critical/high vulnerabilities resolved including webhook authentication, CORS configuration, error disclosure fixes, rate limiting, and security headers. **1 public launch blocker remaining:** MongoDB and Redis authentication (CRIT-3, CRIT-4) - code already written, needs to be enabled (~1-2 hours). See [RED_TEAM_ASSESSMENT_COMBINED.md](./docs/RED_TEAM_ASSESSMENT_COMBINED.md) for details. |
+| **LLM Spend Limit Monitoring** | ✅ **IMPLEMENTED** - Multi-layered cost control system with daily/hourly spend limits, pre-flight cost estimation, Prometheus metrics, and Discord alerting. Prevents billing overages with hard stops. Cost estimates: $485/million questions (without cache), TBD (with cache). See [FEATURE_SPEND_LIMIT_MONITORING.md](./docs/features/FEATURE_SPEND_LIMIT_MONITORING.md) for details. |
+| **Suggested Question Caching** | ✅ **IMPLEMENTED** - Redis-based cache layer for suggested questions with 24-hour TTL, pre-populated on startup, providing instant responses (<100ms) for common questions. See [FEATURE_SUGGESTED_QUESTION_CACHING.md](./docs/features/FEATURE_SUGGESTED_QUESTION_CACHING.md) for details. |
+| **Security Hardening** | ⚠️ **NEARLY COMPLETE** - Comprehensive security review and hardening completed. 15 critical/high vulnerabilities resolved including webhook authentication, CORS configuration, error disclosure fixes, rate limiting, and security headers. **1 public launch blocker remaining:** MongoDB and Redis authentication (CRIT-3, CRIT-4) - code already written, needs to be enabled (~1-2 hours). See [RED_TEAM_ASSESSMENT_COMBINED.md](./docs/security/RED_TEAM_ASSESSMENT_COMBINED.md) for details. |
 | **Litecoin Basics & FAQ** | 📝 **IN PROGRESS** - Provides clear, concise answers to fundamental questions about Litecoin, its history, how it works, and common terminology. Caters especially to new users. Content population in progress. |
 | **Transaction & Block Explorer** | 📝 **PLANNED** - Allows users to look up details of Litecoin transactions and explore block information. |
 | **Market Data & Insights** | 📝 **PLANNED** - Delivers real-time Litecoin price information, market capitalization, and trading volume from reliable market APIs. |
@@ -239,7 +239,7 @@ For local development, the backend uses FAISS vector store instead of MongoDB At
 
 2. **Configure Environment Variables:**
    
-   The project uses a centralized environment variable system. See [docs/ENVIRONMENT_VARIABLES.md](./docs/ENVIRONMENT_VARIABLES.md) for complete documentation.
+   The project uses a centralized environment variable system. See [docs/setup/ENVIRONMENT_VARIABLES.md](./docs/setup/ENVIRONMENT_VARIABLES.md) for complete documentation.
    
    For local development:
    ```bash
@@ -288,7 +288,7 @@ For local development, the backend uses FAISS vector store instead of MongoDB At
    pnpm dev
    \# Payload CMS admin panel available at <http://localhost:3001>
 
-   **Note:** Environment variables are now managed centrally. See [docs/ENVIRONMENT_VARIABLES.md](./docs/ENVIRONMENT_VARIABLES.md) for details.
+   **Note:** Environment variables are now managed centrally. See [docs/setup/ENVIRONMENT_VARIABLES.md](./docs/setup/ENVIRONMENT_VARIABLES.md) for details.
 
    **Alternative: Docker Setup**
    ```bash
@@ -314,7 +314,7 @@ For verifying production builds locally before deployment:
    cp .env.example .env.prod-local
    ```
    
-   Update the values as needed for local production builds. See [docs/ENVIRONMENT_VARIABLES.md](./docs/ENVIRONMENT_VARIABLES.md) for variable documentation.
+   Update the values as needed for local production builds. See [docs/setup/ENVIRONMENT_VARIABLES.md](./docs/setup/ENVIRONMENT_VARIABLES.md) for variable documentation.
 
 2. **Run local production build verification:**
    ```bash
@@ -325,7 +325,7 @@ For verifying production builds locally before deployment:
    export $(cat .env.prod-local | xargs) && docker-compose -f docker-compose.prod-local.yml up --build
    ```
 
-This runs production builds with the full stack (including monitoring) using localhost URLs. See [docs/PROD_LOCAL.md](./docs/PROD_LOCAL.md) for detailed documentation.
+This runs production builds with the full stack (including monitoring) using localhost URLs. See [docs/deployment/PROD_LOCAL.md](./docs/deployment/PROD_LOCAL.md) for detailed documentation.
 
 ## **Testing**
 
