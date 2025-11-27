@@ -90,6 +90,33 @@ async def generate_challenge(identifier: str) -> Dict[str, Any]:
         last_request_int = int(last_request_time)
         time_since_last = now - last_request_int
         if time_since_last < challenge_request_rate_limit_seconds:
+            # FIX: Smart Reuse (Idempotency)
+            # If the user is requesting too fast, check if we generated a valid challenge
+            # just moments ago (e.g. during page load). If so, return it instead of erroring.
+            recent_challenges = await redis.zrange(active_challenges_key, -1, -1, withscores=True)
+            
+            if recent_challenges:
+                existing_id, existing_expiry = recent_challenges[0]
+                existing_expiry = int(existing_expiry)
+                
+                # Check if this challenge was created recently (approximate via expiry - ttl)
+                created_at = existing_expiry - challenge_ttl_seconds
+                # Allow reuse if created within a small window (slightly larger than rate limit to be safe)
+                reuse_window = challenge_request_rate_limit_seconds + 2
+                
+                if (now - created_at) < reuse_window:
+                    logger.debug(
+                        f"Rate limit hit for {identifier} (delta={time_since_last}s), "
+                        f"but reusing fresh challenge created {now - created_at}s ago."
+                    )
+                    # Decode bytes to string if needed
+                    challenge_id = existing_id if isinstance(existing_id, str) else existing_id.decode('utf-8')
+                    return {
+                        "challenge": challenge_id,
+                        "expires_in_seconds": existing_expiry - now
+                    }
+            
+            # If no recent challenge to reuse, enforce the rate limit
             retry_after = challenge_request_rate_limit_seconds - time_since_last
             logger.debug(
                 f"Challenge request rate limited for identifier {identifier}: "

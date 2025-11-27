@@ -126,19 +126,30 @@ async def _apply_progressive_ban(
 
 
 async def _get_sliding_window_count(
-    redis, key: str, window_seconds: int, now: int
+    redis, key: str, window_seconds: int, now: int, deduplication_id: Optional[str] = None
 ) -> int:
   """
   Get count of requests in sliding window using Redis sorted sets.
-  Each request is tracked with a unique member (timestamp + UUID) and score (timestamp).
+  Supports deduplication via deduplication_id (idempotency).
+  
+  Args:
+    deduplication_id: Optional identifier to use for deduplication (e.g., challenge ID).
+                     If provided, same ID will overwrite previous entry (idempotent).
+                     If None, uses timestamp + UUID for unique tracking.
   """
   # Remove entries outside the window
   cutoff = now - window_seconds
   await redis.zremrangebyscore(key, 0, cutoff)
   
-  # Add current request with unique member ID
-  # Use timestamp as score and unique ID as member to ensure accurate counting
-  member_id = f"{now}:{uuid.uuid4().hex[:8]}"
+  # FIX: Use deduplication_id as the member if provided.
+  # This ensures double-clicks with the same challenge ID are counted as ONE request.
+  if deduplication_id:
+    member_id = deduplication_id
+  else:
+    # Fallback to unique ID for requests without fingerprint/challenge
+    member_id = f"{now}:{uuid.uuid4().hex[:8]}"
+  
+  # ZADD is idempotent: adding the same member again just updates the timestamp
   await redis.zadd(key, {member_id: now})
   
   # Set TTL slightly longer than window to ensure cleanup
@@ -227,13 +238,28 @@ async def check_global_rate_limit(redis, now: int) -> None:
 
 async def check_rate_limit(request: Request, config: RateLimitConfig) -> None:
   """
-  Enforce rate limits based on client identifier (fingerprint, user_id, or IP) and endpoint-specific configuration.
+  Enforce rate limits using Stable Identifier for the bucket and Full Identifier for deduplication.
   Uses sliding window rate limiting with Redis sorted sets for accurate tracking.
   Supports progressive bans for repeated violations.
   Checks global rate limits after individual limits.
   """
   redis = await get_redis_client()
-  identifier = _get_rate_limit_identifier(request)
+  
+  # 1. Get the Full Fingerprint (e.g., "fp:challengeABC:userHash123" OR "2001:db8::1")
+  full_fingerprint = _get_rate_limit_identifier(request)
+  
+  # 2. Extract Stable Identifier (e.g., "userHash123")
+  # FIX: Only split if it looks like a fingerprint (starts with "fp:")
+  # This prevents breaking IPv6 addresses which also contain colons.
+  # This ensures the RATE LIMIT applies to the USER, not just the current challenge session.
+  if full_fingerprint.startswith("fp:"):
+    # Format: "fp:challenge:hash" - extract the stable hash (last part)
+    stable_identifier = full_fingerprint.split(':')[-1]
+  else:
+    # It's likely an IP address (IPv4 or IPv6) or a raw hash
+    # Use as-is to avoid breaking IPv6 addresses (e.g., "2001:db8::1")
+    stable_identifier = full_fingerprint
+  
   now = int(time.time())
 
   # Check for existing progressive ban (use IP for ban tracking to prevent ban evasion)
@@ -261,15 +287,16 @@ async def check_rate_limit(request: Request, config: RateLimitConfig) -> None:
   # Check global rate limits AFTER individual limits
   await check_global_rate_limit(redis, now)
 
-  # Use sliding window rate limiting with Redis sorted sets
-  # Use identifier (fingerprint/user_id/IP) for rate limiting
-  base_key = f"rl:{config.identifier}:{identifier}"
+  # 3. Use STABLE identifier for the Redis Key (The Bucket)
+  # This ensures rate limits apply to the user, not just the current challenge session
+  base_key = f"rl:{config.identifier}:{stable_identifier}"
   minute_key = f"{base_key}:m"
   hour_key = f"{base_key}:h"
 
-  # Get counts using sliding windows
-  minute_count = await _get_sliding_window_count(redis, minute_key, 60, now)
-  hour_count = await _get_sliding_window_count(redis, hour_key, 3600, now)
+  # 4. Use FULL fingerprint for Deduplication (The Receipt)
+  # This ensures double-clicks are deduplicated, but different challenges count toward the limit
+  minute_count = await _get_sliding_window_count(redis, minute_key, 60, now, deduplication_id=full_fingerprint)
+  hour_count = await _get_sliding_window_count(redis, hour_key, 3600, now, deduplication_id=full_fingerprint)
 
   # Check limits
   exceeded_minute = minute_count > config.requests_per_minute
