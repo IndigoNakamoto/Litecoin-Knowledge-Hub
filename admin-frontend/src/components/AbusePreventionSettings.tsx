@@ -175,6 +175,9 @@ export function AbusePreventionSettings() {
             <div className="space-y-2">
               <Label htmlFor="high_cost_threshold_usd">
                 High Cost Threshold (USD)
+                <span className="ml-2 text-xs text-muted-foreground">
+                  (10-minute window)
+                </span>
                 {sources.high_cost_threshold_usd && (
                   <span className="ml-2 text-xs text-muted-foreground">
                     ({sources.high_cost_threshold_usd})
@@ -230,6 +233,30 @@ export function AbusePreventionSettings() {
                   updateSetting("cost_throttle_duration_seconds", parseInt(e.target.value) || undefined)
                 }
                 min="1"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="daily_cost_limit_usd">
+                Daily Cost Limit per Identifier (USD)
+                <span className="ml-2 text-xs text-muted-foreground">
+                  (Hard daily cap)
+                </span>
+                {sources.daily_cost_limit_usd && (
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    ({sources.daily_cost_limit_usd})
+                  </span>
+                )}
+              </Label>
+              <Input
+                id="daily_cost_limit_usd"
+                type="number"
+                step="0.01"
+                value={settings.daily_cost_limit_usd || ""}
+                onChange={(e) =>
+                  updateSetting("daily_cost_limit_usd", parseFloat(e.target.value) || undefined)
+                }
+                min="0.01"
               />
             </div>
 

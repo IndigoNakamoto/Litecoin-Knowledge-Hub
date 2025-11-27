@@ -9,6 +9,7 @@ export interface AbusePreventionSettings {
   high_cost_window_seconds?: number;
   enable_cost_throttling?: boolean;
   cost_throttle_duration_seconds?: number;
+  daily_cost_limit_usd?: number;
   challenge_request_rate_limit_seconds?: number;
 }
 
