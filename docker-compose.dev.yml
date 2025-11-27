@@ -53,8 +53,12 @@ services:
       # Use Docker service name for Payload CMS (internal port 3000)
       # This allows backend to connect to Payload CMS inside Docker network
       - PAYLOAD_PUBLIC_SERVER_URL=http://payload_cms:3000
+      # Redis connection URL using Docker service name
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
       mongodb:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     volumes:
       # Mount backend code for hot reload
@@ -81,6 +85,12 @@ services:
     volumes:
       - redis_dev_data:/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   frontend:
     build:
