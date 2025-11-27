@@ -5,6 +5,7 @@ import { Dashboard } from "@/components/Dashboard";
 import { BansThrottles } from "@/components/BansThrottles";
 import { AbusePreventionSettings } from "@/components/AbusePreventionSettings";
 import { SuggestedQuestionsCache } from "@/components/SuggestedQuestionsCache";
+import { UserStatistics } from "@/components/UserStatistics";
 import { Button } from "@/components/ui/button";
 import { authApi } from "@/lib/api";
 import { useRouter } from "next/navigation";
@@ -32,6 +33,7 @@ export default function DashboardPage() {
         </header>
         <main className="container mx-auto px-4 py-8 space-y-8">
           <Dashboard />
+          <UserStatistics />
           <BansThrottles />
           <AbusePreventionSettings />
           <SuggestedQuestionsCache />
