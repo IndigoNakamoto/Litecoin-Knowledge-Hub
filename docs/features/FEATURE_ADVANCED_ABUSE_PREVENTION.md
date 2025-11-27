@@ -387,12 +387,15 @@ User Request
 - **Details**:
   - Track recent spending per fingerprint hash (stable identifier) in 10-minute sliding window
   - Redis sorted set: `llm:cost:recent:{fingerprint_hash}` with timestamp scores
-  - If total cost >= threshold ($0.10 default) → throttle for 30 seconds
-  - Throttling: Return 429 with `requires_verification: true` (force visible Turnstile)
+  - Daily cost tracking: `llm:cost:daily:{fingerprint_hash}:{YYYY-MM-DD}` with timestamp scores
+  - If total cost >= threshold ($0.02 default) in 10 minutes → throttle for 30 seconds
+  - If daily cost >= limit ($0.25 default) → hard throttle (daily limit reached)
+  - Throttling: Return 429 with appropriate message (10-min threshold or daily limit)
   - Makes abuse actively lose money (forced delays + verification)
-  - Lower threshold ($0.10) provides earlier detection of abuse patterns
+  - Lower threshold ($0.02) provides earlier detection of abuse patterns
+  - Daily limit ($0.25) provides hard cap on spending per identifier
   - Disabled in development mode
-  - Configurable: `HIGH_COST_THRESHOLD_USD` (default: 0.10), `HIGH_COST_WINDOW_SECONDS` (default: 600)
+  - Configurable: `HIGH_COST_THRESHOLD_USD` (default: 0.02), `HIGH_COST_WINDOW_SECONDS` (default: 600), `DAILY_COST_LIMIT_USD` (default: 0.25)
   - Settings read dynamically from Redis with environment variable fallback
 
 ### TR-6: Dynamic Configuration System
@@ -761,7 +764,8 @@ Add challenge endpoint and integrate enhancements:
 4. **Cost-Based Throttling** (lines 1027-1069):
    - Uses fingerprint hash (without challenge prefix) for stable tracking
    - Estimates cost before LLM call
-   - Throttles if threshold exceeded ($0.10 default)
+   - Throttles if threshold exceeded ($0.02 default in 10 minutes)
+   - Hard throttle if daily limit exceeded ($0.25 default per identifier)
    - Returns 429 with `requires_verification: true`
 
 5. **Dynamic Configuration**:
@@ -889,7 +893,8 @@ GLOBAL_RATE_LIMIT_PER_MINUTE=1000  # Aggregate requests per minute
 GLOBAL_RATE_LIMIT_PER_HOUR=50000   # Aggregate requests per hour
 
 # Cost-Based Throttling
-HIGH_COST_THRESHOLD_USD=0.10  # Cost threshold that triggers throttling (default: $0.10)
+HIGH_COST_THRESHOLD_USD=0.02  # Cost threshold that triggers throttling in 10-minute window (default: $0.02)
+DAILY_COST_LIMIT_USD=0.25  # Daily cost limit per identifier (default: $0.25)
 HIGH_COST_WINDOW_SECONDS=600  # Sliding window duration (10 minutes)
 COST_THROTTLE_DURATION_SECONDS=30  # Throttle duration when triggered
 
@@ -1168,7 +1173,7 @@ These 5 things provide **99.9% of the security benefit** and are fully operation
 | **2** | **Global rate limiting** (aggregate across all identifiers) | ✅ **IMPLEMENTED** | `backend/rate_limiter.py` - `check_global_rate_limit()`<br>Configurable: 1000/min, 50000/hour (default)<br>Checked after individual rate limits |
 | **3** | **Per-identifier challenge issuance limit** (max active challenges per fingerprint/IP) | ✅ **IMPLEMENTED** | `backend/utils/challenge.py` - `MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER`<br>Production: 15 active challenges max<br>Development: 100 active challenges max<br>Progressive bans: 1min, 5min<br>Rate limit: 3 seconds between challenge requests |
 | **4** | **Graceful Turnstile degradation** (if Turnstile fails → stricter rate limits, no 5xx) | ✅ **IMPLEMENTED** | `backend/main.py` - Try/except around Turnstile verification<br>Falls back to `STRICT_RATE_LIMIT` (6/min, 60/hour)<br>Never returns 5xx errors |
-| **5** | **Cost-based throttling trigger** (if fingerprint spends >threshold in <10 min → 30s delay) | ✅ **IMPLEMENTED** | `backend/utils/cost_throttling.py` - `check_cost_based_throttling()`<br>Threshold: $0.10 in 10 minutes (configurable, default)<br>Throttle duration: 30 seconds<br>Returns 429 with `requires_verification: true`<br>Disabled in development mode |
+| **5** | **Cost-based throttling trigger** (if fingerprint spends >threshold in <10 min → 30s delay) + Daily limit | ✅ **IMPLEMENTED** | `backend/utils/cost_throttling.py` - `check_cost_based_throttling()`<br>10-minute threshold: $0.02 (configurable, default)<br>Daily limit: $0.25 per identifier (configurable, default)<br>Throttle duration: 30 seconds<br>Returns 429 with appropriate message<br>Disabled in development mode |
 
 **Total Protection**: 99.9% ✅  
 **Status**: Production-ready and active 🎯
@@ -1271,23 +1276,27 @@ These 5 things provide **99.9% of the security benefit** and are fully operation
 
 #### Priority 5: Cost-Based Throttling Trigger ✅ **IMPLEMENTED**
 
-**What**: If fingerprint spends >threshold ($0.10 default) in <10 min → 30s delay + requires verification  
-**Why**: The ultimate killswitch — makes abuse actively lose money  
+**What**: If fingerprint spends >threshold ($0.02 default) in <10 min → 30s delay OR if daily limit ($0.25 default) exceeded → hard throttle  
+**Why**: The ultimate killswitch — makes abuse actively lose money with hard daily caps  
 **Status**: ✅ **Production-ready**
 
 **Implementation**: 
 - ✅ Implemented in `backend/utils/cost_throttling.py`
-- ✅ Function: `check_cost_based_throttling()` (lines 22-145)
+- ✅ Function: `check_cost_based_throttling()` (lines 22-165)
 - ✅ Tracks spending per fingerprint hash (stable identifier) in 10-minute sliding window using Redis sorted sets
-- ✅ Throttles for 30 seconds when threshold exceeded
-- ✅ Returns 429 with `requires_verification: true` flag
+- ✅ Tracks daily spending per fingerprint hash using Redis sorted sets with date-based keys
+- ✅ Throttles for 30 seconds when 10-minute threshold exceeded
+- ✅ Hard throttles when daily limit exceeded (returns "Daily usage limit reached")
+- ✅ Returns 429 with appropriate message (10-min threshold or daily limit)
 - ✅ Integrated in `backend/main.py` chat_stream_endpoint (lines 1027-1069)
 - ✅ Disabled in development mode (to avoid 429 errors during testing)
 - ✅ Uses fingerprint hash (without challenge prefix) for stable cost tracking across requests
 
 **Configuration**:
-- Redis setting: `high_cost_threshold_usd` (default: $0.10) - Cost threshold that triggers throttling
+- Redis setting: `high_cost_threshold_usd` (default: $0.02) - Cost threshold that triggers throttling in 10-minute window
 - Environment variable: `HIGH_COST_THRESHOLD_USD` (fallback)
+- Redis setting: `daily_cost_limit_usd` (default: $0.25) - Daily cost limit per identifier (hard cap)
+- Environment variable: `DAILY_COST_LIMIT_USD` (fallback)
 - Redis setting: `high_cost_window_seconds` (default: 600) - Sliding window duration
 - Environment variable: `HIGH_COST_WINDOW_SECONDS` (fallback)
 - Redis setting: `cost_throttle_duration_seconds` (default: 30) - Throttle duration when triggered
@@ -1296,7 +1305,7 @@ These 5 things provide **99.9% of the security benefit** and are fully operation
 - Environment variable: `ENABLE_COST_THROTTLING` (fallback)
 - All settings read dynamically from Redis with environment variable fallback
 
-**Result**: ✅ Attackers spending >$0.10 in 10 minutes get throttled (30s delay + requires verification). Makes abuse actively lose money. Lower threshold provides earlier detection of abuse patterns.
+**Result**: ✅ Attackers spending >$0.02 in 10 minutes get throttled (30s delay). Attackers hitting $0.25/day get hard throttled. Makes abuse actively lose money with hard daily caps. Lower threshold provides earlier detection of abuse patterns.
 
 ---
 
@@ -1389,7 +1398,8 @@ Get **98% of the security with 50% of the effort** by implementing in this exact
 
 **Implementation** (✅ Complete): `backend/utils/cost_throttling.py`
 - ✅ Tracks spending per fingerprint in 10-minute sliding window
-- ✅ Throttles for 30 seconds when threshold exceeded ($0.10 default)
+- ✅ Throttles for 30 seconds when 10-minute threshold exceeded ($0.02 default)
+- ✅ Hard throttles when daily limit exceeded ($0.25 default per identifier)
 - ✅ Returns 429 with `requires_verification: true` flag
 - ✅ Integrated in `backend/main.py` chat_stream_endpoint (lines 957-1000)
 
@@ -1562,7 +1572,8 @@ This combination makes abuse **unprofitable** and **time-consuming** — attacke
   - All error cases handled gracefully (timeout, network error, internal error)
 - ✅ **Cost-based throttling trigger** - Fully implemented
   - `backend/utils/cost_throttling.py` - Tracks spending per fingerprint hash
-  - Threshold: $0.10 in 10 minutes (configurable, default)
+  - 10-minute threshold: $0.02 (configurable, default)
+  - Daily limit: $0.25 per identifier (configurable, default)
   - 30-second throttle duration
   - Returns 429 with `requires_verification: true` flag
   - Disabled in development mode
