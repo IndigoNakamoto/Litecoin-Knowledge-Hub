@@ -126,6 +126,7 @@ def mock_redis():
     
     # Store for test data
     redis_mock._storage = {}
+    redis_mock._sets = {}  # For Redis sets (SADD, SCARD, etc.)
     
     # Override get/set to use storage
     async def mock_get(key):
@@ -139,14 +140,35 @@ def mock_redis():
         redis_mock._storage[key] = value
         return True
     
+    # Redis set operations
+    async def mock_sadd(key, *members):
+        """Add members to a set."""
+        if key not in redis_mock._sets:
+            redis_mock._sets[key] = set()
+        initial_size = len(redis_mock._sets[key])
+        redis_mock._sets[key].update(members)
+        return len(redis_mock._sets[key]) - initial_size
+    
+    async def mock_scard(key):
+        """Get cardinality (size) of a set."""
+        return len(redis_mock._sets.get(key, set()))
+    
+    async def mock_scan(cursor=0, match=None, count=None):
+        """Mock scan operation - returns empty for simplicity."""
+        return (0, [])
+    
     redis_mock.get = mock_get
     redis_mock.set = mock_set
     redis_mock.setex = mock_setex
+    redis_mock.sadd = mock_sadd
+    redis_mock.scard = mock_scard
+    redis_mock.scan = mock_scan
     
     yield redis_mock
     
     # Cleanup
     redis_mock._storage.clear()
+    redis_mock._sets.clear()
 
 # Mock MongoDB client (using mongomock for realism)
 @pytest.fixture
