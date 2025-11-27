@@ -32,6 +32,7 @@ from backend.api.v1.admin.auth import router as admin_auth_router
 from backend.api.v1.admin.redis import router as admin_redis_router
 from backend.api.v1.admin.settings import router as admin_settings_router
 from backend.api.v1.admin.cache import router as admin_cache_router
+from backend.api.v1.admin.users import router as admin_users_router
 from backend.dependencies import get_user_questions_collection, get_llm_request_logs_collection
 from bson import ObjectId
 from fastapi.encoders import jsonable_encoder # Import jsonable_encoder
@@ -583,6 +584,7 @@ app.include_router(admin_auth_router, prefix="/api/v1/admin/auth", tags=["Admin"
 app.include_router(admin_redis_router, prefix="/api/v1/admin/redis", tags=["Admin"])
 app.include_router(admin_settings_router, prefix="/api/v1/admin/settings", tags=["Admin"])
 app.include_router(admin_cache_router, prefix="/api/v1/admin/cache", tags=["Admin"])
+app.include_router(admin_users_router, prefix="/api/v1/admin/users", tags=["Admin"])
 
 # Import cache utilities and suggested questions utility
 from backend.cache_utils import suggested_question_cache
@@ -1026,6 +1028,7 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
     
     # Cost-based throttling check (before LLM call)
     fingerprint = http_request.headers.get("X-Fingerprint")
+    fingerprint_hash = None
     if fingerprint:
         # Extract fingerprint hash (without challenge prefix) for cost tracking
         _, fingerprint_hash = _extract_challenge_from_fingerprint(fingerprint)
@@ -1068,6 +1071,16 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
                     "requires_verification": True
                 }
             )
+    
+    # Track unique user (non-blocking, fire and forget)
+    if fingerprint_hash:
+        try:
+            from backend.api.v1.admin.users import track_unique_user
+            # Run tracking in background to avoid blocking request
+            asyncio.create_task(track_unique_user(fingerprint_hash))
+        except Exception as e:
+            # Log error but don't fail the request
+            logger.debug(f"Error tracking unique user: {e}")
 
     # Generate unique request ID
     request_id = str(uuid.uuid4())
