@@ -1029,7 +1029,7 @@ export default function Home() {
   }, [streamingMessage]);
 
   return (
-    <div className="flex flex-col h-screen max-h-screen bg-background relative z-10">
+    <div className="flex flex-col h-screen max-h-screen relative z-10">
       
       {/* Usage Warning Banner */}
       {usageWarning && usageWarning.warning_level && (
@@ -1092,8 +1092,9 @@ export default function Home() {
             )}
           </ChatWindow>
         )}
+        <InputBox onSendMessage={handleSendMessage} isLoading={isLoading} />
       </div>
-      <InputBox onSendMessage={handleSendMessage} isLoading={isLoading} />
+      
     </div>
   );
 }

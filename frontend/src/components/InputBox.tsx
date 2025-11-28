@@ -1,4 +1,3 @@
-import { Button } from "@/components/ui/button";
 import React, { useState, useRef, useEffect } from "react";
 import { Send, Sparkles } from "lucide-react";
 
@@ -41,9 +40,17 @@ const InputBox: React.FC<InputBoxProps> = ({ onSendMessage, isLoading }) => {
   }, [input]);
 
   return (
-    <div className="sticky bottom-0 inset-x-0 z-10 bg-background/80 backdrop-blur-sm">
+    <div 
+      className="sticky bottom-0 inset-x-0 z-10 mt-4"
+    >
       <div className="mx-auto max-w-4xl px-4 py-4">
-        <div className="relative flex items-end gap-3 rounded-2xl border border-border bg-card text-foreground shadow-lg shadow-black/20 transition-all focus-within:border-primary/60 focus-within:shadow-xl focus-within:shadow-primary/10">
+        <div 
+          className="relative flex items-end gap-3 rounded-2xl border border-border text-foreground shadow-lg shadow-black/20 transition-all focus-within:border-primary/60 focus-within:shadow-xl focus-within:shadow-primary/10"
+          style={{
+            backdropFilter: 'blur(30px)',
+            WebkitBackdropFilter: 'blur(30px)',
+          }}
+        >
           {/* Litecoin logo/sparkles on focus */}
           {isFocused && (
             <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
@@ -69,15 +76,14 @@ const InputBox: React.FC<InputBoxProps> = ({ onSendMessage, isLoading }) => {
             }}
           />
           <div className="flex items-end pb-2 pr-2">
-            <Button
+            <button
               onClick={handleSend}
               disabled={!input.trim() || isLoading}
-              size="icon"
-              className="h-10 w-10 rounded-xl bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0 hover:scale-105 active:scale-95"
+              className="h-10 w-10 rounded-xl bg-gradient-to-r from-primary to-primary/80 border border-primary/20 text-white shadow-lg hover:shadow-xl hover:shadow-primary/10 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shrink-0 hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 flex items-center justify-center"
               aria-label="Send message"
             >
               <Send className="h-4 w-4" />
-            </Button>
+            </button>
           </div>
         </div>
         <div className="mt-2 flex justify-between items-center px-4">
