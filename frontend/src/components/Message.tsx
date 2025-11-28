@@ -4,7 +4,8 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import React from "react";
+import { Button } from "@/components/ui/button";
+import React, { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -13,11 +14,118 @@ interface MessageProps {
   content: string;
   sources?: { metadata?: { title?: string; source?: string } }[];
   messageId?: string;
+  retryInfo?: {
+    retryAfterSeconds: number;
+    banExpiresAt?: number;
+    violationCount?: number;
+    errorType: string;
+    originalMessage?: string;
+  };
+  onRetry?: () => void;
 }
 
-const Message: React.FC<MessageProps> = ({ role, content, sources, messageId }) => {
+const Message: React.FC<MessageProps> = ({ role, content, sources, messageId, retryInfo, onRetry }) => {
   const isUser = role === "user";
   const messageRef = React.useRef<HTMLDivElement>(null);
+  
+  // Countdown timer for retry
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+  const [canRetry, setCanRetry] = useState(false);
+  
+  // Debug logging for retry info
+  useEffect(() => {
+    if (isUser) {
+      console.debug("Message component received props:", {
+        messageId,
+        role,
+        hasRetryInfo: !!retryInfo,
+        hasOnRetry: !!onRetry,
+        retryInfo,
+        onRetryDefined: typeof onRetry === 'function',
+      });
+      
+      if (retryInfo && !onRetry) {
+        console.warn("Retry info present but onRetry is missing:", {
+          messageId,
+          retryInfo,
+          hasOriginalMessage: !!retryInfo.originalMessage,
+        });
+      }
+      
+      if (retryInfo && onRetry) {
+        console.debug("Retry button should be visible:", {
+          messageId,
+          retryInfo,
+          remainingSeconds,
+          canRetry,
+        });
+      }
+    }
+  }, [messageId, role, retryInfo, onRetry, isUser, remainingSeconds, canRetry]);
+  
+  useEffect(() => {
+    if (!retryInfo || !isUser) {
+      if (isUser && !retryInfo) {
+        console.debug("Message component: retryInfo not present for user message:", messageId);
+      }
+      if (isUser && retryInfo && !isUser) {
+        console.debug("Message component: retryInfo present but not a user message:", messageId);
+      }
+      return;
+    }
+    
+    // Calculate initial remaining seconds
+    const banExpiresAt = retryInfo.banExpiresAt;
+    const retryAfterSeconds = retryInfo.retryAfterSeconds || 0;
+    
+    console.debug("Message retry info:", { banExpiresAt, retryAfterSeconds, retryInfo });
+    
+    let initialRemaining: number;
+    if (banExpiresAt) {
+      // Calculate from ban expiration timestamp (Unix timestamp in seconds)
+      const now = Math.floor(Date.now() / 1000);
+      const banExpires = typeof banExpiresAt === 'number' ? banExpiresAt : parseInt(String(banExpiresAt), 10);
+      initialRemaining = Math.max(0, banExpires - now);
+      
+      // If banExpiresAt calculation gives 0 or negative, fall back to retryAfterSeconds
+      if (initialRemaining <= 0 && retryAfterSeconds > 0) {
+        console.debug("banExpiresAt calculation resulted in 0 or negative, using retryAfterSeconds:", retryAfterSeconds);
+        initialRemaining = retryAfterSeconds;
+      }
+    } else {
+      // Use retryAfterSeconds directly
+      initialRemaining = retryAfterSeconds;
+    }
+    
+    console.debug("Calculated initial remaining seconds:", initialRemaining);
+    
+    setRemainingSeconds(initialRemaining);
+    setCanRetry(initialRemaining <= 0);
+    
+    if (initialRemaining > 0) {
+      // Start countdown
+      const interval = setInterval(() => {
+        setRemainingSeconds((prev) => {
+          if (prev === null || prev <= 1) {
+            setCanRetry(true);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [retryInfo, isUser]);
+  
+  const formatTime = (seconds: number): string => {
+    if (seconds >= 60) {
+      const minutes = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${minutes}m ${secs}s`;
+    }
+    return `${seconds}s`;
+  };
 
   if (!isUser) {
     // AI messages take full width
@@ -168,6 +276,36 @@ const Message: React.FC<MessageProps> = ({ role, content, sources, messageId }) 
               </AccordionContent>
             </AccordionItem>
           </Accordion>
+        )}
+        {retryInfo && onRetry && (
+          <div className="mt-3 pt-3 border-t border-white/20">
+            <div className="flex flex-col gap-2">
+              <p className="text-sm text-white/80">
+                {retryInfo.errorType === "too_many_challenges" && (
+                  <>
+                    Too many requests. Please wait before trying again.
+                  </>
+                )}
+              </p>
+              {remainingSeconds !== null && remainingSeconds > 0 && (
+                <p className="text-xs text-white/60">
+                  Please wait {formatTime(remainingSeconds)} before retrying.
+                </p>
+              )}
+              <Button
+                onClick={onRetry}
+                disabled={!canRetry}
+                className="w-full bg-white/10 hover:bg-white/20 text-white border border-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                size="sm"
+              >
+                {canRetry ? (
+                  <>🔄 Retry</>
+                ) : (
+                  <>⏱️ Wait {remainingSeconds !== null ? formatTime(remainingSeconds) : ""}</>
+                )}
+              </Button>
+            </div>
+          </div>
         )}
       </div>
     </div>

@@ -16,14 +16,20 @@ interface Message {
   status?: "thinking" | "streaming" | "complete" | "error";
   isStreamActive?: boolean;
   id?: string;
+  // Retry information for challenge errors
+  retryInfo?: {
+    retryAfterSeconds: number;
+    banExpiresAt?: number;
+    violationCount?: number;
+    errorType: string;
+    originalMessage?: string;
+  };
 }
 
 interface UsageStatus {
   status: string;
   warning_level: "error" | "warning" | "info" | null;
-  daily_percentage: number;
-  hourly_percentage: number;
-  // Note: daily_remaining and hourly_remaining removed for security (cost information)
+  // Note: daily_percentage and hourly_percentage removed for security - not returned from stream
 }
 
 export default function Home() {
@@ -36,6 +42,7 @@ export default function Home() {
   const eventSourceRef = useRef<EventSource | null>(null);
   const chatWindowRef = useRef<ChatWindowRef>(null);
   const lastUserMessageIdRef = useRef<string | null>(null);
+  
   
   // Helper function to extract base fingerprint hash from fingerprint string
   const extractBaseFingerprint = (fp: string | null): string | null => {
@@ -87,14 +94,92 @@ export default function Home() {
           return fp;
         }
       } else if (response.status === 429) {
-        // Rate limited - extract error message from response
+        // Rate limited - extract error message and retry info from response
+        console.debug("Received 429 status from challenge endpoint, parsing error response...");
+        let errorData: any = null;
+        let parseError: any = null;
+        
         try {
-          const errorData = await response.json();
-          const errorMessage = errorData?.detail?.message || "Rate limited: Too many challenge requests. Please wait a moment and try again.";
+          const text = await response.text();
+          console.debug("Challenge error response text:", text);
+          
+          // Try to parse as JSON
+          try {
+            errorData = JSON.parse(text);
+            console.debug("Challenge error response parsed JSON:", errorData);
+          } catch (jsonError) {
+            console.warn("Failed to parse error response as JSON:", jsonError);
+            parseError = jsonError;
+          }
+        } catch (textError) {
+          console.warn("Failed to read error response text:", textError);
+          parseError = textError;
+        }
+        
+        // FastAPI wraps errors in 'detail', but the response might be at top level too
+        // Check multiple possible locations for error data
+        const detail = errorData?.detail || errorData;
+        const errorType = detail?.error || errorData?.error;
+        const errorMessage = detail?.message || errorData?.message || "Too many requests. Please wait before trying again.";
+        
+        console.debug("Parsed error details:", {
+          errorType,
+          errorMessage,
+          errorData,
+          detail,
+          hasDetail: !!errorData?.detail,
+        });
+        
+        // Check if it's a too_many_challenges error with retry info
+        if (errorType === "too_many_challenges") {
+          // Extract retry info - check detail first, then top level, with fallbacks
+          const retryAfterSeconds = detail?.retry_after_seconds ?? errorData?.retry_after_seconds ?? 0;
+          const banExpiresAt = detail?.ban_expires_at ?? errorData?.ban_expires_at;
+          const violationCount = detail?.violation_count ?? errorData?.violation_count ?? 0;
+          
+          console.debug("Extracted retry info from error response:", {
+            retryAfterSeconds,
+            banExpiresAt,
+            violationCount,
+            banExpiresAtType: typeof banExpiresAt,
+            errorDataStructure: {
+              hasDetail: !!errorData?.detail,
+              topLevelError: errorData?.error,
+              detailError: detail?.error,
+            }
+          });
+          
+          // Ensure banExpiresAt is a number if present
+          let parsedBanExpiresAt: number | undefined = undefined;
+          if (banExpiresAt !== null && banExpiresAt !== undefined) {
+            if (typeof banExpiresAt === 'number') {
+              parsedBanExpiresAt = banExpiresAt;
+            } else {
+              const parsed = parseInt(String(banExpiresAt), 10);
+              if (!isNaN(parsed)) {
+                parsedBanExpiresAt = parsed;
+              }
+            }
+          }
+          
+          const retryInfo = {
+            retryAfterSeconds: Math.max(0, retryAfterSeconds || 0),
+            banExpiresAt: parsedBanExpiresAt,
+            violationCount: Math.max(0, violationCount || 0),
+            errorType: "too_many_challenges",
+          };
+          
+          console.debug("Created retryInfo object:", retryInfo);
+          
+          // Throw error with retry info attached
+          const error = new Error(errorMessage) as Error & { retryInfo?: typeof retryInfo };
+          error.retryInfo = retryInfo;
+          console.debug("Throwing error with retryInfo:", { message: error.message, retryInfo: error.retryInfo });
+          throw error;
+        } else {
+          // Not a too_many_challenges error, but still rate limited
+          console.debug("Rate limited but not too_many_challenges error type:", errorType);
           throw new Error(errorMessage);
-        } catch {
-          // If parsing fails, use default message
-          throw new Error("Rate limited: Too many challenge requests. Please wait a moment and try again.");
         }
       } else {
         // Other error - fallback to fingerprint without challenge (backward compatibility)
@@ -104,12 +189,20 @@ export default function Home() {
         return fp;
       }
     } catch (error) {
-      // If it's a rate limit error, re-throw it
-      if (error instanceof Error && error.message.includes("Rate limited")) {
-        throw error;
+      // If it's a rate limit error with retryInfo, re-throw it
+      if (error instanceof Error) {
+        const errorWithRetry = error as Error & { retryInfo?: any };
+        if (errorWithRetry.retryInfo || error.message.includes("Rate limited") || error.message.includes("Too many")) {
+          console.debug("Re-throwing rate limit error with retryInfo:", {
+            message: error.message,
+            hasRetryInfo: !!errorWithRetry.retryInfo,
+            retryInfo: errorWithRetry.retryInfo,
+          });
+          throw error;
+        }
       }
       // Other errors - fallback to fingerprint without challenge (backward compatibility)
-      console.debug("Failed to fetch challenge:", error);
+      console.debug("Failed to fetch challenge (non-rate-limit error):", error);
       const fp = baseFp || await getFingerprint();
       setFingerprint(fp);
       return fp;
@@ -173,29 +266,36 @@ export default function Home() {
     fetchChallengeAndGenerateFingerprint();
   }, []);
 
-  // Check usage status periodically
-  useEffect(() => {
-    const checkUsageStatus = async () => {
-      try {
-        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-        const response = await fetch(`${backendUrl}/api/v1/admin/usage/status`);
-        if (response.ok) {
-          const status: UsageStatus = await response.json();
-          setUsageWarning(status.warning_level ? status : null);
-        }
-      } catch (error) {
-        // Silently fail - don't show errors for usage checks
-        console.debug("Failed to check usage status:", error);
+
+  // Retry handler for failed messages
+  const handleRetryMessage = async (messageId: string, originalMessage: string) => {
+    // Remove the error message and retry
+    setMessages((prevMessages) => {
+      // Remove any error messages that came after this user message
+      const userMessageIndex = prevMessages.findIndex((msg) => msg.id === messageId);
+      if (userMessageIndex >= 0) {
+        // Remove the user message and any subsequent messages (error messages)
+        return prevMessages.slice(0, userMessageIndex);
       }
-    };
-
-    // Check immediately and then every 30 seconds
-    checkUsageStatus();
-    const interval = setInterval(checkUsageStatus, 30000);
-
-    return () => clearInterval(interval);
-  }, []);
-
+      return prevMessages;
+    });
+    
+    // Clear retry info from the message
+    setMessages((prevMessages) => {
+      const updatedMessages = [...prevMessages];
+      const messageIndex = updatedMessages.findIndex((msg) => msg.id === messageId);
+      if (messageIndex >= 0) {
+        updatedMessages[messageIndex] = {
+          ...updatedMessages[messageIndex],
+          retryInfo: undefined,
+        };
+      }
+      return updatedMessages;
+    });
+    
+    // Retry sending the message
+    await handleSendMessage(originalMessage);
+  };
 
   const handleSendMessage = async (message: string, _metadata?: { fromFeelingLit?: boolean; originalQuestion?: string }) => {
     // Validate message length
@@ -244,10 +344,82 @@ export default function Home() {
       // Challenges are one-time use, so we need a new one for each request
       let currentFingerprint: string | null;
       try {
+        console.debug("Fetching fresh challenge and fingerprint...");
         currentFingerprint = await ensureFreshFingerprint();
+        console.debug("Successfully obtained fingerprint:", currentFingerprint ? "present" : "null");
       } catch (error) {
-        // If challenge fetch failed (e.g., rate limited), show error and don't proceed
-        if (error instanceof Error && error.message.includes("Rate limited")) {
+        // If challenge fetch failed (e.g., rate limited), handle retry info
+        console.debug("Challenge fetch failed, error:", error);
+        
+        if (error instanceof Error) {
+          const errorWithRetry = error as Error & { retryInfo?: { retryAfterSeconds: number; banExpiresAt?: number; violationCount?: number; errorType: string } };
+          
+          console.debug("Challenge fetch error details:", {
+            message: errorWithRetry.message,
+            hasRetryInfo: !!errorWithRetry.retryInfo,
+            retryInfo: errorWithRetry.retryInfo,
+          });
+          
+          // If it has retry info (too_many_challenges), store it in the user message
+          if (errorWithRetry.retryInfo) {
+            // Validate retry info has required fields
+            const retryInfo = errorWithRetry.retryInfo;
+            if (retryInfo.errorType && retryInfo.errorType === "too_many_challenges") {
+              const retryInfoToStore = {
+                retryAfterSeconds: retryInfo.retryAfterSeconds ?? 0,
+                banExpiresAt: retryInfo.banExpiresAt,
+                violationCount: retryInfo.violationCount ?? 0,
+                errorType: retryInfo.errorType,
+                originalMessage: trimmedMessage,
+              };
+              
+              console.debug("Storing retry info in message:", {
+                messageId,
+                retryInfoToStore,
+                trimmedMessageLength: trimmedMessage.length,
+              });
+              
+              // Use functional update to ensure we have the latest state
+              setMessages((prevMessages) => {
+                const updatedMessages = [...prevMessages];
+                // Find the message by ID (should be the last one we just added)
+                const messageIndex = updatedMessages.findIndex(msg => msg.id === messageId);
+                
+                if (messageIndex >= 0) {
+                  console.debug(`Found message at index ${messageIndex}, updating with retry info`);
+                  updatedMessages[messageIndex] = {
+                    ...updatedMessages[messageIndex],
+                    retryInfo: retryInfoToStore,
+                  };
+                  console.debug("Updated message:", {
+                    id: updatedMessages[messageIndex].id,
+                    role: updatedMessages[messageIndex].role,
+                    hasRetryInfo: !!updatedMessages[messageIndex].retryInfo,
+                    retryInfo: updatedMessages[messageIndex].retryInfo,
+                  });
+                } else {
+                  console.warn(`Message with id ${messageId} not found in messages array. Available IDs:`, 
+                    updatedMessages.map(m => m.id));
+                  // Message not found - try to add retryInfo to the last message as fallback
+                  if (updatedMessages.length > 0) {
+                    const lastIndex = updatedMessages.length - 1;
+                    console.debug(`Fallback: updating last message at index ${lastIndex}`);
+                    updatedMessages[lastIndex] = {
+                      ...updatedMessages[lastIndex],
+                      retryInfo: retryInfoToStore,
+                    };
+                  }
+                }
+                return updatedMessages;
+              });
+            } else {
+              console.warn("Retry info present but missing required errorType or wrong type:", retryInfo);
+            }
+          } else {
+            console.debug("No retry info in error, treating as generic challenge fetch failure");
+          }
+          
+          // Show error message
           setStreamingMessage({
             role: "ai",
             content: error.message,
@@ -257,7 +429,9 @@ export default function Home() {
           setIsLoading(false);
           return;
         }
+        
         // For other errors, fall back to fingerprint without challenge
+        console.debug("Error is not an Error instance or doesn't have retry info, falling back to base fingerprint");
         currentFingerprint = await getFingerprint();
       }
       
@@ -324,6 +498,89 @@ export default function Home() {
                 setIsLoading(false);
                 return;
               }
+            } else if (errorBody?.detail?.error === "too_many_challenges" || errorBody?.error === "too_many_challenges") {
+              // Handle too_many_challenges error - store retry info in user message
+              // Check both detail wrapper and top-level error data
+              const detail = errorBody?.detail || errorBody;
+              const retryAfterSeconds = detail?.retry_after_seconds ?? errorBody?.retry_after_seconds ?? 0;
+              const banExpiresAt = detail?.ban_expires_at ?? errorBody?.ban_expires_at;
+              const violationCount = detail?.violation_count ?? errorBody?.violation_count ?? 0;
+              const errorMessage = detail?.message || errorBody?.message || "Too many requests. Please wait before trying again.";
+              
+              console.debug("Chat stream returned too_many_challenges error:", {
+                messageId,
+                retryAfterSeconds,
+                banExpiresAt,
+                violationCount,
+                errorBody,
+                detail,
+              });
+              
+              // Parse banExpiresAt to ensure it's a number
+              let parsedBanExpiresAt: number | undefined = undefined;
+              if (banExpiresAt !== null && banExpiresAt !== undefined) {
+                if (typeof banExpiresAt === 'number') {
+                  parsedBanExpiresAt = banExpiresAt;
+                } else {
+                  const parsed = parseInt(String(banExpiresAt), 10);
+                  if (!isNaN(parsed)) {
+                    parsedBanExpiresAt = parsed;
+                  }
+                }
+              }
+              
+              const retryInfoToStore = {
+                retryAfterSeconds: Math.max(0, retryAfterSeconds || 0),
+                banExpiresAt: parsedBanExpiresAt,
+                violationCount: Math.max(0, violationCount || 0),
+                errorType: "too_many_challenges",
+                originalMessage: trimmedMessage,
+              };
+              
+              console.debug("Storing retry info in message from chat stream error:", retryInfoToStore);
+              
+              // Update the user message with retry info
+              setMessages((prevMessages) => {
+                const updatedMessages = [...prevMessages];
+                // Find message by ID to be more defensive
+                const messageIndex = updatedMessages.findIndex(msg => msg.id === messageId);
+                
+                if (messageIndex >= 0) {
+                  console.debug(`Found message at index ${messageIndex} for chat stream error, updating with retry info`);
+                  updatedMessages[messageIndex] = {
+                    ...updatedMessages[messageIndex],
+                    retryInfo: retryInfoToStore,
+                  };
+                  console.debug("Updated message with retry info:", {
+                    id: updatedMessages[messageIndex].id,
+                    hasRetryInfo: !!updatedMessages[messageIndex].retryInfo,
+                    retryInfo: updatedMessages[messageIndex].retryInfo,
+                  });
+                } else {
+                  // Fallback to last message if ID not found
+                  const lastMessageIndex = updatedMessages.length - 1;
+                  if (lastMessageIndex >= 0) {
+                    console.warn(`Message ${messageId} not found, updating last message at index ${lastMessageIndex} as fallback`);
+                    updatedMessages[lastMessageIndex] = {
+                      ...updatedMessages[lastMessageIndex],
+                      retryInfo: retryInfoToStore,
+                    };
+                  } else {
+                    console.error("No messages found to attach retry info to");
+                  }
+                }
+                return updatedMessages;
+              });
+              
+              // Show error message
+              setStreamingMessage({
+                role: "ai",
+                content: errorMessage,
+                status: "error",
+                isStreamActive: false,
+              });
+              setIsLoading(false);
+              return;
             } else {
               // Other 403 error, show message (errorBody already parsed above)
               setStreamingMessage({
@@ -411,11 +668,22 @@ export default function Home() {
         | { status: 'sources'; sources?: { metadata?: { title?: string; source?: string } }[] }
         | { status: 'streaming'; chunk: string }
         | { status: 'complete' }
-        | { status: 'error'; error?: string };
+        | { status: 'error'; error?: string }
+        | { status: 'usage_status'; usage_status?: { status: string; warning_level: string | null } };
 
       // Helper function to process a single SSE data object
       const processData = async (data: SSEData) => {
-        if (data.status === 'thinking') {
+        if (data.status === 'usage_status') {
+          // Handle usage status from stream
+          if (data.usage_status && data.usage_status.warning_level) {
+            setUsageWarning({
+              status: data.usage_status.status,
+              warning_level: data.usage_status.warning_level as "error" | "warning" | "info",
+            });
+          } else {
+            setUsageWarning(null);
+          }
+        } else if (data.status === 'thinking') {
           setStreamingMessage(prev => prev ? { ...prev, status: 'thinking' } : null);
         } else if (data.status === 'sources') {
           sources = data.sources || [];
@@ -631,6 +899,7 @@ export default function Home() {
 
   return (
     <div className="flex flex-col h-screen max-h-screen bg-background relative z-10">
+      
       {/* Usage Warning Banner */}
       {usageWarning && usageWarning.warning_level && (
         <div
@@ -648,12 +917,11 @@ export default function Home() {
             </span>
           ) : usageWarning.warning_level === "warning" ? (
             <span>
-              ⚠️ High usage detected ({Math.round(Math.max(usageWarning.daily_percentage, usageWarning.hourly_percentage))}% of limit). 
-              Service may be limited soon.
+              ⚠️ High usage detected. Service may be limited soon.
             </span>
           ) : (
             <span>
-              ℹ️ Usage at {Math.round(Math.max(usageWarning.daily_percentage, usageWarning.hourly_percentage))}% of limit.
+              ℹ️ Usage approaching limits. Service may be limited soon.
             </span>
           )}
         </div>
@@ -672,6 +940,8 @@ export default function Home() {
                 role={msg.role === "human" ? "user" : "assistant"}
                 content={msg.content}
                 sources={msg.sources}
+                retryInfo={msg.retryInfo}
+                onRetry={msg.retryInfo?.originalMessage ? () => handleRetryMessage(msg.id!, msg.retryInfo!.originalMessage!) : undefined}
               />
             ))}
             {streamingMessage && (
