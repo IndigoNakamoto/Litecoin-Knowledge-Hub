@@ -311,8 +311,8 @@ export default function Home() {
     };
 
     fetchChallengeAndGenerateFingerprint();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     // _fingerprint is intentionally excluded - we only want to fetch on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
 
@@ -649,7 +649,7 @@ export default function Home() {
         
         // If response is still not ok after retry handling, continue with other error handling
         if (!response.ok && response.status === 429) {
-          let errorBody: any = null;
+          let errorBody: ErrorResponseData | null = null;
           let serverMessage: string | null = null;
           let errorType: string | null = null;
           
@@ -681,7 +681,7 @@ export default function Home() {
             const errorMessage = serverMessage || detail?.message || errorBody?.message || "High usage detected. Please wait before trying again.";
             
             // Extract retry time from message
-            let retryAfterSeconds = extractRetrySecondsFromMessage(errorMessage) || 30; // Default to 30 seconds if parsing fails
+            const retryAfterSeconds = extractRetrySecondsFromMessage(errorMessage) || 30; // Default to 30 seconds if parsing fails
             
             console.debug("Chat stream returned cost_throttled error:", {
               messageId,
