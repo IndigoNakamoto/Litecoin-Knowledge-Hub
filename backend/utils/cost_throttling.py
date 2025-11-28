@@ -36,22 +36,68 @@ async def check_cost_based_throttling(
         - is_throttled: True if fingerprint should be throttled, False otherwise
         - throttle_reason: Reason for throttling if throttled, None otherwise
     """
+    # Log entry point for debugging
+    logger.info(f"Cost throttling check called: fingerprint={fingerprint[:20] if fingerprint else 'None'}..., estimated_cost=${estimated_cost:.6f}")
+    
     # Read settings from Redis with env fallback
     from backend.utils.settings_reader import get_setting_from_redis_or_env
     
     redis = await get_redis_client()
     
-    enable_cost_throttling = await get_setting_from_redis_or_env(
-        redis, "enable_cost_throttling", "ENABLE_COST_THROTTLING", True, bool
-    )
+    # Check if admin has explicitly set enable_cost_throttling in Redis
+    # This allows admin dashboard to control it regardless of dev/prod mode
+    from backend.utils.settings_reader import SETTINGS_REDIS_KEY
+    import json
     
-    # Disable cost throttling in development mode
+    admin_explicitly_set = False
+    enable_cost_throttling = None
+    
+    try:
+        settings_json = await redis.get(SETTINGS_REDIS_KEY)
+        if settings_json:
+            settings = json.loads(settings_json)
+            logger.info(f"Reading settings from Redis: {list(settings.keys())}")
+            if "enable_cost_throttling" in settings:
+                admin_explicitly_set = True
+                enable_cost_throttling = bool(settings["enable_cost_throttling"])
+                logger.info(f"Cost throttling setting from admin dashboard: {enable_cost_throttling} (raw value: {settings['enable_cost_throttling']})")
+            else:
+                logger.info(f"enable_cost_throttling not found in Redis settings. Available keys: {list(settings.keys())}")
+        else:
+            logger.info("No settings found in Redis (settings_json is None)")
+    except Exception as e:
+        logger.error(f"Error reading admin settings from Redis: {e}", exc_info=True)
+    
+    # If not set by admin, check environment variable
+    if not admin_explicitly_set:
+        env_value = os.getenv("ENABLE_COST_THROTTLING")
+        if env_value is not None:
+            enable_cost_throttling = env_value.lower() == "true"
+            logger.info(f"Cost throttling setting from environment: {enable_cost_throttling}")
+    
+    # Check if we're in development mode
     is_dev = os.getenv("ENVIRONMENT", "production").lower() == "development" or os.getenv("DEBUG", "false").lower() == "true"
-    if is_dev:
-        return False, None
     
-    if not enable_cost_throttling:
-        return False, None
+    # Admin dashboard setting takes precedence over dev mode
+    if admin_explicitly_set:
+        if enable_cost_throttling:
+            logger.info(f"Cost throttling ENABLED: admin dashboard setting (works in dev and prod)")
+            # Continue to actual throttling logic below
+        else:
+            logger.info(f"Cost throttling DISABLED: admin dashboard setting")
+            return False, None
+    else:
+        # Not explicitly set by admin - apply default behavior (disabled in dev, enabled in prod)
+        if is_dev:
+            logger.info(
+                f"Cost throttling DISABLED: development mode detected "
+                f"(ENVIRONMENT={os.getenv('ENVIRONMENT')}, DEBUG={os.getenv('DEBUG')}). "
+                f"Enable via admin dashboard to override."
+            )
+            return False, None
+        # In production, default to enabled if not explicitly set
+        logger.info(f"Cost throttling ENABLED: production mode (default behavior)")
+        enable_cost_throttling = True
     
     high_cost_threshold_usd = await get_setting_from_redis_or_env(
         redis, "high_cost_threshold_usd", "HIGH_COST_THRESHOLD_USD", 0.02, float
@@ -66,7 +112,32 @@ async def check_cost_based_throttling(
         redis, "daily_cost_limit_usd", "DAILY_COST_LIMIT_USD", 0.25, float
     )
     
+    # Validate settings
+    if high_cost_threshold_usd is None or high_cost_threshold_usd <= 0:
+        logger.warning(f"Invalid high_cost_threshold_usd: {high_cost_threshold_usd}, using default 0.02")
+        high_cost_threshold_usd = 0.02
+    
+    if high_cost_window_seconds is None or high_cost_window_seconds <= 0:
+        logger.warning(f"Invalid high_cost_window_seconds: {high_cost_window_seconds}, using default 600")
+        high_cost_window_seconds = 600
+    
+    if cost_throttle_duration_seconds is None or cost_throttle_duration_seconds <= 0:
+        logger.warning(f"Invalid cost_throttle_duration_seconds: {cost_throttle_duration_seconds}, using default 30")
+        cost_throttle_duration_seconds = 30
+    
+    if daily_cost_limit_usd is None or daily_cost_limit_usd <= 0:
+        logger.warning(f"Invalid daily_cost_limit_usd: {daily_cost_limit_usd}, using default 0.25")
+        daily_cost_limit_usd = 0.25
+    
+    # Log settings for debugging
+    logger.info(
+        f"Cost throttling settings: threshold=${high_cost_threshold_usd:.6f}, "
+        f"window={high_cost_window_seconds}s, throttle_duration={cost_throttle_duration_seconds}s, "
+        f"daily_limit=${daily_cost_limit_usd:.6f}"
+    )
+    
     if not fingerprint or not estimated_cost or estimated_cost <= 0:
+        logger.info(f"Cost throttling skipped: fingerprint={bool(fingerprint)}, estimated_cost={estimated_cost}")
         return False, None
     
     redis = await get_redis_client()
@@ -104,19 +175,24 @@ async def check_cost_based_throttling(
     
     if throttle_marker:
         # Already throttled - check if throttle period has expired
-        throttle_timestamp = int(throttle_marker)
-        throttle_expiry = throttle_timestamp + cost_throttle_duration_seconds
-        
-        if now < throttle_expiry:
-            # Still in throttle period
-            remaining_seconds = throttle_expiry - now
-            logger.warning(
-                f"Fingerprint {fingerprint} is throttled. "
-                f"Remaining throttle time: {remaining_seconds}s"
-            )
-            return True, f"High usage detected. Please wait {remaining_seconds} seconds before trying again."
-        else:
-            # Throttle period expired, remove marker
+        try:
+            throttle_timestamp = int(throttle_marker)
+            throttle_expiry = throttle_timestamp + cost_throttle_duration_seconds
+            
+            if now < throttle_expiry:
+                # Still in throttle period
+                remaining_seconds = throttle_expiry - now
+                logger.warning(
+                    f"Fingerprint {fingerprint} (stable_identifier: {stable_identifier}) is throttled. "
+                    f"Remaining throttle time: {remaining_seconds}s"
+                )
+                return True, f"High usage detected. Please wait {remaining_seconds} seconds before trying again."
+            else:
+                # Throttle period expired, remove marker
+                logger.debug(f"Throttle period expired for stable_identifier {stable_identifier}, removing marker")
+                await redis.delete(throttle_marker_key)
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Invalid throttle marker value for {stable_identifier}: {throttle_marker}, removing it. Error: {e}")
             await redis.delete(throttle_marker_key)
     
     # Remove expired entries (older than window)
@@ -128,7 +204,10 @@ async def check_cost_based_throttling(
     # We sum them all up, regardless of which challenge they used
     all_costs = await redis.zrange(cost_key, 0, -1, withscores=True)
     total_cost_in_window = 0.0
-    for member, _ in all_costs:
+    parsed_count = 0
+    failed_count = 0
+    
+    for member, score in all_costs:
         # Member format: "fp:challenge:hash:cost" or "hash:cost"
         try:
             # Handle both bytes and string types from Redis
@@ -139,11 +218,20 @@ async def check_cost_based_throttling(
             # Split by colon and take the last part to be safe against colons in fingerprints
             # Using split(':')[-1] ensures we always get the cost, even if fingerprint contains colons
             cost_str = member_str.split(':')[-1]
-            total_cost_in_window += float(cost_str)
+            cost_value = float(cost_str)
+            total_cost_in_window += cost_value
+            parsed_count += 1
         except (ValueError, IndexError, AttributeError, TypeError) as e:
             # If parsing fails, skip this entry (shouldn't happen, but be safe)
-            logger.warning(f"Failed to parse cost from Redis entry {member}: {e}")
+            failed_count += 1
+            logger.warning(f"Failed to parse cost from Redis entry {member} (score: {score}): {e}")
             continue
+    
+    logger.info(
+        f"Cost window calculation for stable_identifier {stable_identifier[:20] if stable_identifier else 'None'}...: "
+        f"{parsed_count} entries parsed, {failed_count} failed, "
+        f"total_cost_in_window=${total_cost_in_window:.6f}"
+    )
     
     # Check daily limit first (hard cap)
     daily_cost_entries = await redis.zrange(daily_cost_key_with_date, 0, -1, withscores=True)
@@ -179,12 +267,22 @@ async def check_cost_based_throttling(
     # Check if adding estimated cost would exceed 10-minute threshold
     new_total_cost = total_cost_in_window + estimated_cost
     
+    # Info logging to track threshold checks (always visible)
+    logger.info(
+        f"Cost throttling check for stable_identifier {stable_identifier[:20] if stable_identifier else 'None'}...: "
+        f"Total cost in window: ${total_cost_in_window:.6f}, "
+        f"Estimated cost: ${estimated_cost:.6f}, "
+        f"New total cost: ${new_total_cost:.6f}, "
+        f"Threshold: ${high_cost_threshold_usd:.6f}"
+    )
+    
     if new_total_cost >= high_cost_threshold_usd:
         # Throttle fingerprint (10-minute window exceeded)
         logger.warning(
             f"Cost-based throttling triggered for stable_identifier {stable_identifier} (fingerprint: {fingerprint}). "
             f"Total cost in window: ${total_cost_in_window:.4f}, "
             f"Estimated cost: ${estimated_cost:.4f}, "
+            f"New total cost: ${new_total_cost:.4f}, "
             f"Threshold: ${high_cost_threshold_usd:.2f}"
         )
         
@@ -206,6 +304,11 @@ async def check_cost_based_throttling(
     await redis.zadd(daily_cost_key_with_date, {unique_request_member: now})
     # Set TTL to 2 days (ensures cleanup even if date changes during request)
     await redis.expire(daily_cost_key_with_date, 172800)
+    
+    logger.info(
+        f"Cost recorded for stable_identifier {stable_identifier[:20] if stable_identifier else 'None'}...: "
+        f"${estimated_cost:.6f} added to window (new total: ${new_total_cost:.6f})"
+    )
     
     return False, None
 

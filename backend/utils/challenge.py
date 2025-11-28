@@ -154,7 +154,7 @@ async def generate_challenge(identifier: str) -> Dict[str, Any]:
                 status_code=429,
                 detail={
                     "error": "too_many_challenges",
-                    "message": f"Too many active security challenges. Please wait {retry_after} seconds before trying again.",
+                    "message": f"Too many requests. Please wait {retry_after} seconds before trying again.",
                     "retry_after_seconds": retry_after,
                     "ban_expires_at": ban_expiry_int,
                     "violation_count": violation_count
@@ -191,7 +191,7 @@ async def generate_challenge(identifier: str) -> Dict[str, Any]:
             status_code=429,
             detail={
                 "error": "too_many_challenges",
-                "message": f"Too many active security challenges. You have been temporarily banned for {ban_duration} seconds. Please wait before trying again.",
+                "message": f"Too many requests. Please wait {ban_duration} seconds before trying again.",
                 "retry_after_seconds": ban_duration,
                 "ban_expires_at": ban_expiry,
                 "violation_count": violation_count
