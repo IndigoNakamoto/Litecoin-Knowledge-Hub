@@ -100,11 +100,11 @@ async def get_usage_status(request: Request) -> Dict[str, Any]:
     Returns warning level if approaching limits.
     
     This endpoint is PUBLIC (no authentication required) to allow the frontend
-    to display usage warnings to users. It only returns percentages and warning
-    levels, not sensitive cost information.
+    to display usage warnings to users. It only returns status and warning
+    levels, not sensitive cost information or percentages.
     
     Returns:
-        Dictionary with status, warning level, and usage percentages (no cost data).
+        Dictionary with status and warning level only (no cost data or percentages).
     """
     # Rate limiting (more lenient for public endpoint)
     await check_rate_limit(request, ADMIN_USAGE_RATE_LIMIT)
@@ -124,13 +124,11 @@ async def get_usage_status(request: Request) -> Dict[str, Any]:
         elif daily_percentage >= 60 or hourly_percentage >= 60:
             warning_level = "info"
         
-        # Return only percentages and warning level (no cost information)
+        # Return only status and warning level (no percentages or cost information)
         return {
             "status": "ok" if warning_level is None else warning_level,
             "warning_level": warning_level,
-            "daily_percentage": daily_percentage,
-            "hourly_percentage": hourly_percentage,
-            # Note: Removed daily_remaining and hourly_remaining to avoid cost information disclosure
+            # Note: Removed daily_percentage, hourly_percentage, and remaining amounts for security
         }
     except Exception as e:
         logger.error(f"Error getting usage status: {e}", exc_info=True)
@@ -138,7 +136,5 @@ async def get_usage_status(request: Request) -> Dict[str, Any]:
         return {
             "status": "ok",
             "warning_level": None,
-            "daily_percentage": 0.0,
-            "hourly_percentage": 0.0,
         }
 
