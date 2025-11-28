@@ -284,8 +284,13 @@ async def check_rate_limit(request: Request, config: RateLimitConfig) -> None:
       headers=headers,
     )
   
-  # Check global rate limits AFTER individual limits
-  await check_global_rate_limit(redis, now)
+  # Skip global rate limit check for admin endpoints
+  # Admin requests should not be subject to global rate limiting
+  is_admin_request = request.url.path.startswith("/api/v1/admin")
+  
+  # Check global rate limits AFTER individual limits (but skip for admin requests)
+  if not is_admin_request:
+    await check_global_rate_limit(redis, now)
 
   # 3. Use STABLE identifier for the Redis Key (The Bucket)
   # This ensures rate limits apply to the user, not just the current challenge session

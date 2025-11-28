@@ -60,31 +60,6 @@ from backend.utils.challenge import generate_challenge, validate_and_consume_cha
 from backend.utils.turnstile import verify_turnstile_token, is_turnstile_enabled
 from backend.utils.cost_throttling import check_cost_based_throttling
 
-# Rate limit configurations for health and metrics endpoints
-# Health endpoint rate limits (higher than API endpoints, but still protected)
-HEALTH_RATE_LIMIT = RateLimitConfig(
-    requests_per_minute=60,
-    requests_per_hour=1000,
-    identifier="health",
-    enable_progressive_limits=False,  # Don't ban health checks aggressively
-)
-
-# Metrics endpoint rate limits (Prometheus scrapes every 15s = 4/min, so 30/min is safe)
-METRICS_RATE_LIMIT = RateLimitConfig(
-    requests_per_minute=30,
-    requests_per_hour=500,
-    identifier="metrics",
-    enable_progressive_limits=True,  # Can be more strict for metrics
-)
-
-# Liveness/readiness rate limits (very high for Kubernetes probes)
-PROBE_RATE_LIMIT = RateLimitConfig(
-    requests_per_minute=120,
-    requests_per_hour=2000,
-    identifier="probe",
-    enable_progressive_limits=False,
-)
-
 # Challenge endpoint rate limits (prevent challenge exhaustion attacks)
 # In development mode, allow much higher limits to avoid 429 errors during rapid page loads
 is_dev = os.getenv("ENVIRONMENT", "production").lower() == "development" or os.getenv("DEBUG", "false").lower() == "true"
@@ -722,57 +697,51 @@ def read_root():
     }
 
 @app.get("/metrics")
-async def metrics_endpoint(request: Request, format: str = "prometheus"):
+async def metrics_endpoint(format: str = "prometheus"):
     """
     Prometheus metrics endpoint.
-    Rate limited but allows Prometheus scraping (scrapes every 15s = 4/min).
-    30/min limit is safe for Prometheus while preventing abuse.
+    No rate limiting - allows unrestricted Prometheus scraping.
     
     Args:
-        request: FastAPI request object (for rate limiting)
         format: Output format - "prometheus" or "openmetrics"
     """
-    await check_rate_limit(request, METRICS_RATE_LIMIT)
     metrics_bytes, content_type = generate_metrics_response(format=format)
     return Response(content=metrics_bytes, media_type=content_type)
 
 @app.get("/health")
-async def health_endpoint(request: Request):
+async def health_endpoint():
     """
     Public health check endpoint (sanitized).
     Returns minimal information suitable for public access.
+    No rate limiting.
     """
-    await check_rate_limit(request, HEALTH_RATE_LIMIT)
     from backend.monitoring.health import _get_health_checker
     return _get_health_checker().get_public_health()
 
 @app.get("/health/detailed")
-async def detailed_health_endpoint(request: Request):
+async def detailed_health_endpoint():
     """
     Detailed health check for internal monitoring (Grafana, etc.).
     Returns full health information including document counts and cache stats.
-    Rate limited but with higher limits for monitoring tools.
+    No rate limiting.
     """
-    await check_rate_limit(request, HEALTH_RATE_LIMIT)
     # TODO: Consider adding authentication or IP allowlisting for extra security
     return get_health_status()
 
 @app.get("/health/live")
-async def liveness_endpoint(request: Request):
+async def liveness_endpoint():
     """
     Kubernetes liveness probe endpoint.
-    Returns minimal response, high rate limit for frequent probes.
+    Returns minimal response. No rate limiting.
     """
-    await check_rate_limit(request, PROBE_RATE_LIMIT)
     return get_liveness()
 
 @app.get("/health/ready")
-async def readiness_endpoint(request: Request):
+async def readiness_endpoint():
     """
     Kubernetes readiness probe endpoint.
-    Returns sanitized response, high rate limit for frequent probes.
+    Returns sanitized response. No rate limiting.
     """
-    await check_rate_limit(request, PROBE_RATE_LIMIT)
     from backend.monitoring.health import _get_health_checker
     return _get_health_checker().get_public_readiness()
 
