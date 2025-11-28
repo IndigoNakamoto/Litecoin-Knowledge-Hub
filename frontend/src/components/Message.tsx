@@ -286,6 +286,11 @@ const Message: React.FC<MessageProps> = ({ role, content, sources, messageId, re
                     Too many requests. Please wait before trying again.
                   </>
                 )}
+                {retryInfo.errorType === "cost_throttled" && (
+                  <>
+                    High usage detected. Please wait before trying again.
+                  </>
+                )}
               </p>
               {remainingSeconds !== null && remainingSeconds > 0 && (
                 <p className="text-xs text-white/60">

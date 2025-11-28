@@ -71,6 +71,31 @@ export default function Home() {
     return fp;
   };
 
+  // Helper function to extract retry seconds from error message
+  // Handles formats like "Please wait 8 seconds before trying again." or "try again in 30 seconds."
+  const extractRetrySecondsFromMessage = (message: string): number | null => {
+    if (!message) return null;
+    
+    // Try to match patterns like "wait X seconds" or "in X seconds"
+    const patterns = [
+      /wait\s+(\d+)\s+seconds?/i,
+      /in\s+(\d+)\s+seconds?/i,
+      /(\d+)\s+seconds?/i, // Fallback: just find a number followed by "seconds"
+    ];
+    
+    for (const pattern of patterns) {
+      const match = message.match(pattern);
+      if (match && match[1]) {
+        const seconds = parseInt(match[1], 10);
+        if (!isNaN(seconds) && seconds > 0) {
+          return seconds;
+        }
+      }
+    }
+    
+    return null;
+  };
+
   // Helper function to ensure we have a fresh challenge and fingerprint
   const ensureFreshFingerprint = async (): Promise<string | null> => {
     // Extract base fingerprint from current state (removing challenge prefix if present)
@@ -624,6 +649,103 @@ export default function Home() {
         
         // If response is still not ok after retry handling, continue with other error handling
         if (!response.ok && response.status === 429) {
+          let errorBody: any = null;
+          let serverMessage: string | null = null;
+          let errorType: string | null = null;
+          
+          try {
+            errorBody = await response.json();
+            if (errorBody && errorBody.detail) {
+              // Handle both object and string detail formats
+              if (typeof errorBody.detail === "object") {
+                serverMessage = errorBody.detail.message || null;
+                errorType = errorBody.detail.error || null;
+              } else if (typeof errorBody.detail === "string") {
+                serverMessage = errorBody.detail;
+              }
+            }
+            // Also check top-level error fields
+            if (!errorType && errorBody?.error) {
+              errorType = errorBody.error;
+            }
+            if (!serverMessage && errorBody?.message) {
+              serverMessage = errorBody.message;
+            }
+          } catch {
+            // Ignore JSON parse errors and fall back to default message
+          }
+
+          // Handle cost_throttled errors similar to too_many_challenges
+          if (errorType === "cost_throttled" || errorBody?.detail?.error === "cost_throttled" || errorBody?.error === "cost_throttled") {
+            const detail = errorBody?.detail || errorBody;
+            const errorMessage = serverMessage || detail?.message || errorBody?.message || "High usage detected. Please wait before trying again.";
+            
+            // Extract retry time from message
+            let retryAfterSeconds = extractRetrySecondsFromMessage(errorMessage) || 30; // Default to 30 seconds if parsing fails
+            
+            console.debug("Chat stream returned cost_throttled error:", {
+              messageId,
+              retryAfterSeconds,
+              errorMessage,
+              errorBody,
+              detail,
+            });
+            
+            const retryInfoToStore = {
+              retryAfterSeconds: Math.max(0, retryAfterSeconds),
+              banExpiresAt: undefined, // cost_throttled doesn't use ban_expires_at
+              violationCount: 0, // cost_throttled doesn't track violation count
+              errorType: "cost_throttled",
+              originalMessage: trimmedMessage,
+            };
+            
+            console.debug("Storing retry info in message from cost_throttled error:", retryInfoToStore);
+            
+            // Update the user message with retry info
+            setMessages((prevMessages) => {
+              const updatedMessages = [...prevMessages];
+              // Find message by ID to be more defensive
+              const messageIndex = updatedMessages.findIndex(msg => msg.id === messageId);
+              
+              if (messageIndex >= 0) {
+                console.debug(`Found message at index ${messageIndex} for cost_throttled error, updating with retry info`);
+                updatedMessages[messageIndex] = {
+                  ...updatedMessages[messageIndex],
+                  retryInfo: retryInfoToStore,
+                };
+                console.debug("Updated message with retry info:", {
+                  id: updatedMessages[messageIndex].id,
+                  hasRetryInfo: !!updatedMessages[messageIndex].retryInfo,
+                  retryInfo: updatedMessages[messageIndex].retryInfo,
+                });
+              } else {
+                // Fallback to last message if ID not found
+                const lastMessageIndex = updatedMessages.length - 1;
+                if (lastMessageIndex >= 0) {
+                  console.warn(`Message ${messageId} not found, updating last message at index ${lastMessageIndex} as fallback`);
+                  updatedMessages[lastMessageIndex] = {
+                    ...updatedMessages[lastMessageIndex],
+                    retryInfo: retryInfoToStore,
+                  };
+                } else {
+                  console.error("No messages found to attach retry info to");
+                }
+              }
+              return updatedMessages;
+            });
+            
+            // Show error message
+            setStreamingMessage({
+              role: "ai",
+              content: errorMessage,
+              status: "error",
+              isStreamActive: false,
+            });
+            setIsLoading(false);
+            return;
+          }
+
+          // Handle generic 429 errors (not cost_throttled)
           let retryAfterSeconds: number | null = null;
           const retryAfterHeader = response.headers.get("Retry-After");
           if (retryAfterHeader) {
@@ -631,21 +753,6 @@ export default function Home() {
             if (!Number.isNaN(parsed)) {
               retryAfterSeconds = parsed;
             }
-          }
-
-          let serverMessage: string | null = null;
-          try {
-            const body = await response.json();
-            if (body && body.detail) {
-              // Handle both object and string detail formats
-              if (typeof body.detail === "object" && typeof body.detail.message === "string") {
-                serverMessage = body.detail.message;
-              } else if (typeof body.detail === "string") {
-                serverMessage = body.detail;
-              }
-            }
-          } catch {
-            // Ignore JSON parse errors and fall back to default message
           }
 
           const humanReadableRetry =
