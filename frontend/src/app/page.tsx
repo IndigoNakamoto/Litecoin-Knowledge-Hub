@@ -32,6 +32,21 @@ interface UsageStatus {
   // Note: daily_percentage and hourly_percentage removed for security - not returned from stream
 }
 
+interface ErrorResponseData {
+  detail?: {
+    error?: string;
+    message?: string;
+    retry_after_seconds?: number;
+    ban_expires_at?: number;
+    violation_count?: number;
+  };
+  error?: string;
+  message?: string;
+  retry_after_seconds?: number;
+  ban_expires_at?: number;
+  violation_count?: number;
+}
+
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -96,8 +111,8 @@ export default function Home() {
       } else if (response.status === 429) {
         // Rate limited - extract error message and retry info from response
         console.debug("Received 429 status from challenge endpoint, parsing error response...");
-        let errorData: any = null;
-        let parseError: any = null;
+        let errorData: ErrorResponseData | null = null;
+        let _parseError: unknown = null;
         
         try {
           const text = await response.text();
@@ -105,15 +120,15 @@ export default function Home() {
           
           // Try to parse as JSON
           try {
-            errorData = JSON.parse(text);
+            errorData = JSON.parse(text) as ErrorResponseData;
             console.debug("Challenge error response parsed JSON:", errorData);
           } catch (jsonError) {
             console.warn("Failed to parse error response as JSON:", jsonError);
-            parseError = jsonError;
+            _parseError = jsonError;
           }
         } catch (textError) {
           console.warn("Failed to read error response text:", textError);
-          parseError = textError;
+          _parseError = textError;
         }
         
         // FastAPI wraps errors in 'detail', but the response might be at top level too
@@ -191,7 +206,14 @@ export default function Home() {
     } catch (error) {
       // If it's a rate limit error with retryInfo, re-throw it
       if (error instanceof Error) {
-        const errorWithRetry = error as Error & { retryInfo?: any };
+        interface RetryInfo {
+          retryAfterSeconds: number;
+          banExpiresAt?: number;
+          violationCount?: number;
+          errorType: string;
+          originalMessage?: string;
+        }
+        const errorWithRetry = error as Error & { retryInfo?: RetryInfo };
         if (errorWithRetry.retryInfo || error.message.includes("Rate limited") || error.message.includes("Too many")) {
           console.debug("Re-throwing rate limit error with retryInfo:", {
             message: error.message,
@@ -264,6 +286,8 @@ export default function Home() {
     };
 
     fetchChallengeAndGenerateFingerprint();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // _fingerprint is intentionally excluded - we only want to fetch on mount
   }, []);
 
 

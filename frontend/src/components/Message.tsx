@@ -116,7 +116,7 @@ const Message: React.FC<MessageProps> = ({ role, content, sources, messageId, re
       
       return () => clearInterval(interval);
     }
-  }, [retryInfo, isUser]);
+  }, [retryInfo, isUser, messageId]);
   
   const formatTime = (seconds: number): string => {
     if (seconds >= 60) {
