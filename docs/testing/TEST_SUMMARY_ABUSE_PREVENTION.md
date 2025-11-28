@@ -123,10 +123,16 @@ pytest backend/tests/test_user_statistics.py::test_track_unique_user -v
 - Settings are read dynamically (not hardcoded)
 - Changes affect behavior (rate limits, challenge-response, etc.)
 - Cache is cleared so changes take effect immediately
+- Global daily/hourly spend limits use updated settings
+- Global spend limits can be updated and retrieved via API
+
+**Test Cases Added:**
+- ✅ `test_global_spend_limits_use_updated_settings` - Verifies spend limit module uses Redis settings
+- ✅ `test_global_spend_limits_settings_endpoint` - Tests API update/retrieve cycle for spend limits
 
 See `docs/testing/ADMIN_SETTINGS_INTEGRATION_TESTS.md` for detailed test scenarios and checklist.
 
-**Status**: Integration tests created, need Redis mocking improvements for full endpoint testing.
+**Status**: Integration tests complete and passing (11/11 tests).
 
 ## Test Results Summary
 

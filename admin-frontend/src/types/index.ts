@@ -11,6 +11,8 @@ export interface AbusePreventionSettings {
   cost_throttle_duration_seconds?: number;
   daily_cost_limit_usd?: number;
   challenge_request_rate_limit_seconds?: number;
+  daily_spend_limit_usd?: number;
+  hourly_spend_limit_usd?: number;
 }
 
 export interface SettingsResponse {

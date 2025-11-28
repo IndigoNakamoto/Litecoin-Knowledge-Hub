@@ -10,12 +10,13 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, Tuple
 from backend.redis_client import get_redis_client
+from backend.utils.settings_reader import get_setting_from_redis_or_env
 
 logger = logging.getLogger(__name__)
 
-# Environment variables
-DAILY_SPEND_LIMIT_USD = float(os.getenv("DAILY_SPEND_LIMIT_USD", "5.00"))
-HOURLY_SPEND_LIMIT_USD = float(os.getenv("HOURLY_SPEND_LIMIT_USD", "1.00"))
+# Default values (will be read dynamically from Redis/env)
+DEFAULT_DAILY_SPEND_LIMIT_USD = 5.00
+DEFAULT_HOURLY_SPEND_LIMIT_USD = 1.00
 
 # TTLs for Redis keys (in seconds)
 DAILY_KEY_TTL = 48 * 60 * 60  # 48 hours
@@ -55,6 +56,14 @@ async def get_current_usage() -> Dict[str, Any]:
     """
     redis_client = await get_redis_client()
     
+    # Read limits from Redis with env fallback
+    daily_spend_limit_usd = await get_setting_from_redis_or_env(
+        redis_client, "daily_spend_limit_usd", "DAILY_SPEND_LIMIT_USD", DEFAULT_DAILY_SPEND_LIMIT_USD, float
+    )
+    hourly_spend_limit_usd = await get_setting_from_redis_or_env(
+        redis_client, "hourly_spend_limit_usd", "HOURLY_SPEND_LIMIT_USD", DEFAULT_HOURLY_SPEND_LIMIT_USD, float
+    )
+    
     daily_key = _get_daily_key()
     hourly_key = _get_hourly_key()
     daily_token_key = _get_daily_token_key()
@@ -72,16 +81,16 @@ async def get_current_usage() -> Dict[str, Any]:
         hourly_output_tokens = int(await redis_client.hget(hourly_token_key, "output") or "0")
         
         # Calculate percentages and remaining
-        daily_percentage = (daily_cost / DAILY_SPEND_LIMIT_USD * 100) if DAILY_SPEND_LIMIT_USD > 0 else 0.0
-        hourly_percentage = (hourly_cost / HOURLY_SPEND_LIMIT_USD * 100) if HOURLY_SPEND_LIMIT_USD > 0 else 0.0
+        daily_percentage = (daily_cost / daily_spend_limit_usd * 100) if daily_spend_limit_usd > 0 else 0.0
+        hourly_percentage = (hourly_cost / hourly_spend_limit_usd * 100) if hourly_spend_limit_usd > 0 else 0.0
         
-        daily_remaining = max(0.0, DAILY_SPEND_LIMIT_USD - daily_cost)
-        hourly_remaining = max(0.0, HOURLY_SPEND_LIMIT_USD - hourly_cost)
+        daily_remaining = max(0.0, daily_spend_limit_usd - daily_cost)
+        hourly_remaining = max(0.0, hourly_spend_limit_usd - hourly_cost)
         
         return {
             "daily": {
                 "cost_usd": round(daily_cost, 4),
-                "limit_usd": DAILY_SPEND_LIMIT_USD,
+                "limit_usd": daily_spend_limit_usd,
                 "remaining_usd": round(daily_remaining, 4),
                 "percentage_used": round(daily_percentage, 2),
                 "input_tokens": daily_input_tokens,
@@ -89,7 +98,7 @@ async def get_current_usage() -> Dict[str, Any]:
             },
             "hourly": {
                 "cost_usd": round(hourly_cost, 4),
-                "limit_usd": HOURLY_SPEND_LIMIT_USD,
+                "limit_usd": hourly_spend_limit_usd,
                 "remaining_usd": round(hourly_remaining, 4),
                 "percentage_used": round(hourly_percentage, 2),
                 "input_tokens": hourly_input_tokens,
@@ -99,19 +108,31 @@ async def get_current_usage() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error getting current usage from Redis: {e}", exc_info=True)
         # Return zeros on error (graceful degradation)
+        # Read limits from Redis with env fallback for error case
+        try:
+            daily_spend_limit_usd = await get_setting_from_redis_or_env(
+                redis_client, "daily_spend_limit_usd", "DAILY_SPEND_LIMIT_USD", DEFAULT_DAILY_SPEND_LIMIT_USD, float
+            )
+            hourly_spend_limit_usd = await get_setting_from_redis_or_env(
+                redis_client, "hourly_spend_limit_usd", "HOURLY_SPEND_LIMIT_USD", DEFAULT_HOURLY_SPEND_LIMIT_USD, float
+            )
+        except Exception:
+            daily_spend_limit_usd = DEFAULT_DAILY_SPEND_LIMIT_USD
+            hourly_spend_limit_usd = DEFAULT_HOURLY_SPEND_LIMIT_USD
+        
         return {
             "daily": {
                 "cost_usd": 0.0,
-                "limit_usd": DAILY_SPEND_LIMIT_USD,
-                "remaining_usd": DAILY_SPEND_LIMIT_USD,
+                "limit_usd": daily_spend_limit_usd,
+                "remaining_usd": daily_spend_limit_usd,
                 "percentage_used": 0.0,
                 "input_tokens": 0,
                 "output_tokens": 0,
             },
             "hourly": {
                 "cost_usd": 0.0,
-                "limit_usd": HOURLY_SPEND_LIMIT_USD,
-                "remaining_usd": HOURLY_SPEND_LIMIT_USD,
+                "limit_usd": hourly_spend_limit_usd,
+                "remaining_usd": hourly_spend_limit_usd,
                 "percentage_used": 0.0,
                 "input_tokens": 0,
                 "output_tokens": 0,
@@ -145,6 +166,15 @@ async def check_spend_limit(
     buffered_cost = estimated_cost * 1.1
     
     redis_client = await get_redis_client()
+    
+    # Read limits from Redis with env fallback
+    daily_spend_limit_usd = await get_setting_from_redis_or_env(
+        redis_client, "daily_spend_limit_usd", "DAILY_SPEND_LIMIT_USD", DEFAULT_DAILY_SPEND_LIMIT_USD, float
+    )
+    hourly_spend_limit_usd = await get_setting_from_redis_or_env(
+        redis_client, "hourly_spend_limit_usd", "HOURLY_SPEND_LIMIT_USD", DEFAULT_HOURLY_SPEND_LIMIT_USD, float
+    )
+    
     daily_key = _get_daily_key()
     hourly_key = _get_hourly_key()
     
@@ -158,23 +188,23 @@ async def check_spend_limit(
         new_hourly_cost = hourly_cost + buffered_cost
         
         # Check daily limit
-        if new_daily_cost > DAILY_SPEND_LIMIT_USD:
+        if new_daily_cost > daily_spend_limit_usd:
             usage_info = await get_current_usage()
             error_msg = (
                 f"Daily LLM spend limit would be exceeded. "
                 f"Current: ${daily_cost:.4f}, Request: ${buffered_cost:.4f}, "
-                f"Limit: ${DAILY_SPEND_LIMIT_USD:.2f}"
+                f"Limit: ${daily_spend_limit_usd:.2f}"
             )
             logger.warning(f"Spend limit check failed (daily): {error_msg}")
             return False, error_msg, usage_info
         
         # Check hourly limit
-        if new_hourly_cost > HOURLY_SPEND_LIMIT_USD:
+        if new_hourly_cost > hourly_spend_limit_usd:
             usage_info = await get_current_usage()
             error_msg = (
                 f"Hourly LLM spend limit would be exceeded. "
                 f"Current: ${hourly_cost:.4f}, Request: ${buffered_cost:.4f}, "
-                f"Limit: ${HOURLY_SPEND_LIMIT_USD:.2f}"
+                f"Limit: ${hourly_spend_limit_usd:.2f}"
             )
             logger.warning(f"Spend limit check failed (hourly): {error_msg}")
             return False, error_msg, usage_info

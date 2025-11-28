@@ -97,6 +97,26 @@ When an admin updates settings via the frontend, we need to verify:
 **How It's Used:**
 - `backend/utils/challenge.py:68` - Reads rate limit from Redis/env
 
+### 7. Global Daily and Hourly Spend Limits
+
+**Settings:**
+- `daily_spend_limit_usd` - Global daily LLM spend limit across all users
+- `hourly_spend_limit_usd` - Global hourly LLM spend limit across all users
+
+**What to Test:**
+- ✅ Admin can set global daily spend limit
+- ✅ Admin can set global hourly spend limit
+- ✅ System enforces global limits (hard cap across all users)
+- ✅ `get_current_usage()` returns updated limits
+- ✅ `check_spend_limit()` uses updated limits to block requests
+- ✅ Limits are read dynamically from Redis with env fallback
+
+**How It's Used:**
+- `backend/monitoring/spend_limit.py` - Reads limits dynamically using `get_setting_from_redis_or_env()`
+- `backend/monitoring/spend_limit.py:get_current_usage()` - Returns current limits in usage info
+- `backend/monitoring/spend_limit.py:check_spend_limit()` - Blocks requests that would exceed limits
+- `backend/main.py:160-172` - Updates Prometheus metrics with current limits
+
 ## Test Implementation Status
 
 ### ✅ Unit Tests (Completed)
@@ -116,6 +136,8 @@ When an admin updates settings via the frontend, we need to verify:
   - ✅ Partial updates preserve other settings
   - ✅ Settings endpoint shows Redis vs env sources
   - ✅ Full cycle: update via API → get back
+  - ✅ Global daily/hourly spend limits use updated settings
+  - ✅ Global spend limits settings endpoint (update and retrieve)
 
 ## Test Scenarios
 
@@ -197,6 +219,30 @@ GET /api/v1/admin/settings/abuse-prevention
 # Should have global_rate_limit_per_minute: 2000
 ```
 
+### Scenario 5: Update Global Spend Limits
+
+```python
+# 1. Admin updates global spend limits
+PUT /api/v1/admin/settings/abuse-prevention
+{
+  "daily_spend_limit_usd": 10.00,
+  "hourly_spend_limit_usd": 2.00
+}
+
+# 2. Verify settings saved
+GET /api/v1/admin/settings/abuse-prevention
+# Should show daily_spend_limit_usd: 10.00, source: redis
+# Should show hourly_spend_limit_usd: 2.00, source: redis
+
+# 3. Verify behavior changed
+GET /api/v1/admin/usage
+# Should show daily limit: 10.00, hourly limit: 2.00
+
+# 4. Verify spend limit checking uses new limits
+# If daily cost is 9.5 and request is 0.6, should be blocked
+# (9.5 + 0.6*1.1 = 10.16 > 10.00)
+```
+
 ## How Settings Work
 
 ### Storage
@@ -229,6 +275,8 @@ Before deployment, manually verify:
 - [ ] Update `challenge_ttl_seconds` → New challenges use new TTL
 - [ ] Update `global_rate_limit_per_minute` → Rate limiting enforces new limit
 - [ ] Update `high_cost_threshold_usd` → Cost throttling uses new threshold
+- [ ] Update `daily_spend_limit_usd` → Global daily limit enforced
+- [ ] Update `hourly_spend_limit_usd` → Global hourly limit enforced
 - [ ] Update multiple settings → All changes take effect
 - [ ] Partial update → Other settings preserved
 - [ ] Clear Redis settings → Falls back to environment variables
@@ -265,8 +313,9 @@ Before deployment, manually verify:
 - `backend/utils/settings_reader.py` - Settings reading utilities
 
 ### Settings Usage
-- `backend/main.py` - Challenge-response validation
+- `backend/main.py` - Challenge-response validation, spend limit metrics
 - `backend/utils/challenge.py` - Challenge generation/validation
 - `backend/rate_limiter.py` - Global rate limiting
 - `backend/utils/cost_throttling.py` - Cost-based throttling
+- `backend/monitoring/spend_limit.py` - Global daily/hourly spend limits
 

@@ -187,12 +187,12 @@ export function AbusePreventionSettings() {
               <Input
                 id="high_cost_threshold_usd"
                 type="number"
-                step="0.01"
+                step="0.0001"
                 value={settings.high_cost_threshold_usd || ""}
                 onChange={(e) =>
                   updateSetting("high_cost_threshold_usd", parseFloat(e.target.value) || undefined)
                 }
-                min="0.01"
+                min="0.0001"
               />
             </div>
 
@@ -255,6 +255,54 @@ export function AbusePreventionSettings() {
                 value={settings.daily_cost_limit_usd || ""}
                 onChange={(e) =>
                   updateSetting("daily_cost_limit_usd", parseFloat(e.target.value) || undefined)
+                }
+                min="0.01"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="daily_spend_limit_usd">
+                Global Daily Spend Limit (USD)
+                <span className="ml-2 text-xs text-muted-foreground">
+                  (Global daily cap across all users)
+                </span>
+                {sources.daily_spend_limit_usd && (
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    ({sources.daily_spend_limit_usd})
+                  </span>
+                )}
+              </Label>
+              <Input
+                id="daily_spend_limit_usd"
+                type="number"
+                step="0.01"
+                value={settings.daily_spend_limit_usd || ""}
+                onChange={(e) =>
+                  updateSetting("daily_spend_limit_usd", parseFloat(e.target.value) || undefined)
+                }
+                min="0.01"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="hourly_spend_limit_usd">
+                Global Hourly Spend Limit (USD)
+                <span className="ml-2 text-xs text-muted-foreground">
+                  (Global hourly cap across all users)
+                </span>
+                {sources.hourly_spend_limit_usd && (
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    ({sources.hourly_spend_limit_usd})
+                  </span>
+                )}
+              </Label>
+              <Input
+                id="hourly_spend_limit_usd"
+                type="number"
+                step="0.01"
+                value={settings.hourly_spend_limit_usd || ""}
+                onChange={(e) =>
+                  updateSetting("hourly_spend_limit_usd", parseFloat(e.target.value) || undefined)
                 }
                 min="0.01"
               />

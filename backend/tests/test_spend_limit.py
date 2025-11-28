@@ -20,8 +20,8 @@ from backend.monitoring.spend_limit import (
     get_current_usage,
     _get_daily_key,
     _get_hourly_key,
-    DAILY_SPEND_LIMIT_USD,
-    HOURLY_SPEND_LIMIT_USD,
+    DEFAULT_DAILY_SPEND_LIMIT_USD,
+    DEFAULT_HOURLY_SPEND_LIMIT_USD,
 )
 
 
@@ -40,15 +40,27 @@ def mock_redis_client():
 @pytest.mark.asyncio
 async def test_get_current_usage_empty(mock_redis_client):
     """Test getting current usage when Redis is empty."""
+    # Mock settings reader to return defaults
     with patch("backend.monitoring.spend_limit.get_redis_client", return_value=mock_redis_client):
-        usage = await get_current_usage()
-        
-        assert "daily" in usage
-        assert "hourly" in usage
-        assert usage["daily"]["cost_usd"] == 0.0
-        assert usage["hourly"]["cost_usd"] == 0.0
-        assert usage["daily"]["limit_usd"] == DAILY_SPEND_LIMIT_USD
-        assert usage["hourly"]["limit_usd"] == HOURLY_SPEND_LIMIT_USD
+        with patch("backend.monitoring.spend_limit.get_setting_from_redis_or_env") as mock_get_setting:
+            # Mock settings reader to return defaults
+            async def mock_get_setting_impl(redis, key, env_var, default, value_type):
+                if key == "daily_spend_limit_usd":
+                    return DEFAULT_DAILY_SPEND_LIMIT_USD
+                elif key == "hourly_spend_limit_usd":
+                    return DEFAULT_HOURLY_SPEND_LIMIT_USD
+                return default
+            mock_get_setting.side_effect = mock_get_setting_impl
+            
+            usage = await get_current_usage()
+            
+            assert "daily" in usage
+            assert "hourly" in usage
+            assert usage["daily"]["cost_usd"] == 0.0
+            assert usage["hourly"]["cost_usd"] == 0.0
+            # Limits are now read dynamically, but should use defaults when no settings exist
+            assert usage["daily"]["limit_usd"] == DEFAULT_DAILY_SPEND_LIMIT_USD
+            assert usage["hourly"]["limit_usd"] == DEFAULT_HOURLY_SPEND_LIMIT_USD
 
 
 @pytest.mark.asyncio
@@ -87,7 +99,7 @@ async def test_check_spend_limit_allows_request_below_limit(mock_redis_client):
 async def test_check_spend_limit_blocks_request_above_daily_limit(mock_redis_client):
     """Test that requests exceeding daily limit are blocked."""
     # Set daily cost close to limit - use side_effect to return different values for hourly vs daily
-    daily_cost = DAILY_SPEND_LIMIT_USD - 0.5  # 4.5
+    daily_cost = DEFAULT_DAILY_SPEND_LIMIT_USD - 0.5  # 4.5
     async def get_side_effect(key):
         # Return daily cost for daily key, low value for hourly key
         if "daily" in str(key):
@@ -112,7 +124,7 @@ async def test_check_spend_limit_blocks_request_above_daily_limit(mock_redis_cli
 async def test_check_spend_limit_blocks_request_above_hourly_limit(mock_redis_client):
     """Test that requests exceeding hourly limit are blocked."""
     # Set hourly cost close to limit - use a function to return different values based on key
-    hourly_cost = HOURLY_SPEND_LIMIT_USD - 0.1  # 0.9
+    hourly_cost = DEFAULT_HOURLY_SPEND_LIMIT_USD - 0.1  # 0.9
     async def get_side_effect(key):
         # Return hourly cost for hourly key, 0.0 for daily key
         if "hourly" in str(key):

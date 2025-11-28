@@ -38,12 +38,14 @@ class AbusePreventionSettings(BaseModel):
     challenge_ttl_seconds: Optional[int] = Field(None, ge=60, description="Challenge TTL in seconds")
     max_active_challenges_per_identifier: Optional[int] = Field(None, ge=1, description="Max active challenges per identifier")
     enable_challenge_response: Optional[bool] = Field(None, description="Enable challenge-response fingerprinting")
-    high_cost_threshold_usd: Optional[float] = Field(None, ge=0.01, description="High cost threshold in USD (10-minute window)")
+    high_cost_threshold_usd: Optional[float] = Field(None, ge=0.0001, description="High cost threshold in USD (10-minute window)")
     high_cost_window_seconds: Optional[int] = Field(None, ge=60, description="High cost window in seconds")
     enable_cost_throttling: Optional[bool] = Field(None, description="Enable cost-based throttling")
     cost_throttle_duration_seconds: Optional[int] = Field(None, ge=1, description="Cost throttle duration in seconds")
     daily_cost_limit_usd: Optional[float] = Field(None, ge=0.01, description="Daily cost limit per identifier in USD")
     challenge_request_rate_limit_seconds: Optional[int] = Field(None, ge=1, description="Challenge request rate limit in seconds")
+    daily_spend_limit_usd: Optional[float] = Field(None, ge=0.01, description="Global daily LLM spend limit in USD")
+    hourly_spend_limit_usd: Optional[float] = Field(None, ge=0.01, description="Global hourly LLM spend limit in USD")
 
 
 def verify_admin_token(authorization: str = None) -> bool:
@@ -125,12 +127,14 @@ def get_settings_from_env() -> Dict[str, Any]:
         "challenge_ttl_seconds": int(os.getenv("CHALLENGE_TTL_SECONDS", "300")),
         "max_active_challenges_per_identifier": int(os.getenv("MAX_ACTIVE_CHALLENGES_PER_IDENTIFIER", "15")),
         "enable_challenge_response": os.getenv("ENABLE_CHALLENGE_RESPONSE", "true").lower() == "true",
-        "high_cost_threshold_usd": float(os.getenv("HIGH_COST_THRESHOLD_USD", "0.02")),
+        "high_cost_threshold_usd": float(os.getenv("HIGH_COST_THRESHOLD_USD", "0.001")),
         "high_cost_window_seconds": int(os.getenv("HIGH_COST_WINDOW_SECONDS", "600")),
         "enable_cost_throttling": os.getenv("ENABLE_COST_THROTTLING", "true").lower() == "true",
         "cost_throttle_duration_seconds": int(os.getenv("COST_THROTTLE_DURATION_SECONDS", "30")),
         "daily_cost_limit_usd": float(os.getenv("DAILY_COST_LIMIT_USD", "0.25")),
         "challenge_request_rate_limit_seconds": int(os.getenv("CHALLENGE_REQUEST_RATE_LIMIT_SECONDS", "3")),
+        "daily_spend_limit_usd": float(os.getenv("DAILY_SPEND_LIMIT_USD", "5.00")),
+        "hourly_spend_limit_usd": float(os.getenv("HOURLY_SPEND_LIMIT_USD", "1.00")),
     }
 
 

@@ -441,3 +441,117 @@ def test_settings_endpoint_update_and_get(admin_client, admin_headers, mock_redi
     assert sources.get("enable_challenge_response") == "redis"
     assert sources.get("challenge_ttl_seconds") == "redis"
 
+
+@pytest.mark.asyncio
+async def test_global_spend_limits_use_updated_settings(mock_redis, monkeypatch):
+    """Test that global daily and hourly spend limits use updated settings from Redis."""
+    from backend.monitoring.spend_limit import get_current_usage, check_spend_limit
+    from backend.api.v1.admin.settings import save_settings_to_redis
+    from backend.utils.settings_reader import get_setting_from_redis_or_env, clear_settings_cache
+    
+    # Patch get_redis_client for all modules
+    async def fake_get_redis_client():
+        return mock_redis
+    monkeypatch.setattr("backend.api.v1.admin.settings.get_redis_client", fake_get_redis_client)
+    monkeypatch.setattr("backend.monitoring.spend_limit.get_redis_client", fake_get_redis_client)
+    
+    # Set custom global spend limits
+    settings = {
+        "daily_spend_limit_usd": 10.00,  # Custom daily limit
+        "hourly_spend_limit_usd": 2.00,   # Custom hourly limit
+    }
+    
+    await save_settings_to_redis(settings)
+    clear_settings_cache()
+    
+    # Verify settings are read correctly
+    daily_limit = await get_setting_from_redis_or_env(
+        mock_redis,
+        "daily_spend_limit_usd",
+        "DAILY_SPEND_LIMIT_USD",
+        5.00,
+        float
+    )
+    assert daily_limit == 10.00
+    
+    hourly_limit = await get_setting_from_redis_or_env(
+        mock_redis,
+        "hourly_spend_limit_usd",
+        "HOURLY_SPEND_LIMIT_USD",
+        1.00,
+        float
+    )
+    assert hourly_limit == 2.00
+    
+    # Mock Redis to return low costs so we can test limit checking
+    mock_redis.get = AsyncMock(return_value="0.0")
+    mock_redis.hget = AsyncMock(return_value="0")
+    
+    # Test that get_current_usage uses the updated limits
+    usage = await get_current_usage()
+    assert usage["daily"]["limit_usd"] == 10.00
+    assert usage["hourly"]["limit_usd"] == 2.00
+    
+    # Test that check_spend_limit uses the updated limits
+    # Set daily cost close to the new limit
+    daily_cost = 9.5  # Just under 10.00
+    async def get_side_effect(key):
+        if "daily" in str(key):
+            return str(daily_cost)
+        else:
+            return "0.0"  # Hourly is low
+    
+    mock_redis.get = AsyncMock(side_effect=get_side_effect)
+    
+    # Request that would exceed the new daily limit (with 10% buffer)
+    # 9.5 + 0.6*1.1 = 10.16 > 10.00 → blocked
+    allowed, error_msg, usage_info = await check_spend_limit(0.6, "test-model")
+    
+    assert allowed is False
+    assert error_msg is not None
+    assert "daily" in error_msg.lower() or "limit" in error_msg.lower()
+    assert usage_info["daily"]["limit_usd"] == 10.00  # Should use updated limit
+
+
+@pytest.mark.asyncio
+async def test_global_spend_limits_settings_endpoint(admin_client, admin_headers, mock_redis, monkeypatch):
+    """Test that global spend limit settings can be updated and retrieved via API."""
+    # Patch get_redis_client
+    async def fake_get_redis_client():
+        return mock_redis
+    monkeypatch.setattr("backend.api.v1.admin.settings.get_redis_client", fake_get_redis_client)
+    
+    # Update global spend limit settings via API
+    new_settings = {
+        "daily_spend_limit_usd": 15.00,
+        "hourly_spend_limit_usd": 3.00,
+    }
+    
+    response = admin_client.put(
+        "/api/v1/admin/settings/abuse-prevention",
+        headers=admin_headers,
+        json=new_settings
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    
+    # Get settings back
+    response = admin_client.get(
+        "/api/v1/admin/settings/abuse-prevention",
+        headers=admin_headers
+    )
+    assert response.status_code == 200
+    get_data = response.json()
+    
+    # Verify settings are present and correct
+    settings = get_data["settings"]
+    assert settings.get("daily_spend_limit_usd") == 15.00
+    assert settings.get("hourly_spend_limit_usd") == 3.00
+    
+    # Verify settings are marked as coming from Redis
+    sources = get_data["sources"]
+    assert sources.get("daily_spend_limit_usd") == "redis"
+    assert sources.get("hourly_spend_limit_usd") == "redis"
+

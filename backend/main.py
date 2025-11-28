@@ -159,9 +159,16 @@ async def update_metrics_periodically():
             
             # Update spend limit metrics every 30 seconds
             try:
-                # Read spend limits from environment (allows hot-reloading)
-                daily_limit = float(os.getenv("DAILY_SPEND_LIMIT_USD", "5.00"))
-                hourly_limit = float(os.getenv("HOURLY_SPEND_LIMIT_USD", "1.00"))
+                # Read spend limits from Redis with env fallback (allows hot-reloading via admin dashboard)
+                from backend.utils.settings_reader import get_setting_from_redis_or_env
+                redis_client = await get_redis_client()
+                
+                daily_limit = await get_setting_from_redis_or_env(
+                    redis_client, "daily_spend_limit_usd", "DAILY_SPEND_LIMIT_USD", 5.00, float
+                )
+                hourly_limit = await get_setting_from_redis_or_env(
+                    redis_client, "hourly_spend_limit_usd", "HOURLY_SPEND_LIMIT_USD", 1.00, float
+                )
                 
                 usage_info = await get_current_usage()
                 
@@ -1030,6 +1037,7 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
     fingerprint = http_request.headers.get("X-Fingerprint")
     fingerprint_hash = None
     if fingerprint:
+        logger.info(f"X-Fingerprint header present: {fingerprint[:50]}...")
         # Extract fingerprint hash (without challenge prefix) for cost tracking
         _, fingerprint_hash = _extract_challenge_from_fingerprint(fingerprint)
         identifier_for_cost = fingerprint_hash if fingerprint_hash else fingerprint
@@ -1053,10 +1061,21 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
         )
         
         # Check cost-based throttling
-        is_throttled, throttle_reason = await check_cost_based_throttling(
-            identifier_for_cost,
-            estimated_cost
+        logger.info(
+            f"Checking cost-based throttling: fingerprint={identifier_for_cost[:20] if identifier_for_cost else 'None'}..., "
+            f"estimated_cost=${estimated_cost:.6f}"
         )
+        try:
+            is_throttled, throttle_reason = await check_cost_based_throttling(
+                identifier_for_cost,
+                estimated_cost
+            )
+            logger.info(f"Cost throttling check completed: is_throttled={is_throttled}, reason={throttle_reason}")
+        except Exception as e:
+            logger.error(f"Error in cost-based throttling check: {e}", exc_info=True)
+            # On error, allow the request to proceed (fail open)
+            is_throttled = False
+            throttle_reason = None
         
         if is_throttled:
             logger.warning(
@@ -1071,6 +1090,8 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
                     "requires_verification": True
                 }
             )
+    else:
+        logger.info("X-Fingerprint header missing - cost throttling skipped")
     
     # Track unique user (non-blocking, fire and forget)
     if fingerprint_hash:
@@ -1120,6 +1141,33 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
         error_message = None
         
         try:
+            # Check usage status and include in stream if not ok
+            from backend.monitoring.spend_limit import get_current_usage
+            usage_info = await get_current_usage()
+            daily_percentage = usage_info["daily"]["percentage_used"]
+            hourly_percentage = usage_info["hourly"]["percentage_used"]
+            
+            # Determine warning level
+            warning_level = None
+            if daily_percentage >= 100 or hourly_percentage >= 100:
+                warning_level = "error"
+            elif daily_percentage >= 80 or hourly_percentage >= 80:
+                warning_level = "warning"
+            elif daily_percentage >= 60 or hourly_percentage >= 60:
+                warning_level = "info"
+            
+            # Send usage status in stream if there's a warning
+            if warning_level:
+                payload = {
+                    "status": "usage_status",
+                    "usage_status": {
+                        "status": warning_level,
+                        "warning_level": warning_level,
+                    },
+                    "isComplete": False
+                }
+                yield f"data: {json.dumps(payload)}\n\n"
+            
             # Send initial status
             payload = {
                 "status": "thinking",
