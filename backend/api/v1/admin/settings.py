@@ -132,7 +132,7 @@ def get_settings_from_env() -> Dict[str, Any]:
         "enable_cost_throttling": os.getenv("ENABLE_COST_THROTTLING", "true").lower() == "true",
         "cost_throttle_duration_seconds": int(os.getenv("COST_THROTTLE_DURATION_SECONDS", "30")),
         "daily_cost_limit_usd": float(os.getenv("DAILY_COST_LIMIT_USD", "0.25")),
-        "challenge_request_rate_limit_seconds": int(os.getenv("CHALLENGE_REQUEST_RATE_LIMIT_SECONDS", "3")),
+        "challenge_request_rate_limit_seconds": int(os.getenv("CHALLENGE_REQUEST_RATE_LIMIT_SECONDS", "1")),
         "daily_spend_limit_usd": float(os.getenv("DAILY_SPEND_LIMIT_USD", "5.00")),
         "hourly_spend_limit_usd": float(os.getenv("HOURLY_SPEND_LIMIT_USD", "1.00")),
     }
@@ -153,6 +153,10 @@ async def get_current_settings() -> Dict[str, Any]:
     
     # Merge: Redis settings override env settings
     current_settings = {**env_settings, **redis_settings}
+    
+    # Ensure challenge_request_rate_limit_seconds defaults to 1 if not set
+    if current_settings.get("challenge_request_rate_limit_seconds") is None:
+        current_settings["challenge_request_rate_limit_seconds"] = 1
     
     return current_settings
 
