@@ -46,8 +46,12 @@ export function UserStatistics() {
   // Calculate max users for chart scaling
   const maxUsers = Math.max(
     ...stats.users_over_time.map((day) => day.unique_users),
-    stats.today_unique_users
+    stats.today_unique_users,
+    1 // Ensure minimum max to avoid division by zero issues
   );
+
+  // Reverse the data to show most recent at the top
+  const chartData = [...stats.users_over_time].reverse();
 
   return (
     <div className="space-y-4">
@@ -78,7 +82,7 @@ export function UserStatistics() {
             <div className="space-y-2">
               <div className="text-sm font-medium text-muted-foreground">Average Per Day</div>
               <div className="text-3xl font-bold text-card-foreground">
-                {stats.average_users_per_day.toLocaleString()}
+                {stats.average_users_per_day.toFixed(2)}
               </div>
               <p className="text-xs text-muted-foreground">
                 Average over last {stats.days_tracked} days
@@ -108,35 +112,33 @@ export function UserStatistics() {
           <div className="space-y-2">
             <div className="text-sm font-medium text-foreground">Users Over Time</div>
             <div className="border rounded-lg p-4 bg-muted/50 min-h-[300px]">
-              {stats.users_over_time.length === 0 ? (
+              {chartData.length === 0 ? (
                 <div className="flex items-center justify-center h-full text-muted-foreground">
                   No data available
                 </div>
               ) : (
-                <div className="space-y-1">
-                  {stats.users_over_time.map((day, index) => {
-                    const percentage = maxUsers > 0 ? (day.unique_users / maxUsers) * 100 : 0;
+                <div className="space-y-2">
+                  {chartData.map((day, index) => {
+                    const percentage = (day.unique_users / maxUsers) * 100;
                     const isToday = day.date === new Date().toISOString().split("T")[0];
-                    
+                    const barColor = isToday ? "bg-primary" : "bg-primary/70";
+                    const dateColor = isToday ? "font-medium text-foreground" : "text-muted-foreground";
+
                     return (
                       <div key={day.date} className="flex items-center gap-2">
-                        <div className="w-24 text-xs text-muted-foreground shrink-0">
+                        <div className={`w-24 text-xs shrink-0 ${dateColor}`}>
                           {new Date(day.date).toLocaleDateString("en-US", {
                             month: "short",
                             day: "numeric",
                           })}
                         </div>
-                        <div className="flex-1 relative">
+                        <div className="flex-1 flex items-center">
                           <div
-                            className={`h-6 rounded ${
-                              isToday
-                                ? "bg-primary"
-                                : "bg-primary/70"
-                            } transition-all`}
-                            style={{ width: `${Math.max(percentage, 2)}%` }}
+                            className={`h-6 rounded ${barColor} transition-all`}
+                            style={{ width: `${percentage}%` }}
                           />
-                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs font-medium text-primary-foreground">
-                            {day.unique_users}
+                          <span className="ml-2 text-xs font-medium text-foreground">
+                            {day.unique_users.toLocaleString()}
                           </span>
                         </div>
                       </div>
@@ -151,4 +153,3 @@ export function UserStatistics() {
     </div>
   );
 }
-
