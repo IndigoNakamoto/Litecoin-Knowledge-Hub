@@ -451,7 +451,7 @@ app.json_encoders = {
 # CORS configuration - supports both development and production
 # Default origins include localhost for development and production domains
 # Admin frontend runs locally, so add localhost ports via CORS_ORIGINS or ADMIN_FRONTEND_URL when needed
-default_origins = "http://localhost:3000,https://chat.lite.space,https://www.chat.lite.space,http://localhost:3003,http://127.0.0.1:3003"
+default_origins = "http://localhost:3000,https://chat.lite.space,https://www.chat.lite.space,http://localhost:3003,http://127.0.0.1:3003,https://admin.lite.space,https://www.admin.lite.space"
 cors_origins_env = os.getenv("CORS_ORIGINS", "").strip()
 # If CORS_ORIGINS is empty or not set, use defaults
 if not cors_origins_env:
@@ -485,12 +485,16 @@ app.add_middleware(MetricsMiddleware)
 # Add security headers middleware (after metrics, before CORS)
 app.add_middleware(SecurityHeadersMiddleware)
 
+# Log CORS configuration for debugging
+logger.info(f"CORS configuration: origins={origins}, methods={'*' if is_dev else ['GET', 'POST', 'PUT', 'OPTIONS']}, is_dev={is_dev}")
+
 app.add_middleware(
     CORSMiddleware, 
     allow_origins=origins,
     allow_credentials=True,  # Keep for future cookie-based auth
-    allow_methods=["*"] if is_dev else ["GET", "POST", "OPTIONS"],  # All methods in dev
+    allow_methods=["*"] if is_dev else ["GET", "POST", "PUT", "OPTIONS"],  # All methods in dev, include PUT for admin frontend
     allow_headers=["*"] if is_dev else ["Content-Type", "Authorization", "Cache-Control", "X-Fingerprint"],  # All headers in dev
+    expose_headers=["*"] if is_dev else [],  # Expose headers in dev
 )
 
 # Global exception handlers for error sanitization

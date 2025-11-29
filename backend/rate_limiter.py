@@ -243,6 +243,10 @@ async def check_rate_limit(request: Request, config: RateLimitConfig) -> None:
   Supports progressive bans for repeated violations.
   Checks global rate limits after individual limits.
   """
+  # Skip rate limiting for OPTIONS requests (CORS preflight)
+  if request.method == "OPTIONS":
+    return
+  
   redis = await get_redis_client()
   
   # 1. Get the Full Fingerprint (e.g., "fp:challengeABC:userHash123" OR "2001:db8::1")
