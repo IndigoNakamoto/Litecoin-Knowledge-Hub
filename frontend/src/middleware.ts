@@ -26,6 +26,15 @@ export function middleware(request: NextRequest) {
   // If X-Forwarded-Proto indicates HTTP, redirect to HTTPS
   if (forwardedProto === 'http') {
     url.protocol = 'https:'
+    
+    // Use Host header if available (for proper hostname in redirect)
+    // This handles cases where nextUrl.hostname might be 0.0.0.0 (bind address)
+    const hostHeader = request.headers.get('host')
+    if (hostHeader) {
+      // Preserve port if present in Host header
+      url.host = hostHeader
+    }
+    
     return NextResponse.redirect(url, 301)
   }
   
