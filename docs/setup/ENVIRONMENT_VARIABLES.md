@@ -132,6 +132,7 @@ These variables are usually the same across environments but can be overridden.
 | `HIGH_COST_WINDOW_SECONDS` | `600` | Cost tracking window in seconds (10 minutes) |
 | `ENABLE_COST_THROTTLING` | `true` | Enable cost-based throttling |
 | `COST_THROTTLE_DURATION_SECONDS` | `30` | Duration in seconds that a fingerprint is throttled after exceeding cost threshold |
+| `TRUST_X_FORWARDED_FOR` | `false` | **SECURITY:** Set to `true` only when behind a trusted reverse proxy that strips user-supplied headers. When `false` (default), `X-Forwarded-For` is ignored to prevent IP spoofing attacks. Always use `CF-Connecting-IP` when behind Cloudflare (automatically trusted). See [Rate Limiting Security Guide](../security/RATE_LIMITING_SECURITY.md) for details. |
 
 **Where to set:** Root-level `.env.*` files (for spend limits and abuse prevention features, set in `backend/.env`)
 

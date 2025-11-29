@@ -1,6 +1,7 @@
 import os
 import time
 import uuid
+import ipaddress
 from dataclasses import dataclass, field
 from typing import Optional, List
 
@@ -25,23 +26,84 @@ class RateLimitConfig:
   )
 
 
+def _is_valid_ip(ip_str: str) -> bool:
+  """
+  Validate that a string is a valid IP address (IPv4 or IPv6).
+  
+  Args:
+    ip_str: String to validate
+    
+  Returns:
+    True if valid IP address, False otherwise
+  """
+  if not ip_str or not isinstance(ip_str, str):
+    return False
+  
+  ip_str = ip_str.strip()
+  if not ip_str:
+    return False
+    
+  try:
+    ipaddress.ip_address(ip_str)
+    return True
+  except ValueError:
+    return False
+
+
 def _get_ip_from_request(request: Request) -> str:
   """
-  Extract client IP, preferring Cloudflare / proxy headers when present.
+  Extract client IP address with security hardening against IP spoofing.
+  
+  Security Priority:
+  1. CF-Connecting-IP (Cloudflare) - Always trusted when present
+  2. X-Forwarded-For - Only trusted when behind trusted proxy (via env var)
+  3. request.client.host - Direct connection IP (fallback)
+  
+  This prevents IP spoofing attacks where attackers send fake X-Forwarded-For
+  headers to bypass rate limiting.
+  
+  Args:
+    request: FastAPI Request object
+    
+  Returns:
+    Client IP address as string, or "unknown" if unable to determine
   """
-  # Cloudflare header
+  # 1. Cloudflare header (always trusted when present)
+  # Cloudflare Tunnel sets this header and it cannot be spoofed by clients
   cf_ip = request.headers.get("CF-Connecting-IP")
   if cf_ip:
-    return cf_ip
-
-  # Standard proxy header
-  xff = request.headers.get("X-Forwarded-For")
-  if xff:
-    # XFF may contain a list of IPs. The left-most is the original client.
-    return xff.split(",")[0].strip()
-
-  client_host = request.client.host if request.client else "unknown"
-  return client_host
+    cf_ip = cf_ip.strip()
+    if _is_valid_ip(cf_ip):
+      return cf_ip
+    # Invalid CF-Connecting-IP - log warning but continue to fallback
+  
+  # 2. X-Forwarded-For header (only trusted when behind trusted proxy)
+  # CRITICAL: This header can be spoofed by clients if not behind a trusted proxy
+  # Only trust it if explicitly configured via environment variable
+  trust_x_forwarded_for = os.getenv("TRUST_X_FORWARDED_FOR", "false").lower() in ("true", "1", "yes")
+  
+  if trust_x_forwarded_for:
+    xff = request.headers.get("X-Forwarded-For")
+    if xff:
+      # XFF may contain a list of IPs: "client, proxy1, proxy2"
+      # The left-most is the original client IP
+      first_ip = xff.split(",")[0].strip()
+      if _is_valid_ip(first_ip):
+        return first_ip
+      # Invalid IP in X-Forwarded-For - log warning but continue to fallback
+  # else:
+  #   If TRUST_X_FORWARDED_FOR is not set, we ignore X-Forwarded-For entirely
+  #   This prevents IP spoofing attacks
+  
+  # 3. Direct connection IP (fallback)
+  # This is the actual client IP when connecting directly (not through proxy)
+  client_host = request.client.host if request.client else None
+  if client_host and _is_valid_ip(client_host):
+    return client_host
+  
+  # Last resort: return "unknown" if we can't determine a valid IP
+  # This should be rare and indicates a misconfiguration
+  return "unknown"
 
 
 def _get_rate_limit_identifier(request: Request) -> str:

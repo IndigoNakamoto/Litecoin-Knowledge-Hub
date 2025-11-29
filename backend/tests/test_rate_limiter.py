@@ -65,23 +65,41 @@ def test_rate_limit_config_custom_progressive():
 
 
 def test_get_ip_from_request_cloudflare():
-    """Test IP extraction with Cloudflare header."""
+    """Test IP extraction with Cloudflare header (always trusted)."""
     request = MagicMock(spec=Request)
     request.headers = {"CF-Connecting-IP": "192.168.1.100"}
     request.client = None
     
+    # Cloudflare header should always be trusted, regardless of TRUST_X_FORWARDED_FOR
     ip = _get_ip_from_request(request)
     assert ip == "192.168.1.100"
+    
+    # Test that CF-Connecting-IP takes precedence over X-Forwarded-For
+    request.headers = {
+        "CF-Connecting-IP": "192.168.1.100",
+        "X-Forwarded-For": "10.0.0.1"
+    }
+    with patch.dict(os.environ, {"TRUST_X_FORWARDED_FOR": "true"}):
+        ip = _get_ip_from_request(request)
+        assert ip == "192.168.1.100"  # CF-Connecting-IP should win
 
 
 def test_get_ip_from_request_x_forwarded_for():
-    """Test IP extraction with X-Forwarded-For header."""
+    """Test IP extraction with X-Forwarded-For header (only when trusted)."""
     request = MagicMock(spec=Request)
     request.headers = {"X-Forwarded-For": "192.168.1.200, 10.0.0.1"}
     request.client = None
     
-    ip = _get_ip_from_request(request)
-    assert ip == "192.168.1.200"
+    # Test with TRUST_X_FORWARDED_FOR enabled
+    with patch.dict(os.environ, {"TRUST_X_FORWARDED_FOR": "true"}):
+        ip = _get_ip_from_request(request)
+        assert ip == "192.168.1.200"
+    
+    # Test with TRUST_X_FORWARDED_FOR disabled (default behavior)
+    # Should fall back to "unknown" since client is None
+    with patch.dict(os.environ, {"TRUST_X_FORWARDED_FOR": "false"}, clear=False):
+        ip = _get_ip_from_request(request)
+        assert ip == "unknown"
 
 
 def test_get_ip_from_request_direct():
@@ -93,6 +111,30 @@ def test_get_ip_from_request_direct():
     
     ip = _get_ip_from_request(request)
     assert ip == "127.0.0.1"
+
+
+def test_get_ip_from_request_invalid_ip():
+    """Test IP extraction with invalid IP addresses (should be rejected)."""
+    request = MagicMock(spec=Request)
+    request.client = None
+    
+    # Test invalid CF-Connecting-IP
+    request.headers = {"CF-Connecting-IP": "not.an.ip.address"}
+    ip = _get_ip_from_request(request)
+    assert ip == "unknown"
+    
+    # Test invalid X-Forwarded-For (when trusted)
+    request.headers = {"X-Forwarded-For": "invalid-ip"}
+    with patch.dict(os.environ, {"TRUST_X_FORWARDED_FOR": "true"}):
+        ip = _get_ip_from_request(request)
+        assert ip == "unknown"
+    
+    # Test invalid client.host
+    request.headers = {}
+    request.client = MagicMock()
+    request.client.host = "not.an.ip"
+    ip = _get_ip_from_request(request)
+    assert ip == "unknown"
 
 
 @pytest.mark.asyncio
@@ -238,7 +280,7 @@ if __name__ == "__main__":
         print("✅ Cloudflare IP extraction test passed")
         
         test_get_ip_from_request_x_forwarded_for()
-        print("✅ X-Forwarded-For IP extraction test passed")
+        print("✅ X-Forwarded-For IP extraction test passed (with trust check)")
         
         test_get_ip_from_request_direct()
         print("✅ Direct IP extraction test passed")
