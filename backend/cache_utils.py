@@ -177,6 +177,174 @@ class EmbeddingCache:
             self.query_map.clear()
 
 
+class SemanticCache:
+    """
+    Semantic cache that stores (query → answer + sources) using embedding similarity.
+    Reuses the embedding model from VectorStoreManager for consistency with the vector store.
+    """
+    
+    def __init__(self, 
+                 embedding_model,  # Embedding model instance from VectorStoreManager
+                 threshold: float = 0.95,        # High confidence threshold for semantic matching
+                 max_size: int = 2000,
+                 ttl_seconds: int = 3600 * 72):  # 72 hours default TTL
+        self.embedding_model = embedding_model
+        self.threshold = threshold
+        self.max_size = max_size
+        self.ttl_seconds = ttl_seconds
+        
+        # Cache structure: list of dicts (we'll use LRU manually)
+        self.entries: List[Dict[str, Any]] = []
+        self._lock = threading.Lock()
+        
+        # In-memory cache for embeddings (avoid recomputing for same queries)
+        self._embedding_cache: Dict[str, np.ndarray] = {}
+        self._embedding_cache_max_size = 500
+
+    def _cosine_similarity(self, a: np.ndarray, b: np.ndarray) -> float:
+        """Calculate cosine similarity between two vectors using numpy."""
+        return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-10)
+
+    def _embed(self, text: str) -> np.ndarray:
+        """Embed a single text with in-memory caching."""
+        text_lower = text.strip().lower()
+        
+        # Check in-memory cache first
+        if text_lower in self._embedding_cache:
+            return self._embedding_cache[text_lower]
+        
+        # Generate embedding using the embedding model
+        try:
+            # Handle both LangChain embeddings and direct model calls
+            if hasattr(self.embedding_model, 'embed_query'):
+                embedding = self.embedding_model.embed_query(text)
+            elif hasattr(self.embedding_model, 'embed_documents'):
+                embedding = self.embedding_model.embed_documents([text])[0]
+            else:
+                # Direct model access (sentence-transformers)
+                embedding = self.embedding_model.encode(text, normalize_embeddings=True)
+            
+            embedding = np.array(embedding, dtype=np.float32)
+            
+            # Cache in memory (limit size)
+            with self._lock:
+                if len(self._embedding_cache) >= self._embedding_cache_max_size:
+                    # Remove oldest entry (simple FIFO)
+                    oldest_key = next(iter(self._embedding_cache))
+                    del self._embedding_cache[oldest_key]
+                self._embedding_cache[text_lower] = embedding
+            
+            return embedding
+        except Exception as e:
+            logger.error(f"Error generating embedding: {e}", exc_info=True)
+            raise
+
+    def _normalize(self, query: str) -> str:
+        """Normalize query text for consistent matching."""
+        return query.strip().lower()
+
+    def get(self, query: str, chat_history: List[Tuple[str, str]] = None) -> Optional[Tuple[str, List[Document]]]:
+        """
+        Return cached (answer, sources) if semantic similarity > threshold.
+        Includes recent chat history in the semantic context.
+        """
+        normalized = self._normalize(query)
+        search_text = self._build_search_text(normalized, chat_history or [])
+        
+        query_vec = self._embed(search_text)
+
+        with self._lock:
+            now = time.time()
+            best_match = None
+            best_score = 0.0
+
+            # Clean expired entries first
+            self.entries = [e for e in self.entries if now - e["timestamp"] < self.ttl_seconds]
+
+            for entry in self.entries:
+                entry_vec = entry["query_vec"]
+                sim = self._cosine_similarity(query_vec, entry_vec)
+                
+                if sim > best_score and sim >= self.threshold:
+                    best_score = sim
+                    best_match = entry
+
+            if best_match:
+                logger.debug(f"Semantic cache HIT: similarity={best_score:.3f} for query: {query[:50]}...")
+                try:
+                    from backend.monitoring.metrics import rag_cache_hits_total
+                    rag_cache_hits_total.labels(cache_type="semantic").inc()
+                except ImportError:
+                    pass  # Monitoring not available
+                return best_match["answer"], best_match["sources"]
+
+        try:
+            from backend.monitoring.metrics import rag_cache_misses_total
+            rag_cache_misses_total.labels(cache_type="semantic").inc()
+        except ImportError:
+            pass  # Monitoring not available
+        return None
+
+    def set(self, query: str, chat_history: List[Tuple[str, str]], answer: str, sources: List[Document]):
+        """Cache the result with embedding."""
+        normalized = self._normalize(query)
+        search_text = self._build_search_text(normalized, chat_history or [])
+        query_vec = self._embed(search_text)
+
+        with self._lock:
+            # Clean expired entries before adding
+            now = time.time()
+            self.entries = [e for e in self.entries if now - e["timestamp"] < self.ttl_seconds]
+            
+            # LRU eviction: remove oldest entries if cache is full
+            if len(self.entries) >= self.max_size:
+                # Sort by timestamp and keep newest half
+                self.entries.sort(key=lambda x: x["timestamp"])
+                self.entries = self.entries[-self.max_size//2:]
+
+            self.entries.append({
+                "query": normalized,
+                "query_vec": query_vec,
+                "answer": answer,
+                "sources": sources,
+                "timestamp": time.time(),
+                "search_text": search_text
+            })
+
+    def _build_search_text(self, query: str, chat_history: List[Tuple[str, str]]) -> str:
+        """
+        Include recent conversation context in the semantic search text.
+        This makes follow-up questions match better.
+        """
+        context = []
+        # Take last 2-3 human messages (most relevant context)
+        for human, _ in reversed(chat_history[-4:]):
+            if human and isinstance(human, str):
+                context.append(human.strip())
+        context.reverse()
+        context.append(query)
+        return " | ".join(context[-3:])  # max 3 parts (recent messages + current query)
+
+    def clear(self):
+        """Clear all cached entries."""
+        with self._lock:
+            self.entries.clear()
+            self._embedding_cache.clear()
+
+    def stats(self) -> Dict[str, Any]:
+        """Get cache statistics."""
+        with self._lock:
+            now = time.time()
+            valid = [e for e in self.entries if now - e["timestamp"] < self.ttl_seconds]
+            return {
+                "size": len(valid),
+                "total": len(self.entries),
+                "threshold": self.threshold,
+                "ttl_seconds": self.ttl_seconds,
+                "max_size": self.max_size
+            }
+
+
 class SuggestedQuestionCache:
     """
     Redis-based cache for suggested question responses with 24-hour TTL.

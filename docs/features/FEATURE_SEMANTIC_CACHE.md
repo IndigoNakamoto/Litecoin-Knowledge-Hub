@@ -67,11 +67,11 @@ User Query
 #### Core Components
 
 **SemanticCache Class** (`backend/cache_utils.py`):
-- Uses `GoogleGenerativeAIEmbeddings` (same model family as LLM) for consistency
+- Reuses embedding model from `VectorStoreManager` (supports both Google and HuggingFace embeddings)
 - Stores query embeddings with cached answers and sources
-- Uses cosine similarity with configurable threshold (default: 0.93)
+- Uses cosine similarity with configurable threshold (default: 0.95)
 - Includes chat history context in semantic matching
-- Implements LRU eviction and TTL-based expiration
+- Implements LRU eviction and TTL-based expiration (default: 72 hours)
 
 **Integration Points** (`backend/rag_pipeline.py`):
 - `aquery()` method: Check semantic cache first, then exact cache
@@ -96,19 +96,27 @@ User Query
 **File**: `backend/cache_utils.py`
 
 ```python
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
 import numpy as np
+from typing import List, Dict, Any, Optional, Tuple
+import time
+import logging
+import threading
+from langchain_core.documents import Document
+
+logger = logging.getLogger(__name__)
 
 class SemanticCache:
     """
     Semantic cache that stores (query → answer + sources) using embedding similarity.
-    Uses Google Gemini embeddings (same as your vector store) for consistency.
+    Reuses the embedding model from VectorStoreManager for consistency with the vector store.
     """
     
     def __init__(self, 
-                 threshold: float = 0.92,        # Tune this: 0.90–0.95 works well
+                 embedding_model,  # Embedding model instance from VectorStoreManager
+                 threshold: float = 0.95,        # High confidence threshold for semantic matching
                  max_size: int = 2000,
-                 ttl_seconds: int = 3600 * 24):  # 24h default, might go with 48 hours.
+                 ttl_seconds: int = 3600 * 72):  # 72 hours default TTL
+        self.embedding_model = embedding_model
         self.threshold = threshold
         self.max_size = max_size
         self.ttl_seconds = ttl_seconds
@@ -117,17 +125,50 @@ class SemanticCache:
         self.entries: List[Dict[str, Any]] = []
         self._lock = threading.Lock()
         
-        # Shared embedding model (cached)
-        self.embeddings = GoogleGenerativeAIEmbeddings(
-            model="models/embedding-001",
-            google_api_key=google_api_key  # already loaded globally
-        )
+        # In-memory cache for embeddings (avoid recomputing for same queries)
+        self._embedding_cache: Dict[str, np.ndarray] = {}
+        self._embedding_cache_max_size = 500
+
+    def _cosine_similarity(self, a: np.ndarray, b: np.ndarray) -> float:
+        """Calculate cosine similarity between two vectors using numpy."""
+        return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-10)
 
     def _embed(self, text: str) -> np.ndarray:
-        """Embed a single text (with caching via lru_cache for same queries in one process)"""
-        return np.array(self.embeddings.embed_query(text))
+        """Embed a single text with in-memory caching."""
+        text_lower = text.strip().lower()
+        
+        # Check in-memory cache first
+        if text_lower in self._embedding_cache:
+            return self._embedding_cache[text_lower]
+        
+        # Generate embedding using the embedding model
+        try:
+            # Handle both LangChain embeddings and direct model calls
+            if hasattr(self.embedding_model, 'embed_query'):
+                embedding = self.embedding_model.embed_query(text)
+            elif hasattr(self.embedding_model, 'embed_documents'):
+                embedding = self.embedding_model.embed_documents([text])[0]
+            else:
+                # Direct model access (sentence-transformers)
+                embedding = self.embedding_model.encode(text, normalize_embeddings=True)
+            
+            embedding = np.array(embedding, dtype=np.float32)
+            
+            # Cache in memory (limit size)
+            with self._lock:
+                if len(self._embedding_cache) >= self._embedding_cache_max_size:
+                    # Remove oldest entry (simple FIFO)
+                    oldest_key = next(iter(self._embedding_cache))
+                    del self._embedding_cache[oldest_key]
+                self._embedding_cache[text_lower] = embedding
+            
+            return embedding
+        except Exception as e:
+            logger.error(f"Error generating embedding: {e}", exc_info=True)
+            raise
 
     def _normalize(self, query: str) -> str:
+        """Normalize query text for consistent matching."""
         return query.strip().lower()
 
     def get(self, query: str, chat_history: List[Tuple[str, str]] = None) -> Optional[Tuple[str, List[Document]]]:
@@ -138,43 +179,56 @@ class SemanticCache:
         normalized = self._normalize(query)
         search_text = self._build_search_text(normalized, chat_history or [])
         
-        query_vec = self._embed(search_text).reshape(1, -1)
+        query_vec = self._embed(search_text)
 
         with self._lock:
             now = time.time()
             best_match = None
             best_score = 0.0
 
-            for entry in self.entries:
-                if now - entry["timestamp"] > self.ttl_seconds:
-                    continue  # skip expired
+            # Clean expired entries first
+            self.entries = [e for e in self.entries if now - e["timestamp"] < self.ttl_seconds]
 
-                sim = cosine_similarity(query_vec, entry["query_vec"].reshape(1, -1))[0][0]
+            for entry in self.entries:
+                entry_vec = entry["query_vec"]
+                sim = self._cosine_similarity(query_vec, entry_vec)
+                
                 if sim > best_score and sim >= self.threshold:
                     best_score = sim
                     best_match = entry
 
             if best_match:
-                logger.debug(f"Semantic cache HIT: {best_score:.3f} for query: {query}")
-                if MONITORING_ENABLED:
+                logger.debug(f"Semantic cache HIT: similarity={best_score:.3f} for query: {query[:50]}...")
+                try:
+                    from backend.monitoring.metrics import rag_cache_hits_total
                     rag_cache_hits_total.labels(cache_type="semantic").inc()
+                except ImportError:
+                    pass  # Monitoring not available
                 return best_match["answer"], best_match["sources"]
 
-        if MONITORING_ENABLED:
+        try:
+            from backend.monitoring.metrics import rag_cache_misses_total
             rag_cache_misses_total.labels(cache_type="semantic").inc()
+        except ImportError:
+            pass  # Monitoring not available
         return None
 
     def set(self, query: str, chat_history: List[Tuple[str, str]], answer: str, sources: List[Document]):
         """Cache the result with embedding."""
         normalized = self._normalize(query)
-        search_text = self._build_search_text(normalized, chat_history)
+        search_text = self._build_search_text(normalized, chat_history or [])
         query_vec = self._embed(search_text)
 
         with self._lock:
-            # LRU eviction
+            # Clean expired entries before adding
+            now = time.time()
+            self.entries = [e for e in self.entries if now - e["timestamp"] < self.ttl_seconds]
+            
+            # LRU eviction: remove oldest entries if cache is full
             if len(self.entries) >= self.max_size:
+                # Sort by timestamp and keep newest half
                 self.entries.sort(key=lambda x: x["timestamp"])
-                self.entries = self.entries[-self.max_size//2:]  # keep newest half + room
+                self.entries = self.entries[-self.max_size//2:]
 
             self.entries.append({
                 "query": normalized,
@@ -191,47 +245,81 @@ class SemanticCache:
         This makes follow-up questions match better.
         """
         context = []
-        # Take last 2 human messages (most relevant)
+        # Take last 2-3 human messages (most relevant context)
         for human, _ in reversed(chat_history[-4:]):
-            if human:
+            if human and isinstance(human, str):
                 context.append(human.strip())
         context.reverse()
         context.append(query)
-        return " | ".join(context[-3:])  # max 3 parts
+        return " | ".join(context[-3:])  # max 3 parts (recent messages + current query)
 
     def clear(self):
+        """Clear all cached entries."""
         with self._lock:
             self.entries.clear()
+            self._embedding_cache.clear()
 
-    def stats(self):
+    def stats(self) -> Dict[str, Any]:
+        """Get cache statistics."""
         with self._lock:
             now = time.time()
             valid = [e for e in self.entries if now - e["timestamp"] < self.ttl_seconds]
             return {
                 "size": len(valid),
                 "total": len(self.entries),
-                "threshold": self.threshold
+                "threshold": self.threshold,
+                "ttl_seconds": self.ttl_seconds,
+                "max_size": self.max_size
             }
 
-# Global semantic cache instance
-semantic_cache = SemanticCache(
-    threshold=0.93,      # Start with 0.93 → very high confidence match
-    max_size=3000,
-    ttl_seconds=3600 * 48  # 48 hours
-)
+# Global semantic cache instance (will be initialized in RAGPipeline)
+semantic_cache: Optional[SemanticCache] = None
 ```
 
-**Note**: Use numpy-based cosine similarity (already available) instead of sklearn to avoid new dependencies. The existing `EmbeddingCache` class already demonstrates this pattern.
+**Important Implementation Notes**:
+1. **Embedding Model Reuse**: The SemanticCache reuses the embedding model from `VectorStoreManager.embeddings`, which supports both Google embeddings and HuggingFace sentence-transformers. This ensures consistency with the vector store.
+2. **Numpy Cosine Similarity**: Uses numpy-based cosine similarity (same pattern as `EmbeddingCache`) to avoid sklearn dependency: `np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))`.
+3. **Initialization**: The semantic cache should be initialized in `RAGPipeline.__init__` after `VectorStoreManager` is created, passing `self.vector_store_manager.embeddings` to the SemanticCache constructor.
+4. **Thread Safety**: All cache operations are protected by threading locks to ensure thread-safe access in async contexts.
+
+### Step 1.5: Initialize Semantic Cache in RAGPipeline
+
+**File**: `backend/rag_pipeline.py`
+
+In the `RAGPipeline.__init__` method, after `VectorStoreManager` is initialized (around line 172), add:
+
+```python
+from cache_utils import query_cache, semantic_cache
+
+# In RAGPipeline.__init__, after setting up vector_store_manager:
+# Initialize semantic cache with the embedding model from VectorStoreManager
+from cache_utils import SemanticCache
+import os
+
+self.semantic_cache = SemanticCache(
+    embedding_model=self.vector_store_manager.embeddings,  # Reuse existing embedding model
+    threshold=float(os.getenv("SEMANTIC_CACHE_THRESHOLD", "0.95")),
+    max_size=int(os.getenv("SEMANTIC_CACHE_MAX_SIZE", "2000")),
+    ttl_seconds=int(os.getenv("SEMANTIC_CACHE_TTL_SECONDS", str(3600 * 72)))  # 72 hours
+)
+logger.info(f"Semantic cache initialized with threshold={self.semantic_cache.threshold}, TTL={self.semantic_cache.ttl_seconds}s")
+```
+
+Also, import the SemanticCache class at the top of the file:
+
+```python
+from cache_utils import query_cache, SemanticCache
+```
 
 ### Step 2: Integrate in aquery() Method
 
 **File**: `backend/rag_pipeline.py`
 
-Replace the cache check block (around line 438-458):
+Replace the cache check block (around line 506-526):
 
 ```python
 # === 1. Try semantic cache first (broader recall) ===
-cached_result = semantic_cache.get(query_text, truncated_history)
+cached_result = self.semantic_cache.get(query_text, truncated_history)
 if cached_result:
     answer, published_sources = cached_result
     logger.info(f"Semantic cache HIT for: {query_text}")
@@ -267,12 +355,12 @@ if cached_result:
     return answer, published_sources, metadata
 ```
 
-After answer generation (around line 602), add:
+After answer generation (around line 686), add:
 
 ```python
 # Cache in BOTH systems
-query_cache.set(query_text, truncated_history, answer, published_sources)  # keep exact
-semantic_cache.set(query_text, truncated_history, answer, published_sources)  # semantic
+query_cache.set(query_text, truncated_history, answer, published_sources)  # keep exact cache
+self.semantic_cache.set(query_text, truncated_history, answer, published_sources)  # semantic cache
 ```
 
 ### Step 3: Integrate in astream_query() Method
@@ -283,7 +371,7 @@ Similar pattern in `astream_query()` (around line 673-710):
 
 ```python
 # === 1. Try semantic cache first ===
-cached_result = semantic_cache.get(query_text, truncated_history)
+cached_result = self.semantic_cache.get(query_text, truncated_history)
 if cached_result:
     logger.debug(f"Semantic cache HIT for query: '{query_text}'")
     cached_answer, cached_sources = cached_result
@@ -326,7 +414,7 @@ After answer generation (around line 876), add:
 ```python
 # Cache the result (using truncated history)
 query_cache.set(query_text, truncated_history, full_answer_accumulator, published_sources)
-semantic_cache.set(query_text, truncated_history, full_answer_accumulator, published_sources)
+self.semantic_cache.set(query_text, truncated_history, full_answer_accumulator, published_sources)
 ```
 
 ## Configuration
@@ -337,24 +425,26 @@ Add optional configuration via environment variables:
 
 ```bash
 # Semantic cache configuration
-SEMANTIC_CACHE_THRESHOLD=0.93        # Similarity threshold (0.90-0.95 recommended)
-SEMANTIC_CACHE_MAX_SIZE=3000         # Maximum cache entries
-SEMANTIC_CACHE_TTL_HOURS=48          # Time-to-live in hours
+SEMANTIC_CACHE_THRESHOLD=0.95        # Similarity threshold (0.95 = very strict, high accuracy)
+SEMANTIC_CACHE_MAX_SIZE=2000         # Maximum cache entries
+SEMANTIC_CACHE_TTL_SECONDS=259200    # Time-to-live in seconds (72 hours = 3600 * 72)
 ```
 
 ### Threshold Tuning Guide
 
 | Threshold | Behavior | Use Case |
 |-----------|----------|----------|
-| 0.95+ | Very strict (almost exact rephrase) | High accuracy, lower hit rate |
-| 0.92–0.94 | **Sweet spot (recommended)** | Balanced accuracy and hit rate |
+| 0.95+ | **Very strict (default)** | Highest accuracy, almost exact semantic match |
+| 0.92–0.94 | Balanced | Good accuracy with higher hit rate |
 | 0.90–0.92 | More lenient | Higher hit rate, risk of false positives |
 | < 0.90 | Too lenient | Risk of wrong answers |
 
-**Recommendation**: Start with `0.93`, monitor hit rates, and adjust based on:
+**Recommendation**: The default threshold is set to `0.95` for maximum accuracy. Monitor metrics and adjust based on:
 - `rag_cache_hits_total{cache_type="semantic"}` in Prometheus
 - User feedback on answer quality
 - Cost savings vs. accuracy trade-off
+
+If hit rates are too low (below 30%), consider lowering to 0.93-0.94 after verifying answer quality.
 
 ## Monitoring & Metrics
 
@@ -484,7 +574,7 @@ Dynamically adjust similarity threshold based on:
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| False positives (wrong answers) | High | Start with conservative threshold (0.93), monitor accuracy |
+| False positives (wrong answers) | High | Start with strict threshold (0.95), monitor accuracy |
 | Embedding API failures | Medium | Graceful degradation (skip semantic cache, use exact cache) |
 | Memory usage | Low | LRU eviction, configurable max_size, TTL expiration |
 | Performance overhead | Low | Embedding generation is fast (< 100ms), cache lookup is < 5ms |
@@ -532,16 +622,16 @@ The existing **Query Cache** (`QueryCache`) will continue to work as a fallback 
 
 ## Implementation Checklist
 
-- [ ] Add `SemanticCache` class to `cache_utils.py`
-- [ ] Add global `semantic_cache` instance
-- [ ] Integrate semantic cache in `aquery()` method
-- [ ] Integrate semantic cache in `astream_query()` method
-- [ ] Add cache storage after answer generation
-- [ ] Add environment variable configuration
-- [ ] Update monitoring/metrics documentation
-- [ ] Write unit tests for `SemanticCache` class
-- [ ] Write integration tests for cache flow
-- [ ] Performance testing and optimization
-- [ ] Update deployment documentation
-- [ ] Monitor production metrics and tune threshold
+- [ ] Add `SemanticCache` class to `cache_utils.py` with proper embedding model reuse
+- [ ] Initialize semantic cache in `RAGPipeline.__init__` with VectorStoreManager embeddings
+- [ ] Integrate semantic cache check in `aquery()` method (before exact cache)
+- [ ] Integrate semantic cache check in `astream_query()` method (before exact cache)
+- [ ] Add cache storage after answer generation in both methods
+- [ ] Add environment variable configuration (SEMANTIC_CACHE_THRESHOLD, SEMANTIC_CACHE_TTL_SECONDS)
+- [ ] Test embedding generation with both Google and HuggingFace models
+- [ ] Write unit tests for `SemanticCache` class (similarity matching, TTL, LRU eviction)
+- [ ] Write integration tests for cache flow (aquery and astream_query)
+- [ ] Performance testing (cache lookup < 5ms, embedding generation time)
+- [ ] Update deployment documentation with new environment variables
+- [ ] Monitor production metrics and tune threshold if needed
 

@@ -14,7 +14,7 @@ from langchain.retrievers import EnsembleRetriever
 from langchain.chains import create_history_aware_retriever, create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from data_ingestion.vector_store_manager import VectorStoreManager
-from cache_utils import query_cache
+from cache_utils import query_cache, SemanticCache
 from backend.utils.input_sanitizer import sanitize_query_input, detect_prompt_injection
 from fastapi import HTTPException
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
@@ -196,6 +196,15 @@ class RAGPipeline:
             self.history_aware_retriever,
             document_chain
         )
+        
+        # Initialize semantic cache with the embedding model from VectorStoreManager
+        self.semantic_cache = SemanticCache(
+            embedding_model=self.vector_store_manager.embeddings,  # Reuse existing embedding model
+            threshold=float(os.getenv("SEMANTIC_CACHE_THRESHOLD", "0.92")),
+            max_size=int(os.getenv("SEMANTIC_CACHE_MAX_SIZE", "2000")),
+            ttl_seconds=int(os.getenv("SEMANTIC_CACHE_TTL_SECONDS", str(3600 * 72)))  # 72 hours
+        )
+        logger.info(f"Semantic cache initialized with threshold={self.semantic_cache.threshold}, TTL={self.semantic_cache.ttl_seconds}s")
 
     def _load_published_docs_from_mongo(self) -> List[Document]:
         """Safely load all published documents from MongoDB with fallback."""
@@ -503,7 +512,28 @@ class RAGPipeline:
         # Truncate chat history to prevent token overflow
         truncated_history = self._truncate_chat_history(sanitized_history)
         
-        # Check cache first (using truncated history for cache key)
+        # === 1. Try semantic cache first (broader recall) ===
+        cached_result = self.semantic_cache.get(query_text, truncated_history)
+        if cached_result:
+            answer, published_sources = cached_result
+            logger.info(f"Semantic cache HIT for: {query_text[:50]}...")
+            if MONITORING_ENABLED:
+                rag_cache_hits_total.labels(cache_type="semantic").inc()
+                rag_query_duration_seconds.labels(
+                    query_type="async",
+                    cache_hit="true"
+                ).observe(time.time() - start_time)
+            metadata = {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cost_usd": 0.0,
+                "duration_seconds": time.time() - start_time,
+                "cache_hit": True,
+                "cache_type": "semantic",
+            }
+            return answer, published_sources, metadata
+        
+        # === 2. Fallback to exact cache ===
         cached_result = query_cache.get(query_text, truncated_history)
         if cached_result:
             logger.debug(f"Cache hit for query: '{query_text}'")
@@ -521,7 +551,7 @@ class RAGPipeline:
                 "cost_usd": 0.0,
                 "duration_seconds": time.time() - start_time,
                 "cache_hit": True,
-                "cache_type": "query",
+                "cache_type": "exact",
             }
             return answer, published_sources, metadata
         
@@ -683,8 +713,9 @@ class RAGPipeline:
                 except Exception as e:
                     logger.warning(f"Error recording spend: {e}", exc_info=True)
 
-            # Cache the result (using truncated history)
-            query_cache.set(query_text, truncated_history, answer, published_sources)
+            # Cache in BOTH systems (using truncated history)
+            query_cache.set(query_text, truncated_history, answer, published_sources)  # exact cache
+            self.semantic_cache.set(query_text, truncated_history, answer, published_sources)  # semantic cache
 
             # Build metadata dict
             metadata = {
@@ -758,7 +789,42 @@ class RAGPipeline:
             # Truncate chat history to prevent token overflow
             truncated_history = self._truncate_chat_history(sanitized_history)
             
-            # Check cache first (using truncated history for cache key)
+            # === 1. Try semantic cache first ===
+            cached_result = self.semantic_cache.get(query_text, truncated_history)
+            if cached_result:
+                logger.debug(f"Semantic cache HIT for query: '{query_text[:50]}...'")
+                cached_answer, cached_sources = cached_result
+                
+                if MONITORING_ENABLED:
+                    rag_cache_hits_total.labels(cache_type="semantic").inc()
+                    rag_query_duration_seconds.labels(
+                        query_type="stream",
+                        cache_hit="true"
+                    ).observe(time.time() - start_time)
+
+                # Send sources first
+                yield {"type": "sources", "sources": cached_sources}
+
+                # Stream cached response character by character for consistent UX
+                for i, char in enumerate(cached_answer):
+                    yield {"type": "chunk", "content": char}
+                    # Small delay to control streaming speed
+                    if i % 10 == 0:  # Yield control every 10 characters
+                        await asyncio.sleep(0.001)
+
+                metadata = {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cost_usd": 0.0,
+                    "duration_seconds": time.time() - start_time,
+                    "cache_hit": True,
+                    "cache_type": "semantic",
+                }
+                yield {"type": "metadata", "metadata": metadata}
+                yield {"type": "complete", "from_cache": True}
+                return
+
+            # === 2. Fallback to exact cache ===
             cached_result = query_cache.get(query_text, truncated_history)
             if cached_result:
                 logger.debug(f"Cache hit for query: '{query_text}'")
@@ -789,7 +855,7 @@ class RAGPipeline:
                     "cost_usd": 0.0,
                     "duration_seconds": time.time() - start_time,
                     "cache_hit": True,
-                    "cache_type": "query",
+                    "cache_type": "exact",
                 }
                 yield {"type": "metadata", "metadata": metadata}
 
@@ -986,8 +1052,9 @@ class RAGPipeline:
                     cache_hit="false"
                 ).observe(total_duration)
             
-            # Cache the result (using truncated history)
-            query_cache.set(query_text, truncated_history, full_answer_accumulator, published_sources)
+            # Cache in BOTH systems (using truncated history)
+            query_cache.set(query_text, truncated_history, full_answer_accumulator, published_sources)  # exact cache
+            self.semantic_cache.set(query_text, truncated_history, full_answer_accumulator, published_sources)  # semantic cache
 
             # Yield metadata before completion
             metadata = {
