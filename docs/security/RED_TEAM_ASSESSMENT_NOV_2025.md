@@ -29,14 +29,14 @@ This comprehensive red team assessment evaluates the security posture of the Lit
 
 | Severity | Count | Status |
 |----------|-------|--------|
-| **CRITICAL** | 5 | 2 Resolved, 3 **BLOCK LAUNCH** |
+| **CRITICAL** | 5 | 3 Resolved, 2 **BLOCK LAUNCH** |
 | **HIGH** | 10 | 5 Resolved, 5 Post-Launch (48hrs) |
 | **MEDIUM** | 18 | 0 Resolved, 18 Post-Launch |
 | **LOW** | 5 | 0 Resolved, 5 Post-Launch |
 
 ### 🛑 STOP SHIP - Must Fix Before Launch
 
-1. **CRIT-NEW-1:** Public monitoring ports (Prometheus/Grafana) exposed - **CRITICAL**
+1. ~~**CRIT-NEW-1:** Public monitoring ports (Prometheus/Grafana) exposed~~ ✅ **RESOLVED** - Ports bound to localhost only (127.0.0.1)
 2. ~~**CRIT-NEW-2:** Rate limiting IP spoofing vulnerability~~ ✅ **RESOLVED** - Secure IP extraction implemented
 3. **CRIT-NEW-3:** Grafana default credentials risk - **CRITICAL**
 
@@ -66,10 +66,12 @@ This comprehensive red team assessment evaluates the security posture of the Lit
 
 **These issues block production deployment and must be resolved before launch.**
 
-- [ ] **CRIT-NEW-1:** Close ports 9090 (Prometheus) and 3002 (Grafana) to public internet
-  - Access via SSH tunnel or VPN only
-  - Implement network policies/firewall rules
-  - **Effort:** 1-2 hours
+- [x] **CRIT-NEW-1:** Close ports 9090 (Prometheus) and 3002 (Grafana) to public internet ✅ **RESOLVED**
+  - ✅ Ports bound to localhost only (127.0.0.1:9090 and 127.0.0.1:3002)
+  - ✅ Accessible locally but not from public internet
+  - ✅ Test script created (scripts/test-monitoring-ports.sh)
+  - ✅ Updated both docker-compose.prod.yml and monitoring/docker-compose.monitoring.yml
+  - **Effort:** ✅ Completed
 
 - [x] **CRIT-NEW-2:** Fix rate limiting IP spoofing vulnerability ✅ **RESOLVED**
   - ✅ Implemented secure IP extraction with conditional `X-Forwarded-For` trust
@@ -260,8 +262,8 @@ If an attacker injects malicious URLs into the vector database (via CMS compromi
 ### CRIT-NEW-1: Public Monitoring Ports Exposure
 
 **Severity:** **CRITICAL** (UPGRADED from MEDIUM)  
-**Status:** 🛑 **BLOCK LAUNCH**  
-**Location:** `docker-compose.prod.yml:131, 152`
+**Status:** ✅ **RESOLVED**  
+**Location:** `docker-compose.prod.yml:131, 152`, `monitoring/docker-compose.monitoring.yml:7, 27`
 
 **Description:**
 Prometheus (port 9090) and Grafana (port 3002) are exposed on public ports. Even with authentication, these interfaces provide attackers with:
@@ -270,15 +272,26 @@ Prometheus (port 9090) and Grafana (port 3002) are exposed on public ports. Even
 - Potential entry points for enumeration attacks
 - Attack surface expansion
 
-**Current State:**
+**Previous State:**
 ```yaml
 prometheus:
   ports:
-    - "9090:9090"  # ⚠️ Exposed publicly
+    - "9090:9090"  # ⚠️ Exposed publicly (0.0.0.0)
 
 grafana:
   ports:
-    - "3002:3000"  # ⚠️ Exposed publicly
+    - "3002:3000"  # ⚠️ Exposed publicly (0.0.0.0)
+```
+
+**Resolution:**
+```yaml
+prometheus:
+  ports:
+    - "127.0.0.1:9090:9090"  # ✅ Bound to localhost only
+
+grafana:
+  ports:
+    - "127.0.0.1:3002:3000"  # ✅ Bound to localhost only
 ```
 
 **Impact:**
@@ -294,19 +307,21 @@ grafana:
 4. Use reverse proxy with additional authentication if external access needed
 5. Implement IP allowlisting
 
-**Quick Fix:**
-```yaml
-# docker-compose.prod.yml
-prometheus:
-  ports: []  # Remove public exposure
-  # Access via: ssh -L 9090:localhost:9090 user@host
+**Implementation:**
+Ports are now bound to `127.0.0.1` (localhost only) instead of `0.0.0.0` (all interfaces). This provides:
+- ✅ Local access: Services accessible at `http://localhost:9090` and `http://localhost:3002`
+- ✅ Security: Ports not accessible from public internet
+- ✅ SSH tunneling: Can still access remotely via `ssh -L 9090:localhost:9090 user@host`
 
-grafana:
-  ports: []  # Remove public exposure
-  # Access via: ssh -L 3002:localhost:3000 user@host
-```
+**Files Updated:**
+- `docker-compose.prod.yml` - Prometheus and Grafana port bindings updated to 127.0.0.1
+- `monitoring/docker-compose.monitoring.yml` - Prometheus and Grafana port bindings updated to 127.0.0.1
+- `scripts/test-monitoring-ports.sh` - Test script to verify configuration
 
-**Effort:** 1-2 hours
+**Verification:**
+Run `./scripts/test-monitoring-ports.sh` to verify ports are bound to localhost only and not publicly exposed.
+
+**Effort:** ✅ Completed
 
 ---
 
@@ -575,11 +590,11 @@ Prompt injection detection relies on regex patterns that can be bypassed. Howeve
 
 ### Immediate Actions (Before Launch)
 
-1. **Close public monitoring ports** (CRIT-NEW-1) - 1-2 hours
+1. ~~**Close public monitoring ports** (CRIT-NEW-1)~~ ✅ **COMPLETED** - Ports bound to localhost only
 2. ~~**Fix rate limiting IP spoofing** (CRIT-NEW-2)~~ ✅ **COMPLETED**
 3. **Set Grafana password** (CRIT-NEW-3) - 30 minutes
 
-**Total Time:** 1.5-2.5 hours remaining
+**Total Time:** 30 minutes remaining
 
 ### Within 48 Hours Post-Launch
 
@@ -613,8 +628,8 @@ The application has a **strong security foundation** but requires **immediate fi
 ### Launch Readiness
 
 **🛑 BLOCKED** until the following are fixed:
-- Public monitoring ports closed
-- Rate limiting IP spoofing fixed
+- ~~Public monitoring ports closed~~ ✅ **RESOLVED**
+- ~~Rate limiting IP spoofing fixed~~ ✅ **RESOLVED**
 - Grafana password set
 
 **Estimated time to launch readiness:** 4-7 hours of focused work
