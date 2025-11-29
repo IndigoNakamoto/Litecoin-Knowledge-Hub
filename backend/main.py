@@ -483,8 +483,13 @@ if is_dev:
 # Add monitoring middleware (before CORS to capture all requests)
 app.add_middleware(MetricsMiddleware)
 
-# Add HTTPS redirect middleware (before security headers, redirects HTTP to HTTPS in production)
-app.add_middleware(HTTPSRedirectMiddleware)
+# Skip adding this middleware entirely when behind Cloudflare to prevent redirect loops
+behind_cloudflare = os.getenv("BEHIND_CLOUDFLARE", "false").lower() in ("true", "1", "yes")
+if not behind_cloudflare:
+    app.add_middleware(HTTPSRedirectMiddleware)
+    logger.info("HTTPS redirect middleware enabled (not behind Cloudflare)")
+else:
+    logger.info("HTTPS redirect middleware disabled (BEHIND_CLOUDFLARE=true)")
 
 # Add security headers middleware (after metrics, before CORS)
 app.add_middleware(SecurityHeadersMiddleware)

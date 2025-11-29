@@ -54,6 +54,8 @@ services:
       - NODE_ENV=production
       # Internal Docker service URL for Payload CMS (for suggested questions cache)
       - PAYLOAD_URL=http://payload_cms:3000
+      # Disable HTTPS redirect middleware when behind Cloudflare (Cloudflare handles redirects at edge)
+      - BEHIND_CLOUDFLARE=true
       # CORS origins - defaults include chat.lite.space
       # Add admin frontend URL via CORS_ORIGINS or ADMIN_FRONTEND_URL when running admin locally
       # Example: CORS_ORIGINS=https://chat.lite.space,http://localhost:3003
