@@ -45,13 +45,14 @@ const nextConfig: NextConfig = {
     // Build Content Security Policy
     // Note: Next.js requires 'unsafe-inline' and 'unsafe-eval' for scripts in some cases
     // This can be tightened later with nonces if needed
+    // Allow Cloudflare Insights beacon script
     const cspDirectives = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com",
       "style-src 'self' 'unsafe-inline' fonts.googleapis.com",
       "font-src 'self' fonts.gstatic.com data:",
       "img-src 'self' data: https:",
-      `connect-src 'self' ${backendHost} ${payloadHost}`,
+      `connect-src 'self' ${backendHost} ${payloadHost} https://static.cloudflareinsights.com`,
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
