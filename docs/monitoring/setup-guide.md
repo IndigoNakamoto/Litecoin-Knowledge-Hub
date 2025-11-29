@@ -74,6 +74,8 @@ scrape_configs:
 
 #### Change Admin Password
 
+**For New Installations:**
+
 Set environment variable before starting:
 
 ```bash
@@ -86,6 +88,30 @@ Or edit `docker-compose.monitoring.yml`:
 ```yaml
 environment:
   - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-your-password}
+```
+
+**For Existing Installations:**
+
+⚠️ **Important:** If Grafana has already been initialized, changing `GRAFANA_ADMIN_PASSWORD` in the environment variable will **not** automatically update the existing Grafana database. The password is only set on first initialization.
+
+To update the password for an existing Grafana instance:
+
+```bash
+# Reset password using grafana-cli
+docker exec litecoin-grafana grafana-cli admin reset-admin-password <new-password>
+```
+
+Or start fresh (this will delete all Grafana data, dashboards, and configurations):
+
+```bash
+# Stop and remove volumes
+docker-compose -f monitoring/docker-compose.monitoring.yml down -v
+
+# Set new password
+export GRAFANA_ADMIN_PASSWORD=your-new-password
+
+# Start fresh
+docker-compose -f monitoring/docker-compose.monitoring.yml up -d
 ```
 
 #### Add Data Sources

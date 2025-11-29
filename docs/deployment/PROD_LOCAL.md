@@ -105,7 +105,7 @@ Once started, you can access:
 - Backend API Docs: http://localhost:8000/docs
 - Payload CMS Admin: http://localhost:3001/admin
 - Prometheus: http://localhost:9090
-- Grafana: http://localhost:3002 (admin/admin)
+- Grafana: http://localhost:3002 (requires GRAFANA_ADMIN_PASSWORD env var)
 
 ## Differences from Development
 

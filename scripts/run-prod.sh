@@ -40,10 +40,30 @@ if [ ! -f "$ENV_PROD_FILE" ]; then
   fi
 else
   echo "📦 Loading environment variables from .env.docker.prod..."
-  # Export variables (handle comments and empty lines)
+  # Export all variables from .env file
+  # Create a temporary file with filtered content (no comments, no empty lines)
+  TEMP_ENV=$(mktemp)
+  grep -v '^[[:space:]]*#' "$ENV_PROD_FILE" | grep -v '^[[:space:]]*$' > "$TEMP_ENV"
+  
+  # Source the filtered file - this is the most reliable method
   set -a  # Automatically export all variables
-  source <(grep -v '^#' "$ENV_PROD_FILE" | grep -v '^$' | sed 's/^/export /')
-  set +a  # Stop automatically exporting
+  source "$TEMP_ENV"
+  set +a
+  
+  # Clean up temp file
+  rm -f "$TEMP_ENV"
+  
+  # Verify critical variables are set
+  if [ -z "${GRAFANA_ADMIN_PASSWORD:-}" ]; then
+    echo "❌ Error: GRAFANA_ADMIN_PASSWORD is not set in .env.docker.prod"
+    echo "   Please add: GRAFANA_ADMIN_PASSWORD=your-secure-password"
+    echo ""
+    echo "   Current file location: $ENV_PROD_FILE"
+    echo "   To debug, check if the variable exists:"
+    echo "   grep GRAFANA_ADMIN_PASSWORD $ENV_PROD_FILE"
+    exit 1
+  fi
+  echo "   ✓ GRAFANA_ADMIN_PASSWORD is set (length: ${#GRAFANA_ADMIN_PASSWORD} chars)"
 fi
 
 # Check if docker-compose.prod.yml exists

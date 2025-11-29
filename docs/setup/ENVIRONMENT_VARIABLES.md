@@ -141,7 +141,20 @@ These variables are usually the same across environments but can be overridden.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `GRAFANA_ADMIN_USER` | `admin` | Grafana admin username |
-| `GRAFANA_ADMIN_PASSWORD` | `admin` | Grafana admin password |
+| `GRAFANA_ADMIN_PASSWORD` | **REQUIRED** | Grafana admin password (must be set, no default) |
+
+**Important:** If Grafana has already been initialized, changing `GRAFANA_ADMIN_PASSWORD` in the environment variable will **not** automatically update the existing Grafana database. You must reset the password manually:
+
+```bash
+# Reset password for existing Grafana instance
+docker exec litecoin-grafana grafana-cli admin reset-admin-password <new-password>
+```
+
+Or start fresh (deletes all Grafana data):
+```bash
+docker-compose -f docker-compose.prod.yml down -v
+# Then restart with new password
+```
 
 **Where to set:** Root-level `.env.*` files
 

@@ -279,8 +279,15 @@ The dashboard is automatically loaded when Grafana starts (via provisioning).
 
 1. Start Grafana: `docker-compose -f monitoring/docker-compose.monitoring.yml up -d`
 2. Open http://localhost:3002
-3. Login (default: admin/admin)
+3. Login with credentials from `GRAFANA_ADMIN_USER` and `GRAFANA_ADMIN_PASSWORD` environment variables
+   - Default username: `admin`
+   - Password: Set via `GRAFANA_ADMIN_PASSWORD` (required, no default)
 4. Navigate to Dashboards → Litecoin Knowledge Hub - Monitoring Dashboard
+
+**Note:** If Grafana was previously initialized with a different password, you must reset it:
+```bash
+docker exec litecoin-grafana grafana-cli admin reset-admin-password <new-password>
+```
 
 ## Alerting
 

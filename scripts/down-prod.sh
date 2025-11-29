@@ -30,6 +30,15 @@ fi
 echo "🛑 Shutting down production services..."
 echo ""
 
+# For shutdown operations, docker-compose needs to parse the entire config file
+# If GRAFANA_ADMIN_PASSWORD is not set, provide a temporary dummy value
+# This only affects parsing - no services will start during shutdown
+if [ -z "${GRAFANA_ADMIN_PASSWORD:-}" ]; then
+  export GRAFANA_ADMIN_PASSWORD="dummy-for-shutdown-only"
+  echo "⚠️  Note: GRAFANA_ADMIN_PASSWORD not set, using temporary value for shutdown parsing"
+  echo ""
+fi
+
 # Shutdown services (pass through any additional arguments like -v for volumes)
 $DOCKER_COMPOSE -f docker-compose.prod.yml down "$@"
 
