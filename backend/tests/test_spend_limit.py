@@ -23,6 +23,7 @@ from backend.monitoring.spend_limit import (
     DEFAULT_DAILY_SPEND_LIMIT_USD,
     DEFAULT_HOURLY_SPEND_LIMIT_USD,
 )
+from backend.utils.settings_reader import clear_settings_cache
 
 
 @pytest.fixture
@@ -66,7 +67,22 @@ async def test_get_current_usage_empty(mock_redis_client):
 @pytest.mark.asyncio
 async def test_get_current_usage_with_costs(mock_redis_client):
     """Test getting current usage with existing costs."""
-    mock_redis_client.get = AsyncMock(side_effect=["4.5", "0.8"])
+    # Clear settings cache to ensure fresh state
+    clear_settings_cache()
+    
+    async def get_side_effect(key):
+        key_str = str(key)
+        # Handle settings key (returns None to use defaults)
+        if "admin:settings:abuse_prevention" in key_str:
+            return None
+        # Return cost values for cost keys based on key content
+        if "llm:cost:daily" in key_str:
+            return "4.5"
+        elif "llm:cost:hourly" in key_str:
+            return "0.8"
+        return "0.0"
+    
+    mock_redis_client.get = AsyncMock(side_effect=get_side_effect)
     mock_redis_client.hget = AsyncMock(side_effect=["100000", "50000", "10000", "5000"])
     
     with patch("backend.monitoring.spend_limit.get_redis_client", return_value=mock_redis_client):
@@ -83,8 +99,18 @@ async def test_get_current_usage_with_costs(mock_redis_client):
 @pytest.mark.asyncio
 async def test_check_spend_limit_allows_request_below_limit(mock_redis_client):
     """Test that requests below the limit are allowed."""
-    # Use return_value so it works for all calls (check_spend_limit + get_current_usage)
-    mock_redis_client.get = AsyncMock(return_value="0.5")  # Always return low value
+    # Clear settings cache to ensure fresh state
+    clear_settings_cache()
+    
+    async def get_side_effect(key):
+        key_str = str(key)
+        # Handle settings key (returns None to use defaults)
+        if "admin:settings:abuse_prevention" in key_str:
+            return None
+        # Return low value for cost keys
+        return "0.5"
+    
+    mock_redis_client.get = AsyncMock(side_effect=get_side_effect)
     mock_redis_client.hget = AsyncMock(return_value="0")  # Token counts default to 0
     
     with patch("backend.monitoring.spend_limit.get_redis_client", return_value=mock_redis_client):
@@ -98,14 +124,23 @@ async def test_check_spend_limit_allows_request_below_limit(mock_redis_client):
 @pytest.mark.asyncio
 async def test_check_spend_limit_blocks_request_above_daily_limit(mock_redis_client):
     """Test that requests exceeding daily limit are blocked."""
+    # Clear settings cache to ensure fresh state
+    clear_settings_cache()
+    
     # Set daily cost close to limit - use side_effect to return different values for hourly vs daily
     daily_cost = DEFAULT_DAILY_SPEND_LIMIT_USD - 0.5  # 4.5
     async def get_side_effect(key):
+        key_str = str(key)
+        # Handle settings key (returns None to use defaults)
+        if "admin:settings:abuse_prevention" in key_str:
+            return None
         # Return daily cost for daily key, low value for hourly key
-        if "daily" in str(key):
+        if "daily" in key_str and "llm:cost:daily" in key_str:
             return str(daily_cost)
-        else:
+        elif "hourly" in key_str and "llm:cost:hourly" in key_str:
             return "0.0"  # Hourly is low, so daily limit is checked first
+        else:
+            return "0.0"  # Default for other keys
     
     mock_redis_client.get = AsyncMock(side_effect=get_side_effect)
     mock_redis_client.hget = AsyncMock(return_value="0")  # Token counts default to 0
@@ -123,14 +158,23 @@ async def test_check_spend_limit_blocks_request_above_daily_limit(mock_redis_cli
 @pytest.mark.asyncio
 async def test_check_spend_limit_blocks_request_above_hourly_limit(mock_redis_client):
     """Test that requests exceeding hourly limit are blocked."""
+    # Clear settings cache to ensure fresh state
+    clear_settings_cache()
+    
     # Set hourly cost close to limit - use a function to return different values based on key
     hourly_cost = DEFAULT_HOURLY_SPEND_LIMIT_USD - 0.1  # 0.9
     async def get_side_effect(key):
+        key_str = str(key)
+        # Handle settings key (returns None to use defaults)
+        if "admin:settings:abuse_prevention" in key_str:
+            return None
         # Return hourly cost for hourly key, 0.0 for daily key
-        if "hourly" in str(key):
+        if "hourly" in key_str and "llm:cost:hourly" in key_str:
             return str(hourly_cost)
-        else:
+        elif "daily" in key_str and "llm:cost:daily" in key_str:
             return "0.0"
+        else:
+            return "0.0"  # Default for other keys
     
     mock_redis_client.get = AsyncMock(side_effect=get_side_effect)
     mock_redis_client.hget = AsyncMock(return_value="0")  # Token counts default to 0

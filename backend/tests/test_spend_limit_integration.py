@@ -15,6 +15,7 @@ sys.path.insert(0, project_root_dir)
 
 from backend.monitoring.spend_limit import check_spend_limit, record_spend, get_current_usage
 from backend.monitoring.discord_alerts import send_spend_limit_alert
+from backend.utils.settings_reader import clear_settings_cache
 
 
 @pytest.mark.asyncio
@@ -109,16 +110,25 @@ async def test_discord_alert_handles_http_error():
 @pytest.mark.asyncio
 async def test_spend_limit_check_with_10_percent_buffer():
     """Test that spend limit check includes 10% buffer."""
+    # Clear settings cache to ensure fresh state
+    clear_settings_cache()
+    
     mock_redis_client = AsyncMock()
     # Set daily cost to limit - 0.5
     daily_cost = 5.0 - 0.5  # 4.5
     # Use side_effect to return different values for hourly vs daily
     async def get_side_effect(key):
+        key_str = str(key)
+        # Handle settings key (returns None to use defaults)
+        if "admin:settings:abuse_prevention" in key_str:
+            return None
         # Return daily cost for daily key, low value for hourly key
-        if "daily" in str(key):
+        if "daily" in key_str and "llm:cost:daily" in key_str:
             return str(daily_cost)
-        else:
+        elif "hourly" in key_str and "llm:cost:hourly" in key_str:
             return "0.0"  # Hourly is low, so daily limit is checked first
+        else:
+            return "0.0"  # Default for other keys
     
     mock_redis_client.get = AsyncMock(side_effect=get_side_effect)
     mock_redis_client.hget = AsyncMock(return_value="0")  # Token counts default to 0

@@ -39,14 +39,34 @@ def admin_headers():
 
 
 @pytest.fixture
-def client_with_admin(monkeypatch):
+def client_with_admin(monkeypatch, mock_redis):
     """Create test client with admin token configured."""
     # Set admin token in environment
     monkeypatch.setenv("ADMIN_TOKEN", TEST_ADMIN_TOKEN)
     
     from backend.main import app
+    from backend import dependencies
+    from backend import redis_client
+    
+    # Override Redis client to use mock
+    async def override_get_redis_client():
+        return mock_redis
+    
+    # Apply override
+    app.dependency_overrides[redis_client.get_redis_client] = override_get_redis_client
+    
+    # Force all modules to use mock Redis
+    async def fake_get_redis_client():
+        return mock_redis
+    
+    for module in ["redis_client", "rate_limiter", "utils.challenge", "monitoring.spend_limit", "api.v1.admin.users", "api.v1.admin.settings"]:
+        monkeypatch.setattr(f"backend.{module}.get_redis_client", fake_get_redis_client)
+    
     client = TestClient(app)
     yield client
+    
+    # Cleanup
+    app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
@@ -62,7 +82,7 @@ async def test_admin_auth_login_success(client_with_admin, admin_headers):
     assert "message" in data
 
 
-def test_admin_auth_login_invalid_token(client_with_admin):
+def test_admin_auth_login_invalid_token(client_with_admin, mock_redis):
     """Test admin login with invalid token."""
     response = client_with_admin.post(
         "/api/v1/admin/auth/login",
@@ -86,10 +106,15 @@ def test_admin_auth_verify_success(client_with_admin, admin_headers):
 async def test_admin_settings_get(client_with_admin, admin_headers, mock_redis):
     """Test getting abuse prevention settings."""
     # Mock Redis to return settings
-    mock_redis.get = lambda key: json.dumps({
-        "global_rate_limit_per_minute": 1000,
-        "enable_challenge_response": True
-    }) if key == "admin:settings:abuse_prevention" else None
+    async def mock_get(key):
+        if key == "admin:settings:abuse_prevention":
+            return json.dumps({
+                "global_rate_limit_per_minute": 1000,
+                "enable_challenge_response": True
+            })
+        return None
+    
+    mock_redis.get = mock_get
     
     response = client_with_admin.get(
         "/api/v1/admin/settings/abuse-prevention",
@@ -104,7 +129,10 @@ async def test_admin_settings_get(client_with_admin, admin_headers, mock_redis):
 @pytest.mark.asyncio
 async def test_admin_settings_update(client_with_admin, admin_headers, mock_redis):
     """Test updating abuse prevention settings."""
-    mock_redis.set = lambda key, value: True
+    async def mock_set(key, value):
+        return True
+    
+    mock_redis.set = mock_set
     
     settings = {
         "global_rate_limit_per_minute": 1500,
@@ -125,8 +153,14 @@ async def test_admin_settings_update(client_with_admin, admin_headers, mock_redi
 async def test_admin_redis_stats(client_with_admin, admin_headers, mock_redis):
     """Test getting Redis statistics."""
     # Mock Redis scan to return empty (no bans/throttles)
-    mock_redis.scan = lambda cursor, match, count: (0, [])
-    mock_redis.zcard = lambda key: 0
+    async def mock_scan(cursor=0, match=None, count=None):
+        return (0, [])
+    
+    async def mock_zcard(key):
+        return 0
+    
+    mock_redis.scan = mock_scan
+    mock_redis.zcard = mock_zcard
     
     response = client_with_admin.get(
         "/api/v1/admin/redis/stats",
@@ -144,7 +178,10 @@ async def test_admin_redis_stats(client_with_admin, admin_headers, mock_redis):
 async def test_admin_cache_stats(client_with_admin, admin_headers, mock_redis):
     """Test getting cache statistics."""
     # Mock cache size
-    mock_redis.scard = lambda key: 42
+    async def mock_scard(key):
+        return 42
+    
+    mock_redis.scard = mock_scard
     
     response = client_with_admin.get(
         "/api/v1/admin/cache/suggested-questions/stats",
@@ -160,8 +197,15 @@ async def test_admin_cache_stats(client_with_admin, admin_headers, mock_redis):
 async def test_admin_users_stats(client_with_admin, admin_headers, mock_redis):
     """Test getting user statistics."""
     # Mock Redis sets for user tracking
-    mock_redis.scard = lambda key: 100 if "all_time" in key else 5
-    mock_redis.scan = lambda cursor, match, count: (0, [])
+    async def mock_scard(key):
+        key_str = str(key)
+        return 100 if "all_time" in key_str else 5
+    
+    async def mock_scan(cursor=0, match=None, count=None):
+        return (0, [])
+    
+    mock_redis.scard = mock_scard
+    mock_redis.scan = mock_scan
     
     response = client_with_admin.get(
         "/api/v1/admin/users/stats?days=30",
@@ -194,7 +238,7 @@ async def test_track_unique_user():
         pytest.skip(f"Redis not available for tracking test: {e}")
 
 
-def test_admin_endpoints_require_auth(client_with_admin):
+def test_admin_endpoints_require_auth(client_with_admin, mock_redis):
     """Test that admin endpoints require authentication."""
     endpoints = [
         ("GET", "/api/v1/admin/settings/abuse-prevention"),
