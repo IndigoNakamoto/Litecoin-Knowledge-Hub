@@ -7,12 +7,45 @@ This playbook provides a step-by-step guide for deploying the Litecoin Knowledge
 2. **Staging environment** setup
 3. **Production deployment** when traffic justifies it
 
+## 🚀 Quick Start / Recommended Execution Order
+
+**For first-time deployment, follow this optimized sequence:**
+
+### Parallel Execution Strategy (Saves Time)
+
+1. **Foundation Setup** (Sequential - 5 minutes):
+   - Run **Step 1** (Create GCP Project)
+   - Run **Step 2** (Enable APIs)
+   - Run **Step 3** (Artifact Registry)
+
+2. **Long-Running Tasks** (Start these in parallel - 10-15 minutes):
+   - **Terminal Tab 1**: Run **Step 4** (`gcloud builds submit`) - This takes 5-10 minutes
+   - **Terminal Tab 2**: While builds run, execute **Step 5** (MongoDB Atlas setup) and **Step 6** (Service Accounts & Secrets)
+
+3. **Deployment** (Sequential - 10 minutes):
+   - Run **Step 6.5** (FAISS Index decision)
+   - Run **Step 7** (Deploy Backend)
+   - Run **Step 8** (Deploy Payload CMS)
+   - Run **Step 9** (Set up Redis with Direct VPC Egress)
+
+4. **Configuration & Testing** (Sequential - 5 minutes):
+   - Run **Step 10** (Custom Domains - optional)
+   - Run **Step 11** (Monitoring - optional)
+   - Run **Step 12** (Test Deployment)
+
+5. **Cleanup** (If dry run only):
+   - Run **Step 13** (Cleanup) - **⚠️ CRITICAL: Don't forget to delete Redis!**
+
+**Total Time**: ~30-40 minutes for complete dry run setup
+
+**Pro Tip**: While Step 4 builds are running, you can complete Steps 5-6 in parallel to save time.
+
 ## ⚠️ Critical Notes for M1 Mac Users
 
 **This playbook includes fixes for M1 Mac-specific issues:**
 
-1. **Docker Architecture**: All builds use `--platform linux/amd64` to ensure Cloud Run compatibility
-2. **VPC Connectivity**: Redis Memorystore requires VPC Connector setup (see Step 9)
+1. **Docker Architecture**: Cloud Run runs on `linux/amd64`. Use **Cloud Build** (recommended) or local builds with `--platform linux/amd64` flag
+2. **VPC Connectivity**: Redis Memorystore requires Direct VPC Egress (see Step 9) - no VPC Connector needed
 3. **Stateless Containers**: FAISS index handling for ephemeral Cloud Run filesystem (see Step 6.5)
 
 **Without these fixes, deployment will fail in production.**
@@ -24,7 +57,8 @@ Before starting, ensure you have:
 - [ ] Google Cloud account created
 - [ ] Billing enabled (can use free tier for testing)
 - [ ] `gcloud` CLI installed and authenticated
-- [ ] Docker images built and tested locally
+  - **Recommended**: Update to latest version to avoid needing `beta` commands: `gcloud components update`
+- [ ] Docker images built and tested locally (or use Cloud Build - recommended)
 - [ ] Environment variables documented
 - [ ] MongoDB Atlas account (or GCP MongoDB)
 - [ ] Domain names ready (optional for staging)
@@ -87,7 +121,28 @@ gcloud auth configure-docker us-central1-docker.pkg.dev
 
 ### Step 4: Build and Push Docker Images
 
-**⚠️ Critical for M1 Mac Users**: Cloud Run runs on `linux/amd64`, but M1 Macs build `linux/arm64` by default. You **must** force AMD64 builds or containers will crash with "Exec format error".
+**⚠️ Critical for M1 Mac Users**: Cloud Run runs on `linux/amd64`, but M1 Macs build `linux/arm64` by default. You have two options:
+
+#### Option A: Cloud Build (Recommended - Faster)
+
+**Why**: Docker emulation on M1 Macs is slow, and pushing large images (2GB+) from home internet is unreliable. Cloud Build runs on Google's high-speed servers and automatically builds for `linux/amd64`.
+
+```bash
+# From project root
+cd /Users/indigo/Dev/Litecoin-Knowledge-Hub
+
+# Build and push backend image using Cloud Build
+cd backend
+gcloud builds submit --tag us-central1-docker.pkg.dev/litecoin-knowledge-hub/litecoin-hub/backend:latest .
+
+# Build and push Payload CMS image using Cloud Build
+cd ../payload_cms
+gcloud builds submit --tag us-central1-docker.pkg.dev/litecoin-knowledge-hub/litecoin-hub/payload-cms:latest .
+```
+
+#### Option B: Local Build (Slower but Works)
+
+If you prefer local builds, you **must** use the `--platform linux/amd64` flag:
 
 ```bash
 # From project root
@@ -104,7 +159,7 @@ docker build --platform linux/amd64 -t us-central1-docker.pkg.dev/litecoin-knowl
 docker push us-central1-docker.pkg.dev/litecoin-knowledge-hub/litecoin-hub/payload-cms:latest
 ```
 
-**Note**: The `--platform linux/amd64` flag forces Docker to build for Intel/AMD architecture, which is required for Cloud Run. Without this, M1 Mac builds will fail in production.
+**Recommendation**: Use **Option A (Cloud Build)** for faster, more reliable builds. Cloud Build automatically handles architecture compatibility.
 
 ### Step 5: Set Up MongoDB Atlas
 
@@ -117,9 +172,18 @@ docker push us-central1-docker.pkg.dev/litecoin-knowledge-hub/litecoin-hub/paylo
 # 6. Store in Secret Manager (see next step)
 ```
 
-### Step 6: Store Secrets in Secret Manager
+### Step 6: Create Service Accounts and Store Secrets
+
+**⚠️ Security Best Practice**: Create dedicated service accounts with minimal permissions instead of using the default Compute Engine service account (which has broad Editor permissions).
 
 ```bash
+# Create dedicated service accounts for each service
+gcloud iam service-accounts create litecoin-backend-sa \
+  --display-name="Litecoin Backend Service Account"
+
+gcloud iam service-accounts create litecoin-payload-sa \
+  --display-name="Litecoin Payload CMS Service Account"
+
 # Store MongoDB URI
 echo -n "mongodb+srv://user:pass@cluster.mongodb.net/litecoin_rag_db" | \
   gcloud secrets create mongo-uri --data-file=-
@@ -136,25 +200,36 @@ echo -n "your-payload-secret" | \
 echo -n "your-webhook-secret" | \
   gcloud secrets create webhook-secret --data-file=-
 
-# Grant Cloud Run service account access
-PROJECT_NUMBER=$(gcloud projects describe litecoin-knowledge-hub --format="value(projectNumber)")
+# Grant backend service account access to secrets
+PROJECT_ID="litecoin-knowledge-hub"
 gcloud secrets add-iam-policy-binding mongo-uri \
-  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --member="serviceAccount:litecoin-backend-sa@${PROJECT_ID}.iam.gserviceaccount.com" \
   --role="roles/secretmanager.secretAccessor"
 
-# Repeat for other secrets
 gcloud secrets add-iam-policy-binding google-api-key \
-  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
-  --role="roles/secretmanager.secretAccessor"
-
-gcloud secrets add-iam-policy-binding payload-secret \
-  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --member="serviceAccount:litecoin-backend-sa@${PROJECT_ID}.iam.gserviceaccount.com" \
   --role="roles/secretmanager.secretAccessor"
 
 gcloud secrets add-iam-policy-binding webhook-secret \
-  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --member="serviceAccount:litecoin-backend-sa@${PROJECT_ID}.iam.gserviceaccount.com" \
   --role="roles/secretmanager.secretAccessor"
+
+# Grant Payload CMS service account access to secrets
+gcloud secrets add-iam-policy-binding mongo-uri \
+  --member="serviceAccount:litecoin-payload-sa@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+
+gcloud secrets add-iam-policy-binding payload-secret \
+  --member="serviceAccount:litecoin-payload-sa@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+
+# If using GCS for FAISS index, grant Storage Object Viewer role
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+  --member="serviceAccount:litecoin-backend-sa@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/storage.objectViewer"
 ```
+
+**Why This Matters**: If your app is compromised, a dedicated service account limits the attacker's access to only the specific resources your app needs, rather than broad Editor permissions.
 
 ### Step 6.5: Handle FAISS Index (Stateless Container Issue)
 
@@ -162,10 +237,35 @@ gcloud secrets add-iam-policy-binding webhook-secret \
 
 **Options**:
 
-#### Option A: Rebuild from MongoDB on Startup (Easiest for Dry Run)
+#### Option A: Rebuild from MongoDB on Startup (Recommended for Small Datasets)
+**Best for**: Datasets with <10k chunks
+
 Your backend should already handle this - ensure `backend/rag_pipeline.py` rebuilds the index from MongoDB if the local file doesn't exist.
 
-#### Option B: Store in Google Cloud Storage (Recommended for Production)
+**Pros**: Simple, no additional infrastructure
+**Cons**: Slow cold starts (45+ seconds) if dataset is large
+
+**For Dry Run**: Use this option - it's the simplest and works immediately.
+
+#### Option B: Bake Index into Docker Image (Recommended for Stable Indexes)
+**Best for**: Indexes that don't change hourly
+
+If your index is relatively stable, bake it into the Docker image during build:
+
+```bash
+# During Docker build, copy index files into image
+# In your Dockerfile:
+COPY faiss_index/ /app/backend/faiss_index/
+```
+
+**Pros**: Instant startup, no network download
+**Cons**: Larger image size, requires rebuild when index changes
+
+#### Option C: Store in Google Cloud Storage (Use with Caution)
+**Best for**: Large, frequently-updated indexes
+
+**⚠️ Warning**: Downloading a 500MB index from GCS on every cold start can be slower than rebuilding from MongoDB for small datasets.
+
 ```bash
 # Create GCS bucket for FAISS index
 gsutil mb -p litecoin-knowledge-hub -l us-central1 gs://litecoin-faiss-index
@@ -175,24 +275,39 @@ gsutil cp backend/faiss_index/index.faiss gs://litecoin-faiss-index/
 gsutil cp backend/faiss_index/index.pkl gs://litecoin-faiss-index/
 
 # Update backend to download from GCS on startup
-# Add to Dockerfile or startup script:
+# Add to startup script (not Dockerfile):
 # gsutil cp gs://litecoin-faiss-index/* /app/backend/faiss_index/
 ```
 
-#### Option C: Use MongoDB Vector Search Only (Simplest)
+**Pros**: Works for large indexes, can update without rebuilding image
+**Cons**: Adds network latency to cold starts, requires GCS permissions
+
+#### Option D: Use MongoDB Atlas Vector Search Only (Ideal Long-Term)
+**Best for**: Production deployments
+
 If your backend supports it, disable local FAISS and use MongoDB Atlas Vector Search exclusively.
 
-**For Dry Run**: Use Option A (rebuild from MongoDB) - it's the simplest and works immediately.
+**Pros**: 
+- Removes memory burden from Cloud Run (can drop from 4Gi to 2Gi RAM, saving ~50% on compute costs)
+- No cold start penalty
+- Scales automatically with MongoDB
+
+**Cons**: Requires MongoDB Atlas Vector Search setup
+
+**Recommendation**: 
+- **Short Term**: Use Option A for dry run testing
+- **Long Term**: Migrate to Option D (MongoDB Vector Search) to reduce costs and eliminate cold start issues
 
 ### Step 7: Deploy Backend to Cloud Run
 
 ```bash
-# Deploy backend service
+# Deploy backend service with dedicated service account
 gcloud run deploy backend \
   --image us-central1-docker.pkg.dev/litecoin-knowledge-hub/litecoin-hub/backend:latest \
   --platform managed \
   --region us-central1 \
   --allow-unauthenticated \
+  --service-account litecoin-backend-sa@litecoin-knowledge-hub.iam.gserviceaccount.com \
   --memory 4Gi \
   --cpu 2 \
   --timeout 300 \
@@ -212,15 +327,18 @@ BACKEND_URL=$(gcloud run services describe backend --platform managed --region u
 echo "Backend URL: $BACKEND_URL"
 ```
 
+**Note**: The `--service-account` flag uses the dedicated service account created in Step 6, which has minimal permissions for better security.
+
 ### Step 8: Deploy Payload CMS to Cloud Run
 
 ```bash
-# Deploy Payload CMS service
+# Deploy Payload CMS service with dedicated service account
 gcloud run deploy payload-cms \
   --image us-central1-docker.pkg.dev/litecoin-knowledge-hub/litecoin-hub/payload-cms:latest \
   --platform managed \
   --region us-central1 \
   --allow-unauthenticated \
+  --service-account litecoin-payload-sa@litecoin-knowledge-hub.iam.gserviceaccount.com \
   --memory 2Gi \
   --cpu 1 \
   --timeout 300 \
@@ -235,26 +353,15 @@ PAYLOAD_URL=$(gcloud run services describe payload-cms --platform managed --regi
 echo "Payload CMS URL: $PAYLOAD_URL"
 ```
 
-### Step 9: Set Up Redis (Memorystore)
+**Note**: The `--service-account` flag uses the dedicated service account created in Step 6, which has minimal permissions for better security.
 
-**⚠️ Critical**: Redis Memorystore uses a **private IP** within a VPC. Cloud Run is fully managed and sits **outside** your VPC by default. You need a **Serverless VPC Access Connector** to connect them.
+### Step 9: Set Up Redis (Memorystore) with Direct VPC Egress
+
+**⚠️ Critical**: Redis Memorystore uses a **private IP** within a VPC. Cloud Run needs **Direct VPC Egress** to access it.
+
+**Modern Approach**: Use **Direct VPC Egress** instead of a VPC Connector. This is cheaper (no 24/7 VM costs) and easier to set up.
 
 ```bash
-# Enable VPC Access API (required for Cloud Run to access VPC resources)
-gcloud services enable vpcaccess.googleapis.com
-
-# Create a VPC Connector (allows Cloud Run to access VPC resources like Redis)
-gcloud compute networks vpc-access connectors create litecoin-connector \
-  --region=us-central1 \
-  --range=10.8.0.0/28 \
-  --network=default \
-  --min-instances=2 \
-  --max-instances=3
-
-# Wait for connector to be ready (takes 2-3 minutes)
-echo "Waiting for VPC connector to be ready..."
-sleep 180
-
 # Create Redis instance
 gcloud redis instances create litecoin-redis \
   --size=1 \
@@ -263,19 +370,66 @@ gcloud redis instances create litecoin-redis \
   --tier=basic \
   --network=default
 
+# Wait for Redis to be ready (takes 5-10 minutes)
+echo "Waiting for Redis instance to be ready..."
+gcloud redis instances describe litecoin-redis --region=us-central1 --format='value(state)'
+# Wait until state is "READY"
+
 # Get Redis IP address (this is a private IP in the VPC)
 REDIS_IP=$(gcloud redis instances describe litecoin-redis --region=us-central1 --format='value(host)')
 echo "Redis IP: $REDIS_IP"
 
-# Update backend service to use VPC connector and Redis
+# Update backend service to use Direct VPC Egress and Redis
+# ⚠️ Note: If you get "unrecognized flag" error, use 'beta' prefix (see troubleshooting)
+gcloud run services update backend \
+  --vpc-egress=private-ranges-only \
+  --network=default \
+  --subnet=default \
+  --set-env-vars "REDIS_HOST=$REDIS_IP,REDIS_PORT=6379" \
+  --region=us-central1
+
+# If the above command fails with "unrecognized flag: --network", use beta version:
+# gcloud beta run services update backend \
+#   --vpc-egress=private-ranges-only \
+#   --network=default \
+#   --subnet=default \
+#   --set-env-vars "REDIS_HOST=$REDIS_IP,REDIS_PORT=6379" \
+#   --region=us-central1
+```
+
+**Why Direct VPC Egress Instead of VPC Connector?**
+- **Cost**: VPC Connectors require dedicated VM instances running 24/7 (~$17/month minimum), even with zero traffic
+- **Simplicity**: Direct VPC Egress requires no connector setup - just network configuration
+- **Performance**: Direct connection without an extra hop through connector VMs
+- **Cost Savings**: You only pay for data processing, not idle VMs
+
+**Alternative: VPC Connector (If Direct VPC Egress Not Available)**
+If Direct VPC Egress is not available in your region or you need the connector for other reasons:
+
+```bash
+# Enable VPC Access API
+gcloud services enable vpcaccess.googleapis.com
+
+# Create VPC Connector
+gcloud compute networks vpc-access connectors create litecoin-connector \
+  --region=us-central1 \
+  --range=10.8.0.0/28 \
+  --network=default \
+  --min-instances=2 \
+  --max-instances=3
+
+# Update service to use connector
 gcloud run services update backend \
   --vpc-connector=litecoin-connector \
   --vpc-egress=private-ranges-only \
-  --set-env-vars "REDIS_HOST=$REDIS_IP,REDIS_PORT=6379" \
   --region=us-central1
 ```
 
-**Why This Matters**: Without the VPC connector, Cloud Run cannot reach Redis Memorystore's private IP, causing connection timeouts and cache failures.
+**Note**: This adds ~$17/month in fixed costs. Direct VPC Egress is preferred when available.
+
+**Alternative for Staging/Testing**: If you want to save the $35/month Redis Memorystore cost for staging, you can run Redis on a small VM (f1-micro) for ~$5/month, or use a Docker container on Cloud Run (though this has limitations).
+
+**Why This Matters**: Without Direct VPC Egress (or VPC Connector), Cloud Run cannot reach Redis Memorystore's private IP, causing connection timeouts and cache failures.
 
 ### Step 10: Configure Custom Domains (Optional)
 
@@ -328,6 +482,39 @@ curl https://backend-xxxxx.run.app/api/v1/chat/stream \
 curl https://payload-cms-xxxxx.run.app/api/suggested-questions
 ```
 
+**⚠️ First Request Note**: If you receive a "500 Internal Server Error" or timeout on the **first request**, don't panic. This is normal behavior:
+
+- **Why**: The container is initializing FAISS index from MongoDB (takes 5-10 seconds on first cold start)
+- **Fix**: Simply run the `curl` command **a second time**. The container will be "warm" and the response should be instant
+- **Expected**: First request: 5-10 seconds, Subsequent requests: < 2 seconds
+
+This is especially common if you're using **Option A** (Rebuild from MongoDB) for FAISS index handling (see Step 6.5).
+
+### Step 13: Cleanup After Dry Run (IMPORTANT)
+
+**⚠️ Critical Cost Warning**: If you're doing a dry run and plan to delete the Cloud Run services, you **must** also delete the Redis instance. Redis Memorystore charges ~$35/month (~$1+ per day) even when not in use.
+
+```bash
+# Delete Cloud Run services (if testing only)
+gcloud run services delete backend --region=us-central1
+gcloud run services delete payload-cms --region=us-central1
+
+# ⚠️ CRITICAL: Delete Redis instance to avoid ongoing charges
+gcloud redis instances delete litecoin-redis --region=us-central1
+
+# Optional: Delete secrets (if you want a clean slate)
+gcloud secrets delete mongo-uri
+gcloud secrets delete google-api-key
+gcloud secrets delete payload-secret
+gcloud secrets delete webhook-secret
+
+# Optional: Delete service accounts
+gcloud iam service-accounts delete litecoin-backend-sa@litecoin-knowledge-hub.iam.gserviceaccount.com
+gcloud iam service-accounts delete litecoin-payload-sa@litecoin-knowledge-hub.iam.gserviceaccount.com
+```
+
+**Why This Matters**: Redis Memorystore is a persistent resource that continues billing even if your Cloud Run services are deleted. Forgetting to delete it after a dry run can result in unexpected charges.
+
 ## Phase 2: Production Deployment Checklist
 
 When traffic justifies migration, follow this checklist:
@@ -336,7 +523,7 @@ When traffic justifies migration, follow this checklist:
 
 - [ ] **Traffic threshold met**: Consistently > 3,000 users/day
 - [ ] **Hardware limits hit**: CPU > 70%, Memory > 12GB
-- [ ] **Budget approved**: $150-200/month for cloud costs
+- [ ] **Budget approved**: $80-120/month baseline + variable costs for cloud deployment
 - [ ] **Dry run completed**: Staging environment tested
 - [ ] **Backup created**: Mac Mini data backed up
 - [ ] **DNS ready**: Domain names configured
@@ -368,9 +555,9 @@ When traffic justifies migration, follow this checklist:
 Create `scripts/deploy-gcp.sh`:
 
 **⚠️ Prerequisites**: 
-- VPC Connector must be created first (see Step 9)
-- Redis Memorystore must be created and IP configured
-- Secrets must be stored in Secret Manager
+- Redis Memorystore must be created and IP configured (see Step 9)
+- Service accounts must be created (see Step 6)
+- Secrets must be stored in Secret Manager (see Step 6)
 
 ```bash
 #!/bin/bash
@@ -382,31 +569,34 @@ REPO="litecoin-hub"
 
 echo "🚀 Deploying to Google Cloud..."
 
-# Build and push images (FORCE AMD64 for Cloud Run - M1 Mac compatibility)
-echo "📦 Building images..."
-# Build backend image (FORCE AMD64 for Cloud Run compatibility)
+# Build and push images using Cloud Build (recommended - faster than local builds)
+echo "📦 Building images with Cloud Build..."
 cd backend
-docker build --platform linux/amd64 -t us-central1-docker.pkg.dev/${PROJECT_ID}/${REPO}/backend:latest .
-docker push us-central1-docker.pkg.dev/${PROJECT_ID}/${REPO}/backend:latest
+gcloud builds submit --tag us-central1-docker.pkg.dev/${PROJECT_ID}/${REPO}/backend:latest .
 
-# Build Payload CMS image (FORCE AMD64 for Cloud Run compatibility)
 cd ../payload_cms
-docker build --platform linux/amd64 -t us-central1-docker.pkg.dev/${PROJECT_ID}/${REPO}/payload-cms:latest .
-docker push us-central1-docker.pkg.dev/${PROJECT_ID}/${REPO}/payload-cms:latest
+gcloud builds submit --tag us-central1-docker.pkg.dev/${PROJECT_ID}/${REPO}/payload-cms:latest .
+
+# Get Redis IP (must be created first)
+REDIS_IP=$(gcloud redis instances describe litecoin-redis --region=${REGION} --format='value(host)')
 
 # Deploy services
 echo "🚀 Deploying backend..."
+# Note: If you get "unrecognized flag" error, replace 'gcloud run' with 'gcloud beta run'
 gcloud run deploy backend \
   --image us-central1-docker.pkg.dev/${PROJECT_ID}/${REPO}/backend:latest \
   --platform managed \
   --region ${REGION} \
   --allow-unauthenticated \
+  --service-account litecoin-backend-sa@${PROJECT_ID}.iam.gserviceaccount.com \
   --memory 4Gi \
   --cpu 2 \
   --timeout 300 \
   --max-instances 10 \
-  --vpc-connector=litecoin-connector \
-  --vpc-egress=private-ranges-only
+  --vpc-egress=private-ranges-only \
+  --network=default \
+  --subnet=default \
+  --set-env-vars "REDIS_HOST=${REDIS_IP},REDIS_PORT=6379"
 
 echo "🚀 Deploying Payload CMS..."
 gcloud run deploy payload-cms \
@@ -414,6 +604,7 @@ gcloud run deploy payload-cms \
   --platform managed \
   --region ${REGION} \
   --allow-unauthenticated \
+  --service-account litecoin-payload-sa@${PROJECT_ID}.iam.gserviceaccount.com \
   --memory 2Gi \
   --cpu 1 \
   --timeout 300 \
@@ -422,12 +613,38 @@ gcloud run deploy payload-cms \
 echo "✅ Deployment complete!"
 echo ""
 echo "⚠️  Important Notes:"
-echo "   - VPC connector must be created before first deployment (see Step 9)"
-echo "   - Redis IP must be configured in backend environment variables"
-echo "   - All images built with --platform linux/amd64 for Cloud Run compatibility"
+echo "   - Redis Memorystore must be created before first deployment (see Step 9)"
+echo "   - Service accounts must be created and granted permissions (see Step 6)"
+echo "   - All images built with Cloud Build (automatically linux/amd64 compatible)"
+echo "   - If '--network' flag fails, use 'gcloud beta run' instead"
+echo ""
+echo "⚠️  CRITICAL: After dry runs, delete Redis to avoid ongoing charges:"
+echo "   gcloud redis instances delete litecoin-redis --region=${REGION}"
 ```
 
 ## Cost Monitoring
+
+### Fixed Cost Breakdown
+
+**Baseline Monthly Costs** (before any user traffic):
+
+1. **Redis Memorystore (Basic Tier)**: ~$35/month (Fixed, regardless of traffic)
+   - **⚠️ WARNING**: This charges ~$1+ per day even if Cloud Run services are deleted
+   - **Must delete manually** after dry runs: `gcloud redis instances delete litecoin-redis --region=us-central1`
+2. **Cloud Run (Idle)**: $0 (if `min-instances=0`)
+3. **Cloud Run (Warm)**: If you set `min-instances=1` to avoid cold starts:
+   - 1 vCPU / 4GB RAM running 24/7 = ~$30-40/month
+4. **Artifact Registry**: ~$0.10/GB/month (minimal for small images)
+5. **Secret Manager**: $0.06/secret/month (4 secrets = ~$0.24/month)
+
+**Total Baseline**: ~$65-75/month (with `min-instances=0`) or ~$95-115/month (with `min-instances=1`)
+
+**⚠️ Critical Cost Trap**: Redis Memorystore is a persistent resource. If you delete Cloud Run services but forget to delete Redis, you'll be charged ~$35/month indefinitely. Always delete Redis after dry runs (see Step 13).
+
+**Cost Optimization Tips**:
+- **Staging/Testing**: Use Redis on a VM (f1-micro) instead of Memorystore to save ~$30/month
+- **Production**: Consider MongoDB Atlas Vector Search to reduce Cloud Run memory from 4Gi to 2Gi, saving ~50% on compute costs
+- **Cold Starts**: If acceptable, keep `min-instances=0` to save ~$30-40/month
 
 ### Set Up Billing Alerts
 
@@ -451,6 +668,10 @@ gcloud billing projects describe litecoin-knowledge-hub
 
 # View Cloud Run costs
 gcloud logging read "resource.type=cloud_run_revision" --limit=50
+
+# View detailed cost breakdown
+gcloud billing accounts list
+gcloud billing budgets list --billing-account=YOUR_BILLING_ACCOUNT_ID
 ```
 
 ## Rollback Plan
@@ -500,19 +721,45 @@ docker build --platform linux/amd64 -t [image] .
 **Issue**: Redis connection timeouts
 ```bash
 # Symptom: Cannot connect to Redis, connection timeouts
-# Root Cause: Cloud Run cannot reach VPC resources without VPC connector
+# Root Cause: Cloud Run cannot reach VPC resources without Direct VPC Egress
 
-# Solution: Create and attach VPC connector
-gcloud compute networks vpc-access connectors create litecoin-connector \
-  --region=us-central1 --range=10.8.0.0/28
-
+# Solution: Configure Direct VPC Egress (no connector needed)
+# If you get "unrecognized flag" error, use 'beta' prefix:
 gcloud run services update backend \
-  --vpc-connector=litecoin-connector \
   --vpc-egress=private-ranges-only \
+  --network=default \
+  --subnet=default \
   --region=us-central1
 
-# Verify: Check connector status
-gcloud compute networks vpc-access connectors describe litecoin-connector --region=us-central1
+# Alternative if above fails (use beta):
+# gcloud beta run services update backend \
+#   --vpc-egress=private-ranges-only \
+#   --network=default \
+#   --subnet=default \
+#   --region=us-central1
+
+# Verify: Check service configuration
+gcloud run services describe backend --region=us-central1 --format='value(spec.template.spec.containers[0].env)'
+
+# Verify Redis is accessible
+REDIS_IP=$(gcloud redis instances describe litecoin-redis --region=us-central1 --format='value(host)')
+echo "Redis IP: $REDIS_IP"
+```
+
+**Issue**: "Unrecognized flag" error when using `--network` flag
+```bash
+# Symptom: gcloud run services update fails with "unrecognized flag: --network"
+# Root Cause: Direct VPC Egress may require 'beta' command in older gcloud CLI versions
+
+# Solution: Use beta command
+gcloud beta run services update backend \
+  --vpc-egress=private-ranges-only \
+  --network=default \
+  --subnet=default \
+  --region=us-central1
+
+# Or update gcloud CLI to latest version
+gcloud components update
 ```
 
 **Issue**: Service won't start
@@ -529,14 +776,22 @@ gcloud run services logs read backend --region us-central1 | grep -i error
 
 **Issue**: Secrets not accessible
 ```bash
-# Verify IAM permissions
-PROJECT_NUMBER=$(gcloud projects describe litecoin-knowledge-hub --format="value(projectNumber)")
-gcloud projects get-iam-policy litecoin-knowledge-hub
+# Verify IAM permissions for dedicated service account
+PROJECT_ID="litecoin-knowledge-hub"
+gcloud projects get-iam-policy ${PROJECT_ID}
 
-# Grant access
+# Grant access to backend service account
 gcloud secrets add-iam-policy-binding SECRET_NAME \
-  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --member="serviceAccount:litecoin-backend-sa@${PROJECT_ID}.iam.gserviceaccount.com" \
   --role="roles/secretmanager.secretAccessor"
+
+# Grant access to Payload CMS service account
+gcloud secrets add-iam-policy-binding SECRET_NAME \
+  --member="serviceAccount:litecoin-payload-sa@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+
+# Verify service account is attached to Cloud Run service
+gcloud run services describe backend --region=us-central1 --format='value(spec.template.spec.serviceAccountName)'
 ```
 
 **Issue**: FAISS index missing on startup
@@ -593,9 +848,16 @@ gcloud run services update backend \
 ### Updates
 
 ```bash
-# Update backend
+# Update backend using Cloud Build (recommended)
 cd backend
-docker build -t us-central1-docker.pkg.dev/${PROJECT_ID}/${REPO}/backend:latest .
+gcloud builds submit --tag us-central1-docker.pkg.dev/${PROJECT_ID}/${REPO}/backend:latest .
+gcloud run services update backend \
+  --image us-central1-docker.pkg.dev/${PROJECT_ID}/${REPO}/backend:latest \
+  --region us-central1
+
+# Or update using local build (slower, requires --platform flag on M1 Macs)
+cd backend
+docker build --platform linux/amd64 -t us-central1-docker.pkg.dev/${PROJECT_ID}/${REPO}/backend:latest .
 docker push us-central1-docker.pkg.dev/${PROJECT_ID}/${REPO}/backend:latest
 gcloud run services update backend \
   --image us-central1-docker.pkg.dev/${PROJECT_ID}/${REPO}/backend:latest \

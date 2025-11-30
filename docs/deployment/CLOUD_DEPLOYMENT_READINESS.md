@@ -10,8 +10,8 @@
 
 ### ✅ Stay on Mac Mini If:
 
-1. **Traffic is below 2,000-3,000 users/day**
-   - Mac Mini handles this comfortably
+1. **Traffic is below 10,000 users/day**
+   - M1 Mac Mini handles this comfortably (won't even warm up)
    - Cost: ~$0 (hardware already owned)
    - No cloud infrastructure costs
 
@@ -34,8 +34,8 @@
    - Thermal throttling occurring
    - Response times degrading (>5 seconds)
 
-2. **Traffic exceeds 5,000 users/day regularly**
-   - Mac Mini struggles with concurrency
+2. **Traffic exceeds 10,000-15,000 users/day regularly**
+   - Mac Mini approaching hardware limits
    - Need horizontal scaling
    - Need better reliability/uptime
 
@@ -60,8 +60,9 @@
 - **Total**: ~$5-10/month
 
 **Capacity**:
-- Up to ~5,000 users/day (hardware limited)
-- ~23,000 questions/day (budget allows, hardware limits first)
+- Up to ~10,000-15,000 users/day (M1 chip handles this comfortably)
+- ~23,000 questions/day (budget allows, hardware supports this easily)
+- M1 chip is highly efficient - won't hit thermal limits until much higher loads
 
 **Pros**:
 - ✅ Very low cost
@@ -86,25 +87,28 @@ Backend (Cloud Run):
 - CPU: 2 vCPU
 - Memory: 4GB
 - Requests: ~23,000/day
-- Estimated: $30-50/month
+- Estimated: $30/month
 
 Payload CMS (Cloud Run):
 - CPU: 1 vCPU
 - Memory: 2GB
-- Estimated: $15-25/month
+- Estimated: $20/month
 
-MongoDB Atlas (M10 cluster):
-- 2GB RAM, 10GB storage
-- Estimated: $57/month
+MongoDB Atlas:
+- M5 cluster (2GB RAM, 10GB storage): ~$30/month
+- OR M10 cluster (if data > 5GB): ~$57/month
+- Start with M5, upgrade to M10 when needed
 
 Redis (Memorystore):
 - 1GB cache
-- Estimated: $30/month
+- Estimated: $35/month
 
-Cloud Load Balancer:
-- Estimated: $18/month
+Cloud Run Domain Mapping:
+- SSL termination & custom domains included (no extra cost)
+- Load balancing handled natively by Cloud Run
+- $0 (vs $18/mo for separate Load Balancer)
 
-Total: ~$150-190/month
+Total: ~$115-142/month (depending on MongoDB tier)
 ```
 
 #### Option 2: Compute Engine (VMs)
@@ -149,7 +153,11 @@ Total: ~$468-568/month
 **Additional Costs**:
 - Egress bandwidth: ~$10-20/month
 - Monitoring/Logging: ~$10-20/month
-- **Total Range**: $150-600/month depending on setup
+- **Total Range**: $115-600/month depending on setup
+  - Lean Cloud Run setup: ~$142/month (M5 MongoDB)
+  - Standard Cloud Run setup: ~$169/month (M10 MongoDB)
+  - Compute Engine VMs: ~$255-285/month
+  - GKE (Kubernetes): ~$468-568/month
 
 **Pros**:
 - ✅ Auto-scaling
@@ -157,10 +165,10 @@ Total: ~$468-568/month
 - ✅ Geographic distribution
 - ✅ Managed services
 - ✅ No hardware maintenance
-- ✅ Better for 5,000+ users/day
+- ✅ Better for 10,000+ users/day or when you need 99.9%+ uptime
 
 **Cons**:
-- ❌ Higher cost (15-60x Mac Mini)
+- ❌ Higher cost (11-60x Mac Mini: $115-600 vs $5-10/month)
 - ❌ More complex setup
 - ❌ Vendor lock-in
 - ❌ Learning curve
@@ -169,7 +177,7 @@ Total: ~$468-568/month
 
 ### Immediate Triggers (Deploy Now)
 
-- ✅ Traffic consistently > 5,000 users/day
+- ✅ Traffic consistently > 10,000 users/day
 - ✅ CPU usage > 80% sustained for hours
 - ✅ Memory pressure causing OOM errors
 - ✅ Response times > 5 seconds regularly
@@ -179,14 +187,14 @@ Total: ~$468-568/month
 ### Planning Triggers (Prepare Now, Deploy Later)
 
 - ⚠️ Traffic growing 20%+ month-over-month
-- ⚠️ Approaching 3,000 users/day
+- ⚠️ Approaching 8,000-10,000 users/day
 - ⚠️ CPU usage trending upward (>60%)
 - ⚠️ Memory usage > 10GB regularly
 - ⚠️ Planning to scale beyond current capacity
 
 ### Not Ready Yet (Stay on Mac Mini)
 
-- ✅ Traffic < 2,000 users/day
+- ✅ Traffic < 10,000 users/day
 - ✅ Hardware utilization < 60%
 - ✅ Response times < 2 seconds
 - ✅ Budget is primary concern
@@ -198,22 +206,23 @@ Based on your capacity planning:
 
 ### Traffic Projections
 - **Current**: Likely < 1,000 users/day
-- **Viral Spike**: 3,000 users/week (~430/day average)
-- **Major Event**: 5,000 users/day (peak)
+- **Viral Spike**: 3,000 users/week (~428/day average) - M1 Mac Mini will barely notice this
+- **Major Event**: 5,000 users/day (peak) - Still well within Mac Mini capacity
 
-### Hardware Capacity
-- **Mac Mini can handle**: Up to ~5,000 users/day
+### Hardware Capacity (M1 Mac Mini Reality Check)
+- **Mac Mini can handle**: Up to ~10,000-15,000 users/day (M1 chip is highly capable)
+- **Reality check**: Even 428 concurrent users (10% of daily traffic simultaneously) is only ~42 concurrent connections - M1 won't even spin up the fan
 - **Current utilization**: Unknown (need monitoring)
-- **Bottleneck**: Hardware (CPU/RAM), not budget
+- **Bottleneck**: Won't hit hardware limits until 10,000+ users/day (unless vector search is unoptimized)
 
 ### Recommendation
 
 **✅ Stay on Mac Mini for now** because:
 
-1. **Traffic is manageable**: Even major events (5,000 users/day) are within Mac Mini capacity
-2. **Cost efficiency**: Mac Mini costs ~$5-10/month vs $150-600/month for cloud
-3. **Hardware is sufficient**: 16GB RAM can handle current projections
-4. **No immediate need**: You're not hitting limits yet
+1. **Traffic is manageable**: Even major events (5,000 users/day) are easily within Mac Mini capacity - M1 chip handles this effortlessly
+2. **Cost efficiency**: Mac Mini costs ~$5-10/month vs $115-600/month for cloud (11-60x cheaper)
+3. **Hardware is sufficient**: M1 chip with 16GB RAM can handle 10,000+ users/day - you're nowhere near limits
+4. **No immediate need**: You're not hitting limits and won't until 10,000+ users/day
 
 **But prepare for migration** by:
 
@@ -246,7 +255,7 @@ Based on your capacity planning:
 
 ### Business Readiness
 
-- [ ] Budget approved for cloud costs ($150-600/month)
+- [ ] Budget approved for cloud costs ($115-600/month, lean setup ~$142/month)
 - [ ] Growth projections justify migration
 - [ ] Uptime requirements defined
 - [ ] Migration timeline planned
@@ -259,17 +268,28 @@ Based on your capacity planning:
 3. **Test cloud deployment** - Deploy to GCP in staging/test environment
 4. **Cost analysis** - Monitor actual usage to estimate cloud costs
 
-### Phase 2: Hybrid (When Traffic Grows)
-1. **Move frontend to Vercel** (already recommended)
-2. **Keep backend on Mac Mini** (still sufficient)
-3. **Use MongoDB Atlas** (managed database, reduces Mac Mini load)
-4. **Monitor performance** - Compare Mac Mini vs cloud components
+### Phase 2: Hybrid (⚠️ **NOT RECOMMENDED for Production**)
+
+**⚠️ Warning: Splitting the stack across the public internet introduces significant risks:**
+
+1. **Latency Issues**: API calls from Vercel (AWS/Edge networks) → Public Internet → Residential ISP → Mac Mini adds significant latency compared to co-located services
+2. **Reliability Problems**: If home internet blips for 10 seconds, Vercel stays "up" but users get "Network Error" - looks unprofessional
+3. **Security Concerns**: Requires punching holes in home firewall to allow external traffic to Mac Mini
+4. **False Sense of Scale**: Frontend appears "cloud-scale" while backend remains vulnerable to home infrastructure issues
+
+**If considering a hybrid approach:**
+
+- ✅ **Only for testing/development** - Validate cloud components before full migration
+- ❌ **NOT for production** - Either keep everything on Mac Mini, or move everything to cloud
+- ✅ **Alternative**: Move to MongoDB Atlas only (reduces Mac Mini DB load) while keeping frontend+backend together
+
+**Recommendation**: Skip Phase 2 as a long-term production state. Proceed directly from Phase 1 (preparation) to Phase 3 (full migration) when triggers are met.
 
 ### Phase 3: Full Migration (When Needed)
 1. **Move backend to Cloud Run** (serverless, auto-scaling)
 2. **Move Payload CMS to Cloud Run**
 3. **Set up Redis Memorystore** (managed cache)
-4. **Configure load balancing**
+4. **Configure Cloud Run domain mapping** (native load balancing included)
 5. **Set up monitoring/alerts**
 6. **Decommission Mac Mini** (or keep as backup)
 
@@ -279,14 +299,14 @@ Based on your capacity planning:
 
 ```
 ┌─────────────────┐
-│   Vercel        │  Frontend (already recommended)
+│   Vercel        │  Frontend (optional, or use Cloud Run)
 │   (Frontend)    │
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│  Cloud Load     │
-│  Balancer       │
+│  Cloud Run      │  Native SSL, domain mapping, load balancing
+│  Domain Mapping │  (No separate Load Balancer needed - saves $18/mo)
 └────────┬────────┘
          │
     ┌────┴────┐
@@ -296,6 +316,7 @@ Based on your capacity planning:
 │ Cloud  │ │  Cloud   │
 │ Run    │ │  Run     │
 │(Backend)│ │(Payload)│
+│Auto-scale│ │Auto-scale│
 └───┬────┘ └────┬─────┘
     │           │
     └─────┬─────┘
@@ -306,6 +327,7 @@ Based on your capacity planning:
 ┌─────────┐ ┌──────────┐
 │ MongoDB │ │  Redis   │
 │  Atlas  │ │Memorystore│
+│(M5/M10) │ │  (1GB)   │
 └─────────┘ └──────────┘
 ```
 
@@ -321,19 +343,22 @@ Based on your capacity planning:
    - Managed MongoDB
    - Automatic backups
    - High availability
-   - Start with M10 ($57/month)
+   - Start with M5 ($30/month) if data < 5GB
+   - Upgrade to M10 ($57/month) when needed
 
 3. **Redis Memorystore** (Cache)
    - Managed Redis
    - High availability
    - Automatic failover
-   - Start with 1GB ($30/month)
+   - Start with 1GB ($35/month)
 
-4. **Cloud Load Balancer**
-   - Global load balancing
-   - SSL termination
-   - Health checks
-   - ~$18/month base
+4. **Cloud Run Domain Mapping** (No separate Load Balancer needed)
+   - SSL termination included
+   - Custom domains supported
+   - Health checks built-in
+   - Load balancing handled natively
+   - $0/month (saves $18 vs separate Load Balancer)
+   - Note: Only add Cloud Load Balancer if you need WAF or multi-region routing
 
 5. **Cloud Monitoring** (Observability)
    - Metrics and logging
@@ -358,18 +383,18 @@ Based on your capacity planning:
 |-----------|---------------|---------------------|---------|
 | 500 | $5-10 | $50-80 | Mac Mini: $40-75 |
 | 2,000 | $5-10 | $80-120 | Mac Mini: $70-115 |
-| 5,000 | $5-10 | $150-200 | Mac Mini: $140-195 |
-| 10,000 | ❌ Hardware limit | $250-350 | N/A |
-| 20,000 | ❌ Hardware limit | $400-600 | N/A |
+| 5,000 | $5-10 | $115-150 | Mac Mini: $105-145 |
+| 10,000 | $5-10 | $180-220 | Mac Mini: $170-215 |
+| 20,000 | ❌ Hardware limit | $300-400 | N/A |
 
-**Break-even point**: ~8,000-10,000 users/day (when Mac Mini can't handle it)
+**Break-even point**: ~15,000-20,000 users/day (when Mac Mini hardware limits are reached)
 
 ## Decision Matrix
 
 | Factor | Mac Mini | Google Cloud | Winner |
 |--------|----------|-------------|--------|
-| **Cost (< 5K users/day)** | $5-10/month | $150-200/month | 🏆 Mac Mini |
-| **Cost (> 10K users/day)** | ❌ Can't handle | $400-600/month | 🏆 GCP |
+| **Cost (< 10K users/day)** | $5-10/month | $115-220/month | 🏆 Mac Mini |
+| **Cost (> 20K users/day)** | ❌ Can't handle | $300-600/month | 🏆 GCP |
 | **Scalability** | Limited | Unlimited | 🏆 GCP |
 | **Reliability** | Single point of failure | 99.9%+ SLA | 🏆 GCP |
 | **Complexity** | Simple | Complex | 🏆 Mac Mini |
@@ -382,19 +407,19 @@ Based on your capacity planning:
 ### Current Status: ✅ **Not Ready Yet**
 
 **Stay on Mac Mini** because:
-1. Traffic is manageable (< 5,000 users/day)
-2. Cost savings are significant (15-30x cheaper)
-3. Hardware is sufficient for current needs
-4. No immediate hardware constraints
+1. Traffic is manageable (< 10,000 users/day - M1 Mac Mini handles this easily)
+2. Cost savings are significant (11-60x cheaper: $5-10 vs $115-600/month)
+3. Hardware is sufficient for current needs - M1 chip won't break a sweat
+4. No immediate hardware constraints - won't hit limits until 10,000+ users/day
 
 ### When to Reassess
 
 **Revisit in 3-6 months** or when:
-- Traffic consistently > 3,000 users/day
+- Traffic consistently > 8,000-10,000 users/day
 - CPU usage > 70% sustained
-- Memory pressure increasing
-- Response times degrading
-- Planning major growth
+- Memory pressure increasing (>12GB)
+- Response times degrading (>2 seconds)
+- Planning major growth beyond 15,000 users/day
 
 ### Preparation Steps (Do Now)
 
@@ -402,7 +427,7 @@ Based on your capacity planning:
 2. ✅ **Document everything** - Full deployment documentation
 3. ⚠️ **Test cloud deployment** - Deploy to GCP staging environment
 4. ⚠️ **Plan migration** - Have detailed migration plan ready
-5. ⚠️ **Budget planning** - Prepare for $150-200/month cloud costs
+5. ⚠️ **Budget planning** - Prepare for $115-170/month cloud costs (lean setup)
 
 ## Next Steps
 
@@ -410,7 +435,7 @@ Based on your capacity planning:
 2. **This Week**: Complete dry run deployment to GCP (see [Google Cloud Deployment Playbook](./GOOGLE_CLOUD_DEPLOYMENT_PLAYBOOK.md))
 3. **Short-term** (1-3 months): Keep GCP staging environment updated, monitor Mac Mini metrics
 4. **Medium-term** (3-6 months): Reassess based on traffic growth
-5. **When Ready**: Execute production migration using playbook (traffic > 3,000 users/day consistently)
+5. **When Ready**: Execute production migration using playbook (traffic > 10,000 users/day consistently)
 
 ## Recommended Action Plan
 
@@ -427,8 +452,8 @@ Based on your capacity planning:
 4. **Cost analysis** - Estimate actual GCP costs based on usage
 
 ### 🚀 Execute (When Triggered)
-1. **Traffic threshold**: > 3,000 users/day consistently
-2. **Hardware limits**: CPU > 70% or Memory > 12GB
+1. **Traffic threshold**: > 10,000 users/day consistently
+2. **Hardware limits**: CPU > 70% sustained or Memory > 12GB regularly
 3. **Follow playbook** - Use documented process for migration
 4. **Monitor closely** - Watch for issues first 48 hours
 
