@@ -93,7 +93,96 @@ type DropdownKey = 'useLitecoin' | 'theFoundation' | 'learn';
 
 type DropdownState = Record<DropdownKey, boolean>;
 
-const dropdownKeys: DropdownKey[] = ['useLitecoin', 'theFoundation', 'learn'];
+const dropdownKeys: DropdownKey[] = ['useLitecoin', 'learn', 'theFoundation'];
+
+// Configuration for micro-adjustments to menu item spacing
+// All values are in rem units unless otherwise specified
+type MenuItemSpacing = {
+  marginLeft?: number; // in rem
+  marginRight?: number; // in rem (for dropdown items)
+  marginTop?: number; // in rem
+  marginBottom?: number; // in rem
+  marginRightOffset?: number; // Additional offset applied to scaledMargin (in px, for regular items)
+  className?: string; // Additional className adjustments
+};
+
+type MenuSpacingConfig = {
+  dropdowns: Record<DropdownKey, MenuItemSpacing>;
+  regular: {
+    projects: MenuItemSpacing;
+    news: MenuItemSpacing;
+    events: MenuItemSpacing;
+    shop: MenuItemSpacing;
+    explorer: MenuItemSpacing;
+  };
+};
+
+/**
+ * Centralized spacing configuration for menu items
+ * 
+ * To make micro-adjustments:
+ * - Dropdown items: Adjust marginLeft, marginRight, marginTop (in rem units)
+ * - Regular items: Adjust marginLeft, marginTop, marginBottom (in rem units) and marginRightOffset (in px, added to scaledMargin)
+ * - Tip: Adjust by 0.05-0.1rem increments for fine-tuning
+ * - Negative values are allowed for precise positioning
+ */
+const menuSpacingConfig: MenuSpacingConfig = {
+  dropdowns: {
+    useLitecoin: {
+      marginRight: 1.8,
+      marginTop: -0.050,
+      className: '',
+    },
+    theFoundation: {
+      marginRight: 1,
+      marginTop: 0,
+      marginLeft: 0,
+      className: '',
+    },
+    learn: {
+      marginRight: 1.65,
+      marginTop: -0.050,
+      className: '',
+    },
+  },
+  regular: {
+    projects: {
+      // marginLeft: 1,
+      marginTop: .95,
+      marginBottom: 0.95,
+      marginRightOffset: 15,
+      className: '',
+    },
+    news: {
+      marginLeft: 0.6,
+      marginTop: .95,
+      marginBottom: 0.95,
+      marginRightOffset: 1,
+      className: '',
+    },
+    events: {
+      marginLeft: 0.8,
+      marginTop: .95,
+      marginBottom: 0.95,
+      marginRightOffset: 0.5,
+      className: '',
+    },
+    shop: {
+      marginLeft: 0.8,
+      marginTop: .95,
+      marginBottom: 0.95,
+      marginRightOffset: 0.8,
+      className: '',
+    },
+    explorer: {
+      marginLeft: 0.8,
+      marginTop: .95,
+      marginBottom: 0.95,
+      marginRightOffset: 1,
+      className: '',
+    },
+  },
+};
 
 const Navigation = () => {
   const [scrollPosition, setScrollPosition] = useState(0);
@@ -241,6 +330,151 @@ const Navigation = () => {
     learn: learnRef,
   };
 
+  // Helper function to render dropdown menu items with configurable spacing
+  const renderDropdownMenuItem = (key: DropdownKey) => {
+    const spacing = menuSpacingConfig.dropdowns[key];
+    const spacingStyle: CSSProperties = {};
+    if (spacing.marginLeft !== undefined) spacingStyle.marginLeft = `${spacing.marginLeft}rem`;
+    if (spacing.marginRight !== undefined) spacingStyle.marginRight = `${spacing.marginRight}rem`;
+    if (spacing.marginTop !== undefined) spacingStyle.marginTop = `${spacing.marginTop}rem`;
+    if (spacing.marginBottom !== undefined) spacingStyle.marginBottom = `${spacing.marginBottom}rem`;
+
+    const labels: Record<DropdownKey, string> = {
+      useLitecoin: 'Use Litecoin',
+      theFoundation: 'The Foundation',
+      learn: 'Learn',
+    };
+
+    const dropdownWidths: Record<DropdownKey, string> = {
+      useLitecoin: '113.63px',
+      learn: '165px',
+      theFoundation: '140px',
+    };
+
+    return (
+      <li
+        key={key}
+        className={`relative flex items-center !font-[500] ${spacing.className || ''}`}
+        style={spacingStyle}
+        ref={dropdownRefs[key]}
+      >
+        <button
+          className="flex items-center tracking-[-0.01em]"
+          onClick={() => toggleDropdown(key)}
+          aria-expanded={dropdownOpen[key]}
+          aria-haspopup="true"
+          style={{ color: fontColor, fontSize: '1rem' }}
+          type="button"
+        >
+          {labels[key]}
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className={`ml-2 h-4 w-4${dropdownOpen[key] ? ' rotate-180' : ''}`}
+            style={{
+              transformOrigin: 'center',
+              transform: `translateX(-2px) ${dropdownOpen[key] ? 'rotate(180deg)' : ''}`,
+            }}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={3.25}
+              d="M19 9l-7 7-7-7"
+            />
+          </svg>
+        </button>
+        <ul
+          className={`w-[var(--dropdown-width, 180px)] absolute left-0 top-full mt-3 rounded-2xl ${
+            dropdownOpen[key] ? 'dropdown-enter-active' : 'dropdown-exit-active'
+          }`}
+          style={
+            {
+              backgroundColor: dropdownBgColor,
+              color: dropdownTextColor,
+              fontSize: `${scaledFontSize}px`,
+              visibility: dropdownOpen[key] ? 'visible' : 'hidden',
+              '--dropdown-width': dropdownWidths[key],
+            } as CSSProperties & { [customProperty: string]: string }
+          }
+        >
+          {key === 'useLitecoin' && (
+            <>
+              <li className="ml-2 mt-2 p-2 pl-4 text-left">
+                <a href="https://litecoin.com/buy">Buy</a>
+              </li>
+              <li className="ml-2 p-2 pl-4 text-left">
+                <a href="https://litecoin.com/spend">Spend</a>
+              </li>
+              <li className="ml-2 p-2 pl-4 text-left">
+                <a href="https://litecoin.com/store">Store</a>
+              </li>
+              <li className="mb-2 ml-2 p-2 pl-4 text-left">
+                <a href="https://litecoin.com/for-business">Business</a>
+              </li>
+            </>
+          )}
+          {key === 'learn' && (
+            <>
+              <li className="ml-2 mt-2 p-2 pl-4 text-left">
+                <a href="https://litecoin.com/learningcenter">Learning Center</a>
+              </li>
+              <li className="mb-2 ml-2 p-2 pl-4 text-left">
+                <a href="https://litecoin.com/resources">Resources</a>
+              </li>
+            </>
+          )}
+          {key === 'theFoundation' && (
+            <>
+              <li className="ml-2 mt-2 p-2 pl-4 text-left">
+                <a href="https://litecoin.com/litecoin-foundation">About</a>
+              </li>
+              <li className="ml-2 p-2 pl-4 text-left">
+                <a href="https://litecoin.com/donate">Donate</a>
+              </li>
+              <li className="ml-2 p-2 pl-4 text-left">
+                <a href="https://litecoin.com/litecoin-foundation#contact">Contact</a>
+              </li>
+              <li className="mb-2 ml-2 p-2 pl-4 text-left">
+                <a href="https://litecoin.com/financials">Financials</a>
+              </li>
+            </>
+          )}
+        </ul>
+      </li>
+    );
+  };
+
+  // Helper function to render regular menu items with configurable spacing
+  const renderRegularMenuItem = (
+    spacing: MenuItemSpacing,
+    href: string,
+    label: string,
+    target?: string,
+    rel?: string,
+  ) => {
+    return (
+      <li
+        className={`text-md font-[500] ${spacing.className || ''}`}
+        style={{
+          color: fontColor,
+          letterSpacing: '-0.2px',
+          fontSize: `${scaledFontSize}px`,
+          marginLeft: spacing.marginLeft !== undefined ? `${spacing.marginLeft}rem` : undefined,
+          marginTop: spacing.marginTop !== undefined ? `${spacing.marginTop}rem` : undefined,
+          marginBottom: spacing.marginBottom !== undefined ? `${spacing.marginBottom}rem` : undefined,
+          marginRight: `${scaledMargin + (spacing.marginRightOffset || 0)}px`,
+        }}
+      >
+        <a href={href} target={target} rel={rel}>
+          {label}
+        </a>
+      </li>
+    );
+  };
+
   return (
     <>
       <header
@@ -285,167 +519,37 @@ const Navigation = () => {
               </div>
             ) : (
               <ul className="flex flex-row">
-                {dropdownKeys.map((key) => (
-                  <li
-                    key={key}
-                    className={`relative flex items-center !font-[500] ${
-                      key === 'useLitecoin'
-                        ? '!-mr-[0.2rem] !-mt-[.17rem]'
-                        : key === 'theFoundation'
-                          ? '!-mt-[0.1rem] !ml-[-.1rem]'
-                          : '!-mr-[.36rem] !-mt-[.17rem]'
-                    }`}
-                    ref={dropdownRefs[key]}
-                  >
-                    <button
-                      className="flex items-center tracking-[-0.01em]"
-                      onClick={() => toggleDropdown(key)}
-                      aria-expanded={dropdownOpen[key]}
-                      aria-haspopup="true"
-                      style={{ color: fontColor, fontSize: '1rem' }}
-                      type="button"
-                    >
-                      {key === 'useLitecoin'
-                        ? 'Use Litecoin'
-                        : key === 'theFoundation'
-                          ? 'The Foundation'
-                          : 'Learn'}
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        className={`ml-2 h-4 w-4${dropdownOpen[key] ? ' rotate-180' : ''}`}
-                        style={{
-                          transformOrigin: 'center',
-                          transform: `translateX(-2px) ${dropdownOpen[key] ? 'rotate(180deg)' : ''}`,
-                        }}
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={3.25}
-                          d="M19 9l-7 7-7-7"
-                        />
-                      </svg>
-                    </button>
-                    <ul
-                      className={`w-[var(--dropdown-width, 180px)] absolute left-0 top-full mt-3 rounded-2xl ${
-                        dropdownOpen[key] ? 'dropdown-enter-active' : 'dropdown-exit-active'
-                      }`}
-                      style={
-                        {
-                          backgroundColor: dropdownBgColor,
-                          color: dropdownTextColor,
-                          fontSize: `${scaledFontSize}px`,
-                          visibility: dropdownOpen[key] ? 'visible' : 'hidden',
-                          '--dropdown-width':
-                            key === 'useLitecoin' ? '113.63px' : key === 'learn' ? '165px' : '140px',
-                        } as CSSProperties & { [customProperty: string]: string }
-                      }
-                    >
-                      {key === 'useLitecoin' && (
-                        <>
-                          <li className="ml-2 mt-2 p-2 pl-4 text-left">
-                            <a href="https://litecoin.com/buy">Buy</a>
-                          </li>
-                          <li className="ml-2 p-2 pl-4 text-left">
-                            <a href="https://litecoin.com/spend">Spend</a>
-                          </li>
-                          <li className="ml-2 p-2 pl-4 text-left">
-                            <a href="https://litecoin.com/store">Store</a>
-                          </li>
-                          <li className="mb-2 ml-2 p-2 pl-4 text-left">
-                            <a href="https://litecoin.com/for-business">Business</a>
-                          </li>
-                        </>
-                      )}
-                      {key === 'learn' && (
-                        <>
-                          <li className="ml-2 mt-2 p-2 pl-4 text-left">
-                            <a href="https://litecoin.com/learningcenter">Learning Center</a>
-                          </li>
-                          <li className="mb-2 ml-2 p-2 pl-4 text-left">
-                            <a href="https://litecoin.com/resources">Resources</a>
-                          </li>
-                        </>
-                      )}
-                      {key === 'theFoundation' && (
-                        <>
-                          <li className="ml-2 mt-2 p-2 pl-4 text-left">
-                            <a href="https://litecoin.com/litecoin-foundation">About</a>
-                          </li>
-                          <li className="ml-2 p-2 pl-4 text-left">
-                            <a href="https://litecoin.com/donate">Donate</a>
-                          </li>
-                          <li className="ml-2 p-2 pl-4 text-left">
-                            <a href="https://litecoin.com/litecoin-foundation#contact">Contact</a>
-                          </li>
-                          <li className="mb-2 ml-2 p-2 pl-4 text-left">
-                            <a href="https://litecoin.com/financials">Financials</a>
-                          </li>
-                        </>
-                      )}
-                    </ul>
-                  </li>
-                ))}
-                <li
-                  className="text-md mb-[.95rem] ml-[1rem] mt-[.85rem] font-[500]"
-                  style={{
-                    color: fontColor,
-                    letterSpacing: '-0.2px',
-                    fontSize: `${scaledFontSize}px`,
-                    marginRight: `${scaledMargin + 1}px`,
-                  }}
-                >
-                  <a href="https://litecoin.com/projects">Projects</a>
-                </li>
-                <li
-                  className="text-md mb-[.95rem] ml-[.6rem] mt-[.85rem] font-[500]"
-                  style={{
-                    color: fontColor,
-                    letterSpacing: '-0.2px',
-                    fontSize: `${scaledFontSize}px`,
-                    marginRight: `${scaledMargin + 1}px`,
-                  }}
-                >
-                  <a href="https://litecoin.com/news">News</a>
-                </li>
-                <li
-                  className="text-md mb-[.95rem] ml-[.8rem] mt-[.85rem] font-[500]"
-                  style={{
-                    color: fontColor,
-                    letterSpacing: '-0.2px',
-                    fontSize: `${scaledFontSize}px`,
-                    marginRight: `${scaledMargin + 0.5}px`,
-                  }}
-                >
-                  <a href="https://litecoin.com/events">Events</a>
-                </li>
-                <li
-                  className="text-md mb-[.95rem] ml-[.8rem] mt-[.85rem] font-[500]"
-                  style={{
-                    color: fontColor,
-                    letterSpacing: '-0.2px',
-                    fontSize: `${scaledFontSize}px`,
-                    marginRight: `${scaledMargin + 0.8}px`,
-                  }}
-                >
-                  <a href="https://shop.litecoin.com">Shop</a>
-                </li>
-                <li
-                  className="text-md mb-[.95rem] ml-[.8rem] mt-[.85rem] font-[500]"
-                  style={{
-                    color: fontColor,
-                    letterSpacing: '-0.2px',
-                    fontSize: `${scaledFontSize}px`,
-                    marginRight: `${scaledMargin + 1}px`,
-                  }}
-                >
-                  <a href="https://litecoinspace.org/" target="_blank" rel="noreferrer">
-                    Explorer
-                  </a>
-                </li>
+                {/* Order: Use Litecoin, Learn, Projects, The Foundation, News, Events, Shop, Explorer */}
+                {renderDropdownMenuItem('useLitecoin')}
+                {renderDropdownMenuItem('learn')}
+                {renderRegularMenuItem(
+                  menuSpacingConfig.regular.projects,
+                  'https://litecoin.com/projects',
+                  'Projects',
+                )}
+                {renderDropdownMenuItem('theFoundation')}
+                {renderRegularMenuItem(
+                  menuSpacingConfig.regular.news,
+                  'https://litecoin.com/news',
+                  'News',
+                )}
+                {renderRegularMenuItem(
+                  menuSpacingConfig.regular.events,
+                  'https://litecoin.com/events',
+                  'Events',
+                )}
+                {renderRegularMenuItem(
+                  menuSpacingConfig.regular.shop,
+                  'https://shop.litecoin.com',
+                  'Shop',
+                )}
+                {renderRegularMenuItem(
+                  menuSpacingConfig.regular.explorer,
+                  'https://litecoinspace.org/',
+                  'Explorer',
+                  '_blank',
+                  'noreferrer',
+                )}
               </ul>
             )}
           </nav>

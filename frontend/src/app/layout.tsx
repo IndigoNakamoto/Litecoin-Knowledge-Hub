@@ -1,4 +1,4 @@
-import Navigation from '@/components/Navigation';
+import Navigation from '@/components/NavigationMain';
 import { AuthProvider } from '@/contexts/AuthContext';
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono, Space_Grotesk, Inter } from 'next/font/google';
