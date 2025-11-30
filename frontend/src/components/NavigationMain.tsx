@@ -484,7 +484,7 @@ const Navigation = () => {
           fontFamily:
             'system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif',
         }}
-        className="fixed left-0 right-0 top-0 z-20 flex items-center justify-between"
+        className="fixed left-0 right-0 top-0 z-[60] flex items-center justify-between"
       >
         <div className="mx-auto flex h-full w-[1300px] max-w-[90%] items-center justify-between">
           <div className="relative flex h-full items-center pb-1">
@@ -557,7 +557,7 @@ const Navigation = () => {
       </header>
 
       <div
-        className={`fixed bottom-0 right-0 top-0 z-10 min-w-full transform pt-20 duration-300 ease-in md:clear-left ${
+        className={`fixed bottom-0 left-0 right-0 top-0 z-50 min-w-full transform overflow-y-auto pt-20 duration-300 ease-in md:clear-left ${
           navShow ? 'translate-x-0' : 'translate-x-[105%]'
         }`}
         style={{
@@ -565,7 +565,7 @@ const Navigation = () => {
         }}
       >
         <div className="flex flex-col gap-x-6">
-          <nav className="mt-10 h-full">
+          <nav className="mt-10 min-h-full">
             {[
               { title: 'Use Litecoin', dropdown: true },
               { title: 'Learn', dropdown: true },
