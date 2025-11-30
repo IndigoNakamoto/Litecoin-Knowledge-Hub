@@ -13,6 +13,7 @@ from typing import Optional, Tuple
 from datetime import datetime
 
 from backend.redis_client import get_redis_client
+from backend.utils.lua_scripts import COST_THROTTLE_LUA, RECORD_COST_LUA
 
 logger = logging.getLogger(__name__)
 
@@ -170,147 +171,82 @@ async def check_cost_based_throttling(
     # This matches the deduplication logic - same challenge = same member = idempotent
     unique_request_member = f"{fingerprint}:{estimated_cost}"
     
-    # Check if already throttled (throttle marker exists)
-    throttle_marker = await redis.get(throttle_marker_key)
+    # Calculate daily TTL (2 days = 172800 seconds)
+    daily_ttl = 172800
     
-    if throttle_marker:
-        # Already throttled - check if throttle period has expired
-        try:
-            throttle_timestamp = int(throttle_marker)
-            throttle_expiry = throttle_timestamp + cost_throttle_duration_seconds
+    # Use atomic Lua script to check and record cost
+    try:
+        result = await redis.eval(
+            COST_THROTTLE_LUA,
+            3,  # Number of keys
+            cost_key,
+            daily_cost_key_with_date,
+            throttle_marker_key,
+            now,  # ARGV[1]
+            high_cost_window_seconds,  # ARGV[2]
+            estimated_cost,  # ARGV[3]
+            high_cost_threshold_usd,  # ARGV[4]
+            daily_cost_limit_usd,  # ARGV[5]
+            cost_throttle_duration_seconds,  # ARGV[6]
+            unique_request_member,  # ARGV[7]
+            daily_ttl,  # ARGV[8]
+        )
+        
+        # Parse result: [status_code, ttl_or_duration]
+        status_code = result[0]
+        ttl_or_duration = result[1]
+        
+        if status_code == 0:
+            # Request allowed
+            logger.info(
+                f"Cost recorded for stable_identifier {stable_identifier[:20] if stable_identifier else 'None'}...: "
+                f"${estimated_cost:.6f} added to window"
+            )
+            return False, None
+        elif status_code == 1:
+            # Already throttled
+            remaining_seconds = ttl_or_duration
+            logger.warning(
+                f"Fingerprint {fingerprint} (stable_identifier: {stable_identifier}) is throttled. "
+                f"Remaining throttle time: {remaining_seconds}s"
+            )
+            return True, f"High usage detected. Please wait {remaining_seconds} seconds before trying again."
+        elif status_code == 2:
+            # Daily limit exceeded
+            throttle_duration = ttl_or_duration
+            logger.warning(
+                f"Daily cost limit exceeded for stable_identifier {stable_identifier} (fingerprint: {fingerprint}). "
+                f"Estimated cost: ${estimated_cost:.4f}, "
+                f"Daily limit: ${daily_cost_limit_usd:.2f}"
+            )
+            return True, f"Daily usage limit reached. Please try again tomorrow."
+        elif status_code == 3:
+            # Window threshold exceeded
+            throttle_duration = ttl_or_duration
+            logger.warning(
+                f"Cost-based throttling triggered for stable_identifier {stable_identifier} (fingerprint: {fingerprint}). "
+                f"Estimated cost: ${estimated_cost:.4f}, "
+                f"Threshold: ${high_cost_threshold_usd:.2f}"
+            )
+            return True, f"High usage detected. Please complete security verification and try again in {throttle_duration} seconds."
+        else:
+            # Unknown status code - fail open
+            logger.error(
+                f"Unknown status code from cost throttle Lua script: {status_code} "
+                f"(fingerprint: {fingerprint[:20] if fingerprint else 'None'}...)"
+            )
+            return False, None
             
-            if now < throttle_expiry:
-                # Still in throttle period
-                remaining_seconds = throttle_expiry - now
-                logger.warning(
-                    f"Fingerprint {fingerprint} (stable_identifier: {stable_identifier}) is throttled. "
-                    f"Remaining throttle time: {remaining_seconds}s"
-                )
-                return True, f"High usage detected. Please wait {remaining_seconds} seconds before trying again."
-            else:
-                # Throttle period expired, remove marker
-                logger.debug(f"Throttle period expired for stable_identifier {stable_identifier}, removing marker")
-                await redis.delete(throttle_marker_key)
-        except (ValueError, TypeError) as e:
-            logger.warning(f"Invalid throttle marker value for {stable_identifier}: {throttle_marker}, removing it. Error: {e}")
-            await redis.delete(throttle_marker_key)
-    
-    # Remove expired entries (older than window)
-    cutoff = now - high_cost_window_seconds
-    await redis.zremrangebyscore(cost_key, 0, cutoff)
-    
-    # Calculate total cost in window
-    # Note: member format is "{fingerprint}:{cost}", score is timestamp
-    # We sum them all up, regardless of which challenge they used
-    all_costs = await redis.zrange(cost_key, 0, -1, withscores=True)
-    total_cost_in_window = 0.0
-    parsed_count = 0
-    failed_count = 0
-    
-    for member, score in all_costs:
-        # Member format: "fp:challenge:hash:cost" or "hash:cost"
-        try:
-            # Handle both bytes and string types from Redis
-            if isinstance(member, bytes):
-                member_str = member.decode('utf-8')
-            else:
-                member_str = str(member)
-            # Split by colon and take the last part to be safe against colons in fingerprints
-            # Using split(':')[-1] ensures we always get the cost, even if fingerprint contains colons
-            cost_str = member_str.split(':')[-1]
-            cost_value = float(cost_str)
-            total_cost_in_window += cost_value
-            parsed_count += 1
-        except (ValueError, IndexError, AttributeError, TypeError) as e:
-            # If parsing fails, skip this entry (shouldn't happen, but be safe)
-            failed_count += 1
-            logger.warning(f"Failed to parse cost from Redis entry {member} (score: {score}): {e}")
-            continue
-    
-    logger.info(
-        f"Cost window calculation for stable_identifier {stable_identifier[:20] if stable_identifier else 'None'}...: "
-        f"{parsed_count} entries parsed, {failed_count} failed, "
-        f"total_cost_in_window=${total_cost_in_window:.6f}"
-    )
-    
-    # Check daily limit first (hard cap)
-    daily_cost_entries = await redis.zrange(daily_cost_key_with_date, 0, -1, withscores=True)
-    total_daily_cost = 0.0
-    for member, _ in daily_cost_entries:
-        try:
-            if isinstance(member, bytes):
-                member_str = member.decode('utf-8')
-            else:
-                member_str = str(member)
-            cost_str = member_str.split(':')[-1]
-            total_daily_cost += float(cost_str)
-        except (ValueError, IndexError, AttributeError, TypeError) as e:
-            logger.warning(f"Failed to parse cost from daily Redis entry {member}: {e}")
-            continue
-    
-    new_daily_cost = total_daily_cost + estimated_cost
-    
-    if new_daily_cost >= daily_cost_limit_usd:
-        # Daily limit exceeded - hard throttle
-        logger.warning(
-            f"Daily cost limit exceeded for stable_identifier {stable_identifier} (fingerprint: {fingerprint}). "
-            f"Total daily cost: ${total_daily_cost:.4f}, "
-            f"Estimated cost: ${estimated_cost:.4f}, "
-            f"Daily limit: ${daily_cost_limit_usd:.2f}"
+    except Exception as e:
+        # Fail-open strategy: log error and allow request to proceed
+        logger.error(
+            f"Error executing cost throttle Lua script for fingerprint {fingerprint[:20] if fingerprint else 'None'}... "
+            f"(stable_identifier: {stable_identifier[:20] if stable_identifier else 'None'}..., "
+            f"estimated_cost=${estimated_cost:.6f}): {e}",
+            exc_info=True
         )
-        
-        # Set throttle marker (longer duration for daily limit violation)
-        await redis.setex(throttle_marker_key, cost_throttle_duration_seconds * 2, now)
-        
-        return True, f"Daily usage limit reached. Please try again tomorrow."
-    
-    # Check if adding estimated cost would exceed 10-minute threshold
-    new_total_cost = total_cost_in_window + estimated_cost
-    
-    # Info logging to track threshold checks (always visible)
-    logger.info(
-        f"Cost throttling check for stable_identifier {stable_identifier[:20] if stable_identifier else 'None'}...: "
-        f"Total cost in window: ${total_cost_in_window:.6f}, "
-        f"Estimated cost: ${estimated_cost:.6f}, "
-        f"New total cost: ${new_total_cost:.6f}, "
-        f"Threshold: ${high_cost_threshold_usd:.6f}"
-    )
-    
-    if new_total_cost >= high_cost_threshold_usd:
-        # Throttle fingerprint (10-minute window exceeded)
-        logger.warning(
-            f"Cost-based throttling triggered for stable_identifier {stable_identifier} (fingerprint: {fingerprint}). "
-            f"Total cost in window: ${total_cost_in_window:.4f}, "
-            f"Estimated cost: ${estimated_cost:.4f}, "
-            f"New total cost: ${new_total_cost:.4f}, "
-            f"Threshold: ${high_cost_threshold_usd:.2f}"
-        )
-        
-        # Set throttle marker
-        await redis.setex(throttle_marker_key, cost_throttle_duration_seconds, now)
-        
-        return True, f"High usage detected. Please complete security verification and try again in {cost_throttle_duration_seconds} seconds."
-    
-    # Record this request's estimated cost in the sliding window
-    # FIX: Use full fingerprint as member (for deduplication) in stable bucket (for aggregation)
-    # The full fingerprint ensures double-clicks with same challenge are deduplicated
-    # The stable_identifier in the key ensures costs accumulate across different challenges
-    await redis.zadd(cost_key, {unique_request_member: now})
-    
-    # Set TTL on the sorted set (slightly longer than window for cleanup)
-    await redis.expire(cost_key, high_cost_window_seconds + 60)
-    
-    # Also record in daily tracking
-    await redis.zadd(daily_cost_key_with_date, {unique_request_member: now})
-    # Set TTL to 2 days (ensures cleanup even if date changes during request)
-    await redis.expire(daily_cost_key_with_date, 172800)
-    
-    logger.info(
-        f"Cost recorded for stable_identifier {stable_identifier[:20] if stable_identifier else 'None'}...: "
-        f"${estimated_cost:.6f} added to window (new total: ${new_total_cost:.6f})"
-    )
-    
-    return False, None
+        # Allow request to proceed to prevent blocking legitimate users
+        return False, None
 
 
 async def record_actual_cost(
@@ -367,14 +303,25 @@ async def record_actual_cost(
     # MEMBER (The Receipt): Uses full fingerprint so we don't double-count THIS specific request
     unique_request_member = f"{fingerprint}:{actual_cost}"
     
-    # Record actual cost in sliding window
-    await redis.zadd(cost_key, {unique_request_member: now})
-    
-    # Set TTL on the sorted set
-    await redis.expire(cost_key, high_cost_window_seconds + 60)
-    
-    # Also record in daily tracking
-    await redis.zadd(daily_cost_key_with_date, {unique_request_member: now})
-    # Set TTL to 2 days (ensures cleanup even if date changes during request)
-    await redis.expire(daily_cost_key_with_date, 172800)
+    # Use atomic Lua script to record cost
+    try:
+        await redis.eval(
+            RECORD_COST_LUA,
+            2,  # Number of keys
+            cost_key,
+            daily_cost_key_with_date,
+            now,  # ARGV[1]
+            unique_request_member,  # ARGV[2]
+            high_cost_window_seconds + 60,  # ARGV[3] - window TTL
+            172800,  # ARGV[4] - daily TTL (2 days)
+        )
+    except Exception as e:
+        # Fail-open strategy: log error and continue silently
+        logger.error(
+            f"Error executing record cost Lua script for fingerprint {fingerprint[:20] if fingerprint else 'None'}... "
+            f"(stable_identifier: {stable_identifier[:20] if stable_identifier else 'None'}..., "
+            f"actual_cost=${actual_cost:.6f}): {e}",
+            exc_info=True
+        )
+        # Continue silently - don't block the request flow
 
