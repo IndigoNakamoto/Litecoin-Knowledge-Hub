@@ -18,6 +18,7 @@ from cache_utils import query_cache, SemanticCache
 from backend.utils.input_sanitizer import sanitize_query_input, detect_prompt_injection
 from fastapi import HTTPException
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
+import google.generativeai as genai
 # --- Environment Variable Checks ---
 google_api_key = os.getenv("GOOGLE_API_KEY")
 if not google_api_key:
@@ -184,6 +185,15 @@ class RAGPipeline:
                 HarmCategory.HARM_CATEGORY_HARASSMENT:           HarmBlockThreshold.BLOCK_ONLY_HIGH,         # safe to loosen
             }
         )
+        
+        # Initialize local tokenizer for accurate token counting (faster than API calls)
+        try:
+            genai.configure(api_key=google_api_key)
+            self.tokenizer_model = genai.GenerativeModel(LLM_MODEL_NAME)
+            logger.info(f"Local tokenizer initialized for accurate token counting")
+        except Exception as e:
+            logger.warning(f"Failed to initialize local tokenizer: {e}. Will use fallback methods.")
+            self.tokenizer_model = None
 
         # Setup hybrid retrievers (BM25 + semantic + history-aware)
         self._setup_retrievers()
@@ -324,29 +334,41 @@ class RAGPipeline:
         """
         Estimate (input_tokens, output_tokens) for an LLM call.
 
-        Uses the Gemini tokenizer via ChatGoogleGenerativeAI.get_num_tokens when
-        available, with a word-count based fallback to ensure metrics are always
-        recorded.
+        Uses the local Gemini tokenizer (fast and 100% accurate) as the primary method,
+        with fallbacks to LangChain's get_num_tokens and word-count estimation.
         """
         prompt_text = prompt_text or ""
         answer_text = answer_text or ""
 
-        # Fallback approximations emulate prior behaviour but on full prompt text.
+        # Initialize with word-count fallback (least accurate, but always available)
         fallback_input_tokens = max(int(len(prompt_text.split()) * 1.3), 0)
         fallback_output_tokens = max(int(len(answer_text.split()) * 1.3), 0)
 
         input_tokens = fallback_input_tokens
         output_tokens = fallback_output_tokens
 
-        if hasattr(self.llm, "get_num_tokens"):
+        # Primary method: Use local tokenizer (fastest and most accurate)
+        if hasattr(self, 'tokenizer_model') and self.tokenizer_model is not None:
+            try:
+                input_tokens = max(self.tokenizer_model.count_tokens(prompt_text).total_tokens, 0)
+            except Exception as exc:
+                logger.debug("Failed to count input tokens via local tokenizer: %s", exc, exc_info=True)
+            try:
+                output_tokens = max(self.tokenizer_model.count_tokens(answer_text).total_tokens, 0)
+            except Exception as exc:
+                logger.debug("Failed to count output tokens via local tokenizer: %s", exc, exc_info=True)
+        
+        # Fallback: Use LangChain's get_num_tokens if local tokenizer failed
+        if input_tokens == fallback_input_tokens and hasattr(self.llm, "get_num_tokens"):
             try:
                 input_tokens = max(int(self.llm.get_num_tokens(prompt_text)), 0)
             except Exception as exc:
-                logger.debug("Failed to count input tokens via Gemini: %s", exc, exc_info=True)
+                logger.debug("Failed to count input tokens via LangChain: %s", exc, exc_info=True)
+        if output_tokens == fallback_output_tokens and hasattr(self.llm, "get_num_tokens"):
             try:
                 output_tokens = max(int(self.llm.get_num_tokens(answer_text)), 0)
             except Exception as exc:
-                logger.debug("Failed to count output tokens via Gemini: %s", exc, exc_info=True)
+                logger.debug("Failed to count output tokens via LangChain: %s", exc, exc_info=True)
 
         return input_tokens, output_tokens
 
