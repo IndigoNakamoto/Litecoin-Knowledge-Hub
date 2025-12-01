@@ -248,8 +248,9 @@ async def test_apply_progressive_ban_second_violation():
 async def test_check_sliding_window_allowed():
     """Test sliding window check when request is allowed (under limit)."""
     redis = AsyncMock()
-    # Mock Lua script return: {1, count} = Allowed
-    redis.eval = AsyncMock(return_value=[1, 5])  # allowed=1, count=5
+    # Mock Lua script return: {1, count, oldest_ts} = Allowed
+    # For allowed requests, oldest_ts is 0
+    redis.eval = AsyncMock(return_value=[1, 5, 0])  # allowed=1, count=5, oldest_ts=0
     
     now = int(time.time())
     count, allowed, retry_after = await _check_sliding_window(
@@ -288,8 +289,9 @@ async def test_check_sliding_window_rejected():
 async def test_check_sliding_window_deduplication():
     """Test sliding window check with deduplication (duplicate request)."""
     redis = AsyncMock()
-    # Mock Lua script return: {1, count} = Allowed (duplicate)
-    redis.eval = AsyncMock(return_value=[1, 5])  # allowed=1, count=5 (unchanged)
+    # Mock Lua script return: {1, count, oldest_ts} = Allowed (duplicate)
+    # For allowed requests (including duplicates), oldest_ts is 0
+    redis.eval = AsyncMock(return_value=[1, 5, 0])  # allowed=1, count=5 (unchanged), oldest_ts=0
     
     now = int(time.time())
     count, allowed, retry_after = await _check_sliding_window(

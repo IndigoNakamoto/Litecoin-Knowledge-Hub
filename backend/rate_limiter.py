@@ -283,16 +283,18 @@ async def _check_sliding_window(
     lua_script_executions_total.labels(script_name="sliding_window", result="success").inc()
     lua_script_duration_seconds.labels(script_name="sliding_window").observe(script_duration)
     
-    allowed, count = result[0], result[1]
+    # UNPACK 3 VALUES (Crucial Update)
+    # Lua script always returns: [allowed (1/0), current_count, oldest_timestamp (for retry calc)]
+    allowed_flag, count, oldest_ts = result[0], result[1], result[2]
+    allowed = bool(allowed_flag)
     
     if not allowed:
-      # Calculate retry_after using oldest timestamp returned from Lua script
-      # This avoids the extra round-trip to Redis
-      if len(result) > 2:
-        oldest_ts = int(result[2])
+      # Calculate retry_after using the precise timestamp returned by Lua
+      # distinct from 'now' to ensure we give full window clearance
+      if oldest_ts > 0:
         retry_after = max(1, window_seconds - (now - oldest_ts))
       else:
-        # Fallback for older script versions (shouldn't happen)
+        # Fallback if oldest_ts is missing (shouldn't happen)
         retry_after = window_seconds
       
       # Track retry_after for monitoring (determine window type from key)
@@ -303,14 +305,12 @@ async def _check_sliding_window(
       
       return count, False, retry_after
     
-    # For allowed requests, retry_after is always 0 (returned as result[2])
-    retry_after = result[2] if len(result) > 2 else 0
-    
+    # For allowed requests, retry_after is always 0 (oldest_ts is 0 for allowed requests)
     # Track successful checks
     identifier_type = "global" if "global" in key else "per_user"
     rate_limit_checks_total.labels(check_type=identifier_type, result="allowed").inc()
     
-    return count, True, retry_after
+    return count, True, 0
   
   except Exception as e:
     # Fail open fallback (log error in production)

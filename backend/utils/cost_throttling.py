@@ -196,9 +196,10 @@ async def check_cost_based_throttling(
     # Use fixed precision (8 decimal places) to avoid floating point precision issues
     unique_request_member = f"{fingerprint}:{estimated_cost:.8f}"
     
-    # Calculate daily TTL (7 days = 604800 seconds for safety)
+    # Calculate daily TTL (3 days = 259200 seconds)
+    # Lua script enforces minimum 3 days (259200s), so we match that here
     # This ensures daily keys survive clock skew, late requests, and timezone issues
-    daily_ttl = 604800  # 7 days
+    daily_ttl = 259200  # 3 days (matches Lua script minimum)
     
     # Use atomic Lua script to check and record cost
     import time
@@ -368,7 +369,7 @@ async def record_actual_cost(
             now,  # ARGV[1]
             unique_request_member,  # ARGV[2]
             high_cost_window_seconds + 60,  # ARGV[3] - window TTL
-            604800,  # ARGV[4] - daily TTL (7 days for safety)
+            259200,  # ARGV[4] - daily TTL (3 days, matches Lua script minimum)
         )
         
         # Track Lua script execution and cost recorded
