@@ -147,3 +147,49 @@ redis.call('EXPIRE', daily_cost_key, daily_ttl)
 return 0
 """
 
+SLIDING_WINDOW_LUA = """
+-- Atomic Sliding Window Rate Limit
+-- Keys: [1] window_key
+-- Args: [1] now (timestamp), [2] window_seconds, [3] limit, [4] member_id, [5] expire_seconds
+
+local key = KEYS[1]
+local now = tonumber(ARGV[1])
+local window_seconds = tonumber(ARGV[2])
+local limit = tonumber(ARGV[3])
+local member_id = ARGV[4]
+local expire_seconds = tonumber(ARGV[5])
+
+-- 1. Clean up old entries (atomic cleanup)
+local cutoff = now - window_seconds
+redis.call('ZREMRANGEBYSCORE', key, 0, cutoff)
+
+-- 2. Count current active requests
+local count = redis.call('ZCARD', key)
+
+-- 3. Check logic
+-- If we are already at or above limit, we need to check if THIS specific user 
+-- is already in the set (deduplication/idempotency).
+-- If they are, we update their timestamp (allow).
+-- If they aren't, we reject.
+
+local score = redis.call('ZSCORE', key, member_id)
+
+if score then
+    -- CASE A: User is already in the window (Duplicate request/Retrying)
+    -- Update their timestamp to 'now' and allow
+    redis.call('ZADD', key, now, member_id)
+    redis.call('EXPIRE', key, expire_seconds)
+    return {1, count} -- 1 = Allowed (Duplicate)
+elseif count < limit then
+    -- CASE B: Under limit, new request
+    -- Add user
+    redis.call('ZADD', key, now, member_id)
+    redis.call('EXPIRE', key, expire_seconds)
+    return {1, count + 1} -- 1 = Allowed (New)
+else
+    -- CASE C: Over limit, new request
+    -- REJECT
+    return {0, count} -- 0 = Rejected
+end
+"""
+

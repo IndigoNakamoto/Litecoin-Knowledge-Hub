@@ -2,6 +2,7 @@ import os
 import time
 import uuid
 import ipaddress
+import logging
 from dataclasses import dataclass, field
 from typing import Optional, List
 
@@ -13,6 +14,9 @@ from backend.monitoring.metrics import (
     rate_limit_bans_total,
     rate_limit_violations_total,
 )
+from backend.utils.lua_scripts import SLIDING_WINDOW_LUA
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -187,39 +191,108 @@ async def _apply_progressive_ban(
   return ban_expiry
 
 
-async def _get_sliding_window_count(
-    redis, key: str, window_seconds: int, now: int, deduplication_id: Optional[str] = None
-) -> int:
+# OLD FUNCTION (kept for reference during migration)
+# async def _get_sliding_window_count(
+#     redis, key: str, window_seconds: int, now: int, deduplication_id: Optional[str] = None
+# ) -> int:
+#   """
+#   Get count of requests in sliding window using Redis sorted sets.
+#   Supports deduplication via deduplication_id (idempotency).
+#   
+#   Args:
+#     deduplication_id: Optional identifier to use for deduplication (e.g., challenge ID).
+#                      If provided, same ID will overwrite previous entry (idempotent).
+#                      If None, uses timestamp + UUID for unique tracking.
+#   """
+#   # Remove entries outside the window
+#   cutoff = now - window_seconds
+#   await redis.zremrangebyscore(key, 0, cutoff)
+#   
+#   # FIX: Use deduplication_id as the member if provided.
+#   # This ensures double-clicks with the same challenge ID are counted as ONE request.
+#   if deduplication_id:
+#     member_id = deduplication_id
+#   else:
+#     # Fallback to unique ID for requests without fingerprint/challenge
+#     member_id = f"{now}:{uuid.uuid4().hex[:8]}"
+#   
+#   # ZADD is idempotent: adding the same member again just updates the timestamp
+#   await redis.zadd(key, {member_id: now})
+#   
+#   # Set TTL slightly longer than window to ensure cleanup
+#   await redis.expire(key, window_seconds + 60)
+#   
+#   # Get count of requests in window
+#   count = await redis.zcard(key)
+#   return count
+
+
+async def _check_sliding_window(
+    redis, key: str, window_seconds: int, limit: int, now: int, deduplication_id: Optional[str] = None
+) -> tuple[int, bool, int]:
   """
-  Get count of requests in sliding window using Redis sorted sets.
-  Supports deduplication via deduplication_id (idempotency).
+  Atomic check-and-update for sliding window rate limit.
+  
+  Uses an atomic Lua script to eliminate race conditions where concurrent requests
+  can bypass rate limits. All operations (clean, count, check, add) happen in a
+  single Redis transaction.
   
   Args:
+    redis: Redis client
+    key: Redis key for the rate limit window
+    window_seconds: Window duration in seconds
+    limit: Maximum requests allowed in the window
+    now: Current timestamp
     deduplication_id: Optional identifier to use for deduplication (e.g., challenge ID).
-                     If provided, same ID will overwrite previous entry (idempotent).
-                     If None, uses timestamp + UUID for unique tracking.
-  """
-  # Remove entries outside the window
-  cutoff = now - window_seconds
-  await redis.zremrangebyscore(key, 0, cutoff)
+                      If provided, same ID will overwrite previous entry (idempotent).
+                      If None, uses timestamp + UUID for unique tracking.
   
-  # FIX: Use deduplication_id as the member if provided.
-  # This ensures double-clicks with the same challenge ID are counted as ONE request.
+  Returns:
+    Tuple of (count, allowed, retry_after):
+    - count: Current count in window
+    - allowed: True if request allowed, False if rejected
+    - retry_after: Seconds to wait before retry (0 if allowed)
+  """
+  # Deduplication ID logic
   if deduplication_id:
     member_id = deduplication_id
   else:
-    # Fallback to unique ID for requests without fingerprint/challenge
     member_id = f"{now}:{uuid.uuid4().hex[:8]}"
   
-  # ZADD is idempotent: adding the same member again just updates the timestamp
-  await redis.zadd(key, {member_id: now})
+  # Run the Atomic Script
+  # Returns: [allowed (1/0), current_count]
+  try:
+    result = await redis.eval(
+        SLIDING_WINDOW_LUA,
+        1,  # numkeys
+        key,
+        now,
+        window_seconds,
+        limit,
+        member_id,
+        window_seconds + 60  # expire_seconds
+    )
+    
+    allowed, count = result[0], result[1]
+    
+    if not allowed:
+      # Calculate retry_after only if rejected to save CPU
+      # Get the oldest timestamp in the window to calculate precise retry time
+      oldest = await redis.zrange(key, 0, 0, withscores=True)
+      if oldest:
+        oldest_ts = int(oldest[0][1])
+        retry_after = max(1, window_seconds - (now - oldest_ts))
+      else:
+        retry_after = window_seconds  # Should not happen if count > 0
+      
+      return count, False, retry_after
+    
+    return count, True, 0
   
-  # Set TTL slightly longer than window to ensure cleanup
-  await redis.expire(key, window_seconds + 60)
-  
-  # Get count of requests in window
-  count = await redis.zcard(key)
-  return count
+  except Exception as e:
+    # Fail open fallback (log error in production)
+    logger.error(f"Redis Lua Error in rate limiter: {e}", exc_info=True)
+    return 1, True, 0
 
 
 # Global rate limit configuration (will be read dynamically from Redis/env)
@@ -255,30 +328,29 @@ async def check_global_rate_limit(redis, now: int) -> None:
   global_minute_key = "rl:global:m"
   global_hour_key = "rl:global:h"
   
-  # Get counts using sliding windows
-  global_minute_count = await _get_sliding_window_count(redis, global_minute_key, 60, now)
-  global_hour_count = await _get_sliding_window_count(redis, global_hour_key, 3600, now)
+  # Atomic check using sliding windows
+  # Global limits don't use deduplication (pass deduplication_id=None)
+  # This ensures all requests are counted, regardless of whether they're duplicates
+  global_minute_count, global_minute_allowed, global_minute_retry = await _check_sliding_window(
+      redis, global_minute_key, 60, global_rate_limit_per_minute, now, deduplication_id=None
+  )
   
-  # Check global limits
-  exceeded_minute = global_minute_count > global_rate_limit_per_minute
-  exceeded_hour = global_hour_count > global_rate_limit_per_hour
-  
+  if not global_minute_allowed:
+    # REJECT IMMEDIATELY - No need to check hour window if minute fails
+    exceeded_minute = True
+    exceeded_hour = False
+    retry_after = global_minute_retry
+  else:
+    # Only check hour if minute passed
+    global_hour_count, global_hour_allowed, global_hour_retry = await _check_sliding_window(
+        redis, global_hour_key, 3600, global_rate_limit_per_hour, now, deduplication_id=None
+    )
+    exceeded_minute = False
+    exceeded_hour = not global_hour_allowed
+    retry_after = global_hour_retry
+
   if exceeded_minute or exceeded_hour:
-    # Compute Retry-After based on sliding window
-    if exceeded_minute:
-      oldest_in_window = await redis.zrange(global_minute_key, 0, 0, withscores=True)
-      if oldest_in_window:
-        oldest_timestamp = int(oldest_in_window[0][1])
-        retry_after = max(1, 60 - (now - oldest_timestamp))
-      else:
-        retry_after = 60
-    else:
-      oldest_in_window = await redis.zrange(global_hour_key, 0, 0, withscores=True)
-      if oldest_in_window:
-        oldest_timestamp = int(oldest_in_window[0][1])
-        retry_after = max(1, 3600 - (now - oldest_timestamp))
-      else:
-        retry_after = 3600
+    # Use retry_after from atomic function (already calculated)
     
     detail = {
       "error": "rate_limited",
@@ -364,14 +436,28 @@ async def check_rate_limit(request: Request, config: RateLimitConfig) -> None:
   minute_key = f"{base_key}:m"
   hour_key = f"{base_key}:h"
 
-  # 4. Use FULL fingerprint for Deduplication (The Receipt)
+  # 4. Atomic Check (Replaces the old _get_sliding_window_count calls)
+  # Use FULL fingerprint for Deduplication (The Receipt)
   # This ensures double-clicks are deduplicated, but different challenges count toward the limit
-  minute_count = await _get_sliding_window_count(redis, minute_key, 60, now, deduplication_id=full_fingerprint)
-  hour_count = await _get_sliding_window_count(redis, hour_key, 3600, now, deduplication_id=full_fingerprint)
-
-  # Check limits
-  exceeded_minute = minute_count > config.requests_per_minute
-  exceeded_hour = hour_count > config.requests_per_hour
+  
+  # Check Minute Window
+  min_count, min_allowed, min_retry = await _check_sliding_window(
+      redis, minute_key, 60, config.requests_per_minute, now, deduplication_id=full_fingerprint
+  )
+  
+  if not min_allowed:
+    # REJECT IMMEDIATELY - No need to check hour window if minute fails
+    exceeded_minute = True
+    exceeded_hour = False
+    retry_after = min_retry
+  else:
+    # Only check hour if minute passed
+    hour_count, hour_allowed, hour_retry = await _check_sliding_window(
+        redis, hour_key, 3600, config.requests_per_hour, now, deduplication_id=full_fingerprint
+    )
+    exceeded_minute = False
+    exceeded_hour = not hour_allowed
+    retry_after = hour_retry
 
   if exceeded_minute or exceeded_hour:
     # Record metrics
@@ -385,22 +471,7 @@ async def check_rate_limit(request: Request, config: RateLimitConfig) -> None:
       violation_count = await redis.get(violation_count_key)
       violation_count = int(violation_count) if violation_count else 1
     else:
-      # Compute Retry-After based on sliding window
-      # For minute limit, wait until oldest request in window expires
-      if exceeded_minute:
-        oldest_in_window = await redis.zrange(minute_key, 0, 0, withscores=True)
-        if oldest_in_window:
-          oldest_timestamp = int(oldest_in_window[0][1])
-          retry_after = max(1, 60 - (now - oldest_timestamp))
-        else:
-          retry_after = 60
-      else:
-        oldest_in_window = await redis.zrange(hour_key, 0, 0, withscores=True)
-        if oldest_in_window:
-          oldest_timestamp = int(oldest_in_window[0][1])
-          retry_after = max(1, 3600 - (now - oldest_timestamp))
-        else:
-          retry_after = 3600
+      # Use retry_after from atomic function (already calculated)
       violation_count = None
       ban_expiry = None
 

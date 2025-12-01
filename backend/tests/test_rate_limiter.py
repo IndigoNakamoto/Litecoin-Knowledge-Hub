@@ -35,7 +35,7 @@ from backend.rate_limiter import (
     _get_ip_from_request,
     _check_progressive_ban,
     _apply_progressive_ban,
-    _get_sliding_window_count,
+    _check_sliding_window,
 )
 
 
@@ -245,22 +245,82 @@ async def test_apply_progressive_ban_second_violation():
 
 
 @pytest.mark.asyncio
-async def test_get_sliding_window_count():
-    """Test sliding window count calculation."""
+async def test_check_sliding_window_allowed():
+    """Test sliding window check when request is allowed (under limit)."""
     redis = AsyncMock()
-    redis.zremrangebyscore = AsyncMock()
-    redis.zadd = AsyncMock()
-    redis.expire = AsyncMock()
-    redis.zcard = AsyncMock(return_value=5)
+    # Mock Lua script return: {1, count} = Allowed
+    redis.eval = AsyncMock(return_value=[1, 5])  # allowed=1, count=5
     
     now = int(time.time())
-    count = await _get_sliding_window_count(redis, "test:key", 60, now)
+    count, allowed, retry_after = await _check_sliding_window(
+        redis, "test:key", 60, 10, now  # limit=10, count=5 < limit
+    )
     
     assert count == 5
-    redis.zremrangebyscore.assert_called_once()
-    redis.zadd.assert_called_once()
-    redis.expire.assert_called_once()
-    redis.zcard.assert_called_once()
+    assert allowed is True
+    assert retry_after == 0
+    redis.eval.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_check_sliding_window_rejected():
+    """Test sliding window check when request is rejected (over limit)."""
+    redis = AsyncMock()
+    now = int(time.time())
+    oldest_timestamp = now - 30  # 30 seconds ago
+    
+    # Mock Lua script return: {0, count} = Rejected
+    redis.eval = AsyncMock(return_value=[0, 10])  # allowed=0, count=10
+    # Mock zrange for retry_after calculation
+    # zrange with withscores=True returns [(member, score), ...]
+    redis.zrange = AsyncMock(return_value=[("member", float(oldest_timestamp))])
+    
+    count, allowed, retry_after = await _check_sliding_window(
+        redis, "test:key", 60, 10, now  # limit=10, count=10 >= limit
+    )
+    
+    assert count == 10
+    assert allowed is False
+    assert retry_after == 30  # 60 - (now - oldest_timestamp) = 60 - 30 = 30
+    redis.eval.assert_called_once()
+    redis.zrange.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_check_sliding_window_deduplication():
+    """Test sliding window check with deduplication (duplicate request)."""
+    redis = AsyncMock()
+    # Mock Lua script return: {1, count} = Allowed (duplicate)
+    redis.eval = AsyncMock(return_value=[1, 5])  # allowed=1, count=5 (unchanged)
+    
+    now = int(time.time())
+    count, allowed, retry_after = await _check_sliding_window(
+        redis, "test:key", 60, 10, now, deduplication_id="fp:challenge123:hash456"
+    )
+    
+    assert count == 5
+    assert allowed is True
+    assert retry_after == 0
+    redis.eval.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_check_sliding_window_error_handling():
+    """Test sliding window check error handling (fail-open strategy)."""
+    redis = AsyncMock()
+    # Mock Lua script to raise an exception
+    redis.eval = AsyncMock(side_effect=Exception("Redis error"))
+    
+    now = int(time.time())
+    count, allowed, retry_after = await _check_sliding_window(
+        redis, "test:key", 60, 10, now
+    )
+    
+    # Fail-open: should allow request on error
+    assert count == 1
+    assert allowed is True
+    assert retry_after == 0
+    redis.eval.assert_called_once()
 
 
 if __name__ == "__main__":
