@@ -202,7 +202,6 @@ async def check_cost_based_throttling(
     daily_ttl = 259200  # 3 days (matches Lua script minimum)
     
     # Use atomic Lua script to check and record cost
-    import time
     script_start_time = time.time()
     try:
         result = await redis.eval(
@@ -358,7 +357,6 @@ async def record_actual_cost(
     unique_request_member = f"{fingerprint}:{actual_cost:.8f}"
     
     # Use atomic Lua script to record cost
-    import time
     script_start_time = time.time()
     try:
         await redis.eval(
