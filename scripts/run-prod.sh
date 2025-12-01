@@ -93,14 +93,72 @@ if [ ! -f "$SECRETS_FILE" ]; then
   fi
 else
   echo "🔐 Found .env.secrets file..."
-  # Verify required secrets are present (basic check)
-  if ! grep -q "MONGO_INITDB_ROOT_PASSWORD=" "$SECRETS_FILE" || \
-     ! grep -q "REDIS_PASSWORD=" "$SECRETS_FILE"; then
-    echo "⚠️  Warning: .env.secrets may be missing required passwords"
-    echo "   Please ensure MONGO_INITDB_ROOT_PASSWORD and REDIS_PASSWORD are set"
-  else
-    echo "   ✓ Required secrets appear to be set"
+  # Load secrets into shell environment for Docker Compose variable substitution
+  # Create a temporary file with filtered content (no comments, no empty lines)
+  TEMP_SECRETS=$(mktemp)
+  grep -v '^[[:space:]]*#' "$SECRETS_FILE" | grep -v '^[[:space:]]*$' > "$TEMP_SECRETS"
+  
+  # Source the filtered file to export variables
+  set -a  # Automatically export all variables
+  source "$TEMP_SECRETS"
+  set +a
+  
+  # Clean up temp file
+  rm -f "$TEMP_SECRETS"
+  
+  # Verify required secrets are present and not empty
+  if [ -z "${MONGO_INITDB_ROOT_PASSWORD:-}" ]; then
+    echo "❌ Error: MONGO_INITDB_ROOT_PASSWORD is not set or is empty in .env.secrets"
+    echo "   Please set MONGO_INITDB_ROOT_PASSWORD in .env.secrets"
+    echo "   Generate a password with: openssl rand -base64 32"
+    exit 1
   fi
+  
+  if [ -z "${MONGO_INITDB_ROOT_USERNAME:-}" ]; then
+    echo "⚠️  Warning: MONGO_INITDB_ROOT_USERNAME is not set, using default 'admin'"
+    export MONGO_INITDB_ROOT_USERNAME="admin"
+  fi
+  
+  # URL-encode the MongoDB password and username for use in connection strings
+  # MongoDB connection strings require special characters to be percent-encoded
+  url_encode() {
+    local string="$1"
+    # Use Python for reliable URL encoding (available on most systems)
+    # Pass string via stdin to avoid shell escaping issues with special characters
+    if command -v python3 &> /dev/null; then
+      echo -n "$string" | python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=''))"
+    elif command -v python &> /dev/null; then
+      echo -n "$string" | python -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=''))"
+    else
+      # Fallback: basic encoding using sed (handles most common cases)
+      # This is a simplified version - Python is preferred
+      echo -n "$string" | sed 's/%/%25/g; s/ /%20/g; s/!/%21/g; s/#/%23/g; s/\$/%24/g; s/&/%26/g; s/'\''/%27/g; s/(/%28/g; s/)/%29/g; s/*/%2A/g; s/+/%2B/g; s/,/%2C/g; s/\//%2F/g; s/:/%3A/g; s/;/%3B/g; s/=/%3D/g; s/?/%3F/g; s/@/%40/g; s/\[/%5B/g; s/\]/%5D/g'
+    fi
+  }
+  
+  # Export URL-encoded versions for use in connection strings
+  export MONGO_INITDB_ROOT_USERNAME_ENCODED=$(url_encode "$MONGO_INITDB_ROOT_USERNAME")
+  export MONGO_INITDB_ROOT_PASSWORD_ENCODED=$(url_encode "$MONGO_INITDB_ROOT_PASSWORD")
+  
+  # Also keep original values for MongoDB container environment variables
+  # (MongoDB container expects unencoded values)
+  export MONGO_INITDB_ROOT_USERNAME
+  export MONGO_INITDB_ROOT_PASSWORD
+  
+  if [ -z "${REDIS_PASSWORD:-}" ]; then
+    echo "⚠️  Warning: REDIS_PASSWORD is not set in .env.secrets"
+    echo "   Redis will run without password authentication"
+    # Don't set REDIS_PASSWORD_ENCODED if password is empty
+    # This allows docker-compose conditional to work correctly
+  else
+    # URL-encode Redis password for use in connection string
+    export REDIS_PASSWORD_ENCODED=$(url_encode "$REDIS_PASSWORD")
+    export REDIS_PASSWORD  # Keep original for container env vars
+  fi
+  
+  echo "   ✓ Required secrets loaded and validated"
+  echo "   ✓ Secrets URL-encoded for connection strings"
+  echo "   ✓ Secrets exported to environment for Docker Compose variable substitution"
 fi
 
 # Check if docker-compose.prod.yml exists

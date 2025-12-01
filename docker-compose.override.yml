@@ -28,14 +28,20 @@ services:
       - ./.env.secrets
     environment:
       # MongoDB connection with authentication
-      - MONGO_DETAILS=mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/litecoin_rag_db?authSource=admin
-      # Redis connection with password
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      # Variables are URL-encoded by run-prod.sh script to handle special characters
+      # Use _ENCODED versions for connection strings, original for container env vars
+      - MONGO_DETAILS=mongodb://${MONGO_INITDB_ROOT_USERNAME_ENCODED:-admin}:${MONGO_INITDB_ROOT_PASSWORD_ENCODED}@mongodb:27017/litecoin_rag_db?authSource=admin
+      # Redis connection with password (if set, otherwise without password)
+      # Note: If REDIS_PASSWORD is empty, this will create redis://:@redis:6379/0
+      # The redis service handles empty passwords gracefully
+      - REDIS_URL=${REDIS_PASSWORD_ENCODED:+redis://:${REDIS_PASSWORD_ENCODED}@redis:6379/0}${REDIS_PASSWORD_ENCODED:-redis://redis:6379/0}
 
   payload_cms:
     env_file:
       - ./.env.secrets
     environment:
       # MongoDB connection with authentication
-      - DATABASE_URI=mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/payload_cms?authSource=admin
+      # Variables are URL-encoded by run-prod.sh script to handle special characters
+      # Use _ENCODED versions for connection strings to properly escape special chars
+      - DATABASE_URI=mongodb://${MONGO_INITDB_ROOT_USERNAME_ENCODED:-admin}:${MONGO_INITDB_ROOT_PASSWORD_ENCODED}@mongodb:27017/payload_cms?authSource=admin
 
