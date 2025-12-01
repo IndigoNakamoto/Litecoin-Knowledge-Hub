@@ -247,7 +247,21 @@ class SemanticCache:
         """
         Return cached (answer, sources) if semantic similarity > threshold.
         Includes recent chat history in the semantic context.
+        
+        NOTE: Semantic cache is disabled for queries with chat history to ensure
+        follow-up questions get fresh, context-aware responses instead of cached answers.
         """
+        # Skip semantic cache when chat history is present
+        # Follow-up questions need fresh retrieval and generation, not cached responses
+        if chat_history and len(chat_history) > 0:
+            logger.debug(f"Semantic cache SKIPPED: chat history present ({len(chat_history)} pairs) for query: {query[:50]}...")
+            try:
+                from backend.monitoring.metrics import rag_cache_misses_total
+                rag_cache_misses_total.labels(cache_type="semantic").inc()
+            except ImportError:
+                pass  # Monitoring not available
+            return None
+        
         normalized = self._normalize(query)
         search_text = self._build_search_text(normalized, chat_history or [])
         
