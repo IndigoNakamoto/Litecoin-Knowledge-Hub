@@ -4,6 +4,33 @@ All notable changes and completed milestones for the Litecoin Knowledge Hub proj
 
 ## Log of Completed Milestones
 
+* **Production-Grade Abuse Prevention Improvements (12/01/2025)**
+  * Enhanced abuse prevention system with production-grade optimizations
+  * Fixed rate limiter to handle 3-value Lua script return format
+  * Optimized token counting with local Gemini tokenizer for improved performance
+* **Atomic Rate Limiter & Database Security Hardening (11/30/2025)**
+  * Implemented atomic Lua scripts for cost throttling optimization
+  * Eliminated race conditions in rate limiter with atomic operations
+  * Hardened Docker database security configurations
+  * Improved navigation component with centralized menu spacing configuration
+* **Semantic Cache & Cloudflare Integration (11/29/2025)**
+  * Implemented semantic cache for RAG pipeline to improve response times
+  * Added categorized suggested questions feature with documentation
+  * Fixed HTTPS redirect middleware to disable when behind Cloudflare proxy
+  * Added Cloudflare Insights to Content Security Policy
+  * Updated cloud deployment documentation with private cloud strategy
+* **Admin Question Logs Feature (11/28/2025)**
+  * Added question logs feature to admin dashboard with filtering capabilities
+  * Implemented real-time updates for question logs
+  * Improved admin dashboard components and styling
+  * Enhanced frontend error handling and retry logic
+  * Fixed CORS configuration for admin frontend
+  * Resolved additional security vulnerabilities (CRIT-NEW-1, CRIT-NEW-2, CRIT-NEW-3)
+* **Hybrid Retrieval System (11/23/2025)**
+  * Implemented hybrid retrieval with BM25 and semantic search for improved accuracy
+  * Enhanced challenge-response system with rate limiting and progressive bans
+  * Improved challenge handling in frontend with on-demand fetching
+  * Fixed critical RAG pipeline improvements for better context handling
 * **Admin Frontend Application (11/24/2025)**
   * Implemented dedicated admin frontend application for system management
   * Added admin API backend infrastructure with secure authentication
