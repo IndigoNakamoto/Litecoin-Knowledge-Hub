@@ -81,6 +81,7 @@ __pypackages__/
 .env.prod-local
 .env.docker.dev
 .env.docker.prod
+.env.secrets
 # Keep .env.example in git (it's a template)
 !.env.example
 

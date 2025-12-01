@@ -1,6 +1,6 @@
 #!/bin/bash
 # Helper script to shutdown production services gracefully
-# This script uses docker-compose.prod.yml which loads .env.docker.prod
+# This script uses docker-compose.prod.yml and docker-compose.override.yml
 
 set -e
 
@@ -26,6 +26,14 @@ if [ ! -f "$PROD_COMPOSE_FILE" ]; then
   echo ""
   echo "This file should exist in the project root."
   exit 1
+fi
+
+# Check if docker-compose.override.yml exists (use if available)
+OVERRIDE_COMPOSE_FILE="$PROJECT_ROOT/docker-compose.override.yml"
+if [ -f "$OVERRIDE_COMPOSE_FILE" ]; then
+  COMPOSE_FILES="-f docker-compose.prod.yml -f docker-compose.override.yml"
+else
+  COMPOSE_FILES="-f docker-compose.prod.yml"
 fi
 
 # Change to project root
@@ -80,13 +88,13 @@ done
 
 # Check for running production containers
 echo "🔍 Checking for running production containers..."
-RUNNING_CONTAINERS=$($DOCKER_COMPOSE -f docker-compose.prod.yml ps --services --filter "status=running" 2>/dev/null || true)
+RUNNING_CONTAINERS=$($DOCKER_COMPOSE $COMPOSE_FILES ps --services --filter "status=running" 2>/dev/null || true)
 
 if [ -z "$RUNNING_CONTAINERS" ]; then
   echo "ℹ️  No running production containers found."
   
   # Check if there are any stopped containers
-  STOPPED_CONTAINERS=$($DOCKER_COMPOSE -f docker-compose.prod.yml ps --services --filter "status=stopped" 2>/dev/null || true)
+  STOPPED_CONTAINERS=$($DOCKER_COMPOSE $COMPOSE_FILES ps --services --filter "status=stopped" 2>/dev/null || true)
   if [ -n "$STOPPED_CONTAINERS" ]; then
     echo "   However, there are stopped containers that can be removed."
     if [ "$FORCE" = false ]; then
@@ -118,7 +126,7 @@ else
 fi
 
 # Build docker-compose down command
-DOWN_CMD="$DOCKER_COMPOSE -f docker-compose.prod.yml down"
+DOWN_CMD="$DOCKER_COMPOSE $COMPOSE_FILES down"
 
 if [ "$REMOVE_VOLUMES" = true ]; then
   echo "⚠️  Warning: Volumes will be removed!"

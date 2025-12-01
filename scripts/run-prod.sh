@@ -1,6 +1,7 @@
 #!/bin/bash
 # Helper script to run production builds with --no-cache and rebuild
-# This script uses docker-compose.prod.yml which loads .env.docker.prod
+# This script uses docker-compose.prod.yml and docker-compose.override.yml
+# which loads .env.docker.prod and .env.secrets
 
 set -e
 
@@ -66,6 +67,42 @@ else
   echo "   ✓ GRAFANA_ADMIN_PASSWORD is set (length: ${#GRAFANA_ADMIN_PASSWORD} chars)"
 fi
 
+# Check if .env.secrets exists (required for database authentication)
+SECRETS_FILE="$PROJECT_ROOT/.env.secrets"
+if [ ! -f "$SECRETS_FILE" ]; then
+  echo "⚠️  Warning: .env.secrets file not found!"
+  echo ""
+  echo "Database authentication requires .env.secrets file with:"
+  echo "   MONGO_INITDB_ROOT_USERNAME"
+  echo "   MONGO_INITDB_ROOT_PASSWORD"
+  echo "   REDIS_PASSWORD"
+  echo ""
+  echo "To create .env.secrets:"
+  echo "   1. Generate passwords:"
+  echo "      openssl rand -base64 32  # For MongoDB"
+  echo "      openssl rand -base64 32  # For Redis"
+  echo "   2. Create .env.secrets with the generated passwords"
+  echo ""
+  echo "See docs/fixes/DOCKER_DATABASE_SECURITY_HARDENING.md for details."
+  echo ""
+  read -p "Continue anyway? (y/N) " -n 1 -r
+  echo
+  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "❌ Aborted. Please create .env.secrets first."
+    exit 1
+  fi
+else
+  echo "🔐 Found .env.secrets file..."
+  # Verify required secrets are present (basic check)
+  if ! grep -q "MONGO_INITDB_ROOT_PASSWORD=" "$SECRETS_FILE" || \
+     ! grep -q "REDIS_PASSWORD=" "$SECRETS_FILE"; then
+    echo "⚠️  Warning: .env.secrets may be missing required passwords"
+    echo "   Please ensure MONGO_INITDB_ROOT_PASSWORD and REDIS_PASSWORD are set"
+  else
+    echo "   ✓ Required secrets appear to be set"
+  fi
+fi
+
 # Check if docker-compose.prod.yml exists
 PROD_COMPOSE_FILE="$PROJECT_ROOT/docker-compose.prod.yml"
 if [ ! -f "$PROD_COMPOSE_FILE" ]; then
@@ -73,6 +110,28 @@ if [ ! -f "$PROD_COMPOSE_FILE" ]; then
   echo ""
   echo "This file should exist in the project root."
   exit 1
+fi
+
+# Check if docker-compose.override.yml exists (optional but recommended for security)
+OVERRIDE_COMPOSE_FILE="$PROJECT_ROOT/docker-compose.override.yml"
+if [ ! -f "$OVERRIDE_COMPOSE_FILE" ]; then
+  echo "⚠️  Warning: docker-compose.override.yml file not found!"
+  echo ""
+  echo "This file is recommended for database authentication."
+  echo "Without it, databases may not have authentication enabled."
+  echo ""
+  echo "See docs/fixes/DOCKER_DATABASE_SECURITY_HARDENING.md for details."
+  echo ""
+  read -p "Continue without override file? (y/N) " -n 1 -r
+  echo
+  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "❌ Aborted. Please create docker-compose.override.yml first."
+    exit 1
+  fi
+  COMPOSE_FILES="-f docker-compose.prod.yml"
+else
+  COMPOSE_FILES="-f docker-compose.prod.yml -f docker-compose.override.yml"
+  echo "✅ Found docker-compose.override.yml (will use for database authentication)"
 fi
 
 # Change to project root
@@ -86,7 +145,11 @@ if [ -n "$EXISTING_CONTAINERS" ]; then
   echo "$EXISTING_CONTAINERS" | sed 's/^/   - /'
   echo ""
   echo "💡 Tip: Stop existing containers first with:"
-  echo "   $DOCKER_COMPOSE -f docker-compose.prod.yml down"
+  if [ -f "$OVERRIDE_COMPOSE_FILE" ]; then
+    echo "   $DOCKER_COMPOSE -f docker-compose.prod.yml -f docker-compose.override.yml down"
+  else
+    echo "   $DOCKER_COMPOSE -f docker-compose.prod.yml down"
+  fi
   echo ""
   read -p "Continue anyway? (y/N) " -n 1 -r
   echo
@@ -120,7 +183,7 @@ echo ""
 
 # Build all services with --no-cache, explicitly passing build args for frontend and admin-frontend
 # Note: "$@" is intentionally excluded from build command to ensure --no-cache cannot be overridden
-$DOCKER_COMPOSE -f docker-compose.prod.yml build --no-cache \
+$DOCKER_COMPOSE $COMPOSE_FILES build --no-cache \
   --build-arg NEXT_PUBLIC_BACKEND_URL="$PROD_BACKEND_URL" \
   --build-arg NEXT_PUBLIC_PAYLOAD_URL="$PROD_PAYLOAD_URL"
 
@@ -150,5 +213,5 @@ echo "   Prometheus: http://localhost:9090 (local only)"
 echo ""
 
 # Start services (pass through any additional arguments like -d for detached mode)
-$DOCKER_COMPOSE -f docker-compose.prod.yml up "$@"
+$DOCKER_COMPOSE $COMPOSE_FILES up "$@"
 

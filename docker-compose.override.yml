@@ -1,0 +1,41 @@
+version: '3.8'
+
+# Docker Compose Override File for Security Hardening
+# This file injects secrets and authenticated connection strings
+# Docker Compose automatically merges this with docker-compose.prod.yml
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml -f docker-compose.override.yml up -d
+
+services:
+  mongodb:
+    env_file:
+      - ./.env.secrets
+    environment:
+      # Override with secrets from .env.secrets
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+
+  redis:
+    env_file:
+      - ./.env.secrets
+    environment:
+      # Override with password from .env.secrets
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+
+  backend:
+    env_file:
+      - ./.env.secrets
+    environment:
+      # MongoDB connection with authentication
+      - MONGO_DETAILS=mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/litecoin_rag_db?authSource=admin
+      # Redis connection with password
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+
+  payload_cms:
+    env_file:
+      - ./.env.secrets
+    environment:
+      # MongoDB connection with authentication
+      - DATABASE_URI=mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/payload_cms?authSource=admin
+

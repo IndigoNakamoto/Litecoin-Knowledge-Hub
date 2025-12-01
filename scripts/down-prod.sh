@@ -1,5 +1,5 @@
 #!/bin/bash
-# Simple script to shutdown production services using docker-compose.prod.yml
+# Simple script to shutdown production services using docker-compose.prod.yml and docker-compose.override.yml
 
 set -e
 
@@ -27,6 +27,14 @@ if [ ! -f "$PROD_COMPOSE_FILE" ]; then
   exit 1
 fi
 
+# Check if docker-compose.override.yml exists (use if available)
+OVERRIDE_COMPOSE_FILE="$PROJECT_ROOT/docker-compose.override.yml"
+if [ -f "$OVERRIDE_COMPOSE_FILE" ]; then
+  COMPOSE_FILES="-f docker-compose.prod.yml -f docker-compose.override.yml"
+else
+  COMPOSE_FILES="-f docker-compose.prod.yml"
+fi
+
 echo "🛑 Shutting down production services..."
 echo ""
 
@@ -40,7 +48,7 @@ if [ -z "${GRAFANA_ADMIN_PASSWORD:-}" ]; then
 fi
 
 # Shutdown services (pass through any additional arguments like -v for volumes)
-$DOCKER_COMPOSE -f docker-compose.prod.yml down "$@"
+$DOCKER_COMPOSE $COMPOSE_FILES down "$@"
 
 echo ""
 echo "🧹 Cleaning up dangling images from previous builds..."
