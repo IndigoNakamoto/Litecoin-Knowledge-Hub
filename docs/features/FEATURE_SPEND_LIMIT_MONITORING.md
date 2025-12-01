@@ -305,8 +305,8 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOO
 
 ### Per Million Questions
 
-- **Without cache**: $485 / million questions
-- **With cache**: TBD (expected to be significantly less due to cache hit rate)
+- **Without cache**: $800 / million questions
+- **With cache**: $300 / million questions (estimated based on cache hit rate)
 
 These estimates are based on current Gemini API pricing and average token usage per query. The actual cost will vary based on:
 - Average query complexity and length
