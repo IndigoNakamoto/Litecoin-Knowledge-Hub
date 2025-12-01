@@ -17,6 +17,30 @@ from backend.utils.lua_scripts import COST_THROTTLE_LUA, RECORD_COST_LUA
 
 logger = logging.getLogger(__name__)
 
+# Import metrics
+try:
+    from backend.monitoring.metrics import (
+        cost_throttle_triggers_total,
+        cost_throttle_active_users,
+        cost_recorded_usd_total,
+        lua_script_executions_total,
+        lua_script_duration_seconds,
+    )
+    METRICS_ENABLED = True
+except ImportError:
+    METRICS_ENABLED = False
+    # Create no-op functions if metrics not available
+    def cost_throttle_triggers_total(*args, **kwargs):
+        pass
+    def cost_throttle_active_users(*args, **kwargs):
+        pass
+    def cost_recorded_usd_total(*args, **kwargs):
+        pass
+    def lua_script_executions_total(*args, **kwargs):
+        pass
+    def lua_script_duration_seconds(*args, **kwargs):
+        pass
+
 # Environment variables (will be read dynamically from Redis/env)
 # These are defaults, actual values are read in check_cost_based_throttling()
 
@@ -169,12 +193,16 @@ async def check_cost_based_throttling(
     
     # MEMBER (The Receipt): Uses full fingerprint so we don't double-count THIS specific request
     # This matches the deduplication logic - same challenge = same member = idempotent
-    unique_request_member = f"{fingerprint}:{estimated_cost}"
+    # Use fixed precision (8 decimal places) to avoid floating point precision issues
+    unique_request_member = f"{fingerprint}:{estimated_cost:.8f}"
     
-    # Calculate daily TTL (2 days = 172800 seconds)
-    daily_ttl = 172800
+    # Calculate daily TTL (7 days = 604800 seconds for safety)
+    # This ensures daily keys survive clock skew, late requests, and timezone issues
+    daily_ttl = 604800  # 7 days
     
     # Use atomic Lua script to check and record cost
+    import time
+    script_start_time = time.time()
     try:
         result = await redis.eval(
             COST_THROTTLE_LUA,
@@ -192,6 +220,12 @@ async def check_cost_based_throttling(
             daily_ttl,  # ARGV[8]
         )
         
+        # Track Lua script execution
+        if METRICS_ENABLED:
+            script_duration = time.time() - script_start_time
+            lua_script_executions_total.labels(script_name="cost_throttle", result="success").inc()
+            lua_script_duration_seconds.labels(script_name="cost_throttle").observe(script_duration)
+        
         # Parse result: [status_code, ttl_or_duration]
         status_code = result[0]
         ttl_or_duration = result[1]
@@ -202,6 +236,9 @@ async def check_cost_based_throttling(
                 f"Cost recorded for stable_identifier {stable_identifier[:20] if stable_identifier else 'None'}...: "
                 f"${estimated_cost:.6f} added to window"
             )
+            # Track cost recorded
+            if METRICS_ENABLED:
+                cost_recorded_usd_total.labels(type="estimated").inc(estimated_cost)
             return False, None
         elif status_code == 1:
             # Already throttled
@@ -210,6 +247,10 @@ async def check_cost_based_throttling(
                 f"Fingerprint {fingerprint} (stable_identifier: {stable_identifier}) is throttled. "
                 f"Remaining throttle time: {remaining_seconds}s"
             )
+            if METRICS_ENABLED:
+                cost_throttle_triggers_total.labels(reason="already_throttled").inc()
+                # Note: cost_throttle_active_users is a gauge that should be updated periodically
+                # via a background task scanning throttle keys, not here (would be expensive)
             return True, f"High usage detected. Please wait {remaining_seconds} seconds before trying again."
         elif status_code == 2:
             # Daily limit exceeded
@@ -219,6 +260,9 @@ async def check_cost_based_throttling(
                 f"Estimated cost: ${estimated_cost:.4f}, "
                 f"Daily limit: ${daily_cost_limit_usd:.2f}"
             )
+            if METRICS_ENABLED:
+                cost_throttle_triggers_total.labels(reason="daily_limit").inc()
+                # Throttle marker is set by Lua script, active users count updated via background task
             return True, f"Daily usage limit reached. Please try again tomorrow."
         elif status_code == 3:
             # Window threshold exceeded
@@ -228,6 +272,9 @@ async def check_cost_based_throttling(
                 f"Estimated cost: ${estimated_cost:.4f}, "
                 f"Threshold: ${high_cost_threshold_usd:.2f}"
             )
+            if METRICS_ENABLED:
+                cost_throttle_triggers_total.labels(reason="window_burst").inc()
+                # Throttle marker is set by Lua script, active users count updated via background task
             return True, f"High usage detected. Please complete security verification and try again in {throttle_duration} seconds."
         else:
             # Unknown status code - fail open
@@ -245,6 +292,11 @@ async def check_cost_based_throttling(
             f"estimated_cost=${estimated_cost:.6f}): {e}",
             exc_info=True
         )
+        # Track Lua script error
+        if METRICS_ENABLED:
+            script_duration = time.time() - script_start_time
+            lua_script_executions_total.labels(script_name="cost_throttle", result="error").inc()
+            lua_script_duration_seconds.labels(script_name="cost_throttle").observe(script_duration)
         # Allow request to proceed to prevent blocking legitimate users
         return False, None
 
@@ -301,9 +353,12 @@ async def record_actual_cost(
     daily_cost_key_with_date = f"{daily_cost_key}:{today}"
     
     # MEMBER (The Receipt): Uses full fingerprint so we don't double-count THIS specific request
-    unique_request_member = f"{fingerprint}:{actual_cost}"
+    # Use fixed precision (8 decimal places) to avoid floating point precision issues
+    unique_request_member = f"{fingerprint}:{actual_cost:.8f}"
     
     # Use atomic Lua script to record cost
+    import time
+    script_start_time = time.time()
     try:
         await redis.eval(
             RECORD_COST_LUA,
@@ -313,8 +368,15 @@ async def record_actual_cost(
             now,  # ARGV[1]
             unique_request_member,  # ARGV[2]
             high_cost_window_seconds + 60,  # ARGV[3] - window TTL
-            172800,  # ARGV[4] - daily TTL (2 days)
+            604800,  # ARGV[4] - daily TTL (7 days for safety)
         )
+        
+        # Track Lua script execution and cost recorded
+        if METRICS_ENABLED:
+            script_duration = time.time() - script_start_time
+            lua_script_executions_total.labels(script_name="record_cost", result="success").inc()
+            lua_script_duration_seconds.labels(script_name="record_cost").observe(script_duration)
+            cost_recorded_usd_total.labels(type="actual").inc(actual_cost)
     except Exception as e:
         # Fail-open strategy: log error and continue silently
         logger.error(
@@ -323,5 +385,10 @@ async def record_actual_cost(
             f"actual_cost=${actual_cost:.6f}): {e}",
             exc_info=True
         )
+        # Track Lua script error
+        if METRICS_ENABLED:
+            script_duration = time.time() - script_start_time
+            lua_script_executions_total.labels(script_name="record_cost", result="error").inc()
+            lua_script_duration_seconds.labels(script_name="record_cost").observe(script_duration)
         # Continue silently - don't block the request flow
 

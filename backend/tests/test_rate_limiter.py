@@ -269,11 +269,9 @@ async def test_check_sliding_window_rejected():
     now = int(time.time())
     oldest_timestamp = now - 30  # 30 seconds ago
     
-    # Mock Lua script return: {0, count} = Rejected
-    redis.eval = AsyncMock(return_value=[0, 10])  # allowed=0, count=10
-    # Mock zrange for retry_after calculation
-    # zrange with withscores=True returns [(member, score), ...]
-    redis.zrange = AsyncMock(return_value=[("member", float(oldest_timestamp))])
+    # Mock Lua script return: {0, count, oldest_timestamp} = Rejected
+    # New format includes oldest_timestamp to avoid extra round-trip
+    redis.eval = AsyncMock(return_value=[0, 10, oldest_timestamp])  # allowed=0, count=10, oldest_ts
     
     count, allowed, retry_after = await _check_sliding_window(
         redis, "test:key", 60, 10, now  # limit=10, count=10 >= limit
@@ -283,7 +281,7 @@ async def test_check_sliding_window_rejected():
     assert allowed is False
     assert retry_after == 30  # 60 - (now - oldest_timestamp) = 60 - 30 = 30
     redis.eval.assert_called_once()
-    redis.zrange.assert_called_once()
+    # No zrange call needed anymore - oldest timestamp comes from Lua script
 
 
 @pytest.mark.asyncio

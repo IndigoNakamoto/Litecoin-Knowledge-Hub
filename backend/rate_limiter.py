@@ -13,6 +13,10 @@ from backend.monitoring.metrics import (
     rate_limit_rejections_total,
     rate_limit_bans_total,
     rate_limit_violations_total,
+    rate_limit_retry_after_seconds,
+    rate_limit_checks_total,
+    lua_script_executions_total,
+    lua_script_duration_seconds,
 )
 from backend.utils.lua_scripts import SLIDING_WINDOW_LUA
 
@@ -260,7 +264,8 @@ async def _check_sliding_window(
     member_id = f"{now}:{uuid.uuid4().hex[:8]}"
   
   # Run the Atomic Script
-  # Returns: [allowed (1/0), current_count]
+  # Returns: [allowed (1/0), current_count, retry_after_or_oldest_ts]
+  script_start_time = time.time()
   try:
     result = await redis.eval(
         SLIDING_WINDOW_LUA,
@@ -273,25 +278,47 @@ async def _check_sliding_window(
         window_seconds + 60  # expire_seconds
     )
     
+    # Track Lua script execution
+    script_duration = time.time() - script_start_time
+    lua_script_executions_total.labels(script_name="sliding_window", result="success").inc()
+    lua_script_duration_seconds.labels(script_name="sliding_window").observe(script_duration)
+    
     allowed, count = result[0], result[1]
     
     if not allowed:
-      # Calculate retry_after only if rejected to save CPU
-      # Get the oldest timestamp in the window to calculate precise retry time
-      oldest = await redis.zrange(key, 0, 0, withscores=True)
-      if oldest:
-        oldest_ts = int(oldest[0][1])
+      # Calculate retry_after using oldest timestamp returned from Lua script
+      # This avoids the extra round-trip to Redis
+      if len(result) > 2:
+        oldest_ts = int(result[2])
         retry_after = max(1, window_seconds - (now - oldest_ts))
       else:
-        retry_after = window_seconds  # Should not happen if count > 0
+        # Fallback for older script versions (shouldn't happen)
+        retry_after = window_seconds
+      
+      # Track retry_after for monitoring (determine window type from key)
+      window_type = "minute" if ":m" in key or window_seconds == 60 else "hour" if ":h" in key or window_seconds == 3600 else "other"
+      identifier_type = "global" if "global" in key else "per_user"
+      rate_limit_retry_after_seconds.labels(identifier=identifier_type, window=window_type).observe(retry_after)
+      rate_limit_checks_total.labels(check_type=identifier_type, result="rejected").inc()
       
       return count, False, retry_after
     
-    return count, True, 0
+    # For allowed requests, retry_after is always 0 (returned as result[2])
+    retry_after = result[2] if len(result) > 2 else 0
+    
+    # Track successful checks
+    identifier_type = "global" if "global" in key else "per_user"
+    rate_limit_checks_total.labels(check_type=identifier_type, result="allowed").inc()
+    
+    return count, True, retry_after
   
   except Exception as e:
     # Fail open fallback (log error in production)
     logger.error(f"Redis Lua Error in rate limiter: {e}", exc_info=True)
+    # Track Lua script error
+    script_duration = time.time() - script_start_time
+    lua_script_executions_total.labels(script_name="sliding_window", result="error").inc()
+    lua_script_duration_seconds.labels(script_name="sliding_window").observe(script_duration)
     return 1, True, 0
 
 

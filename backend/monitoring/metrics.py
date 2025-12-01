@@ -239,6 +239,76 @@ rate_limit_violations_total = Counter(
     ["endpoint_type"],  # e.g. "chat", "chat_stream"
 )
 
+# Cost-Based Throttling Metrics
+cost_throttle_triggers_total = Counter(
+    "cost_throttle_triggers_total",
+    "Number of times cost throttling was triggered",
+    ["reason"],  # "window_burst", "daily_limit", "already_throttled"
+)
+
+cost_throttle_active_users = Gauge(
+    "cost_throttle_active_users",
+    "Number of fingerprints currently throttled"
+)
+
+cost_recorded_usd_total = Counter(
+    "cost_recorded_usd_total",
+    "Total USD cost recorded (estimated + actual)",
+    ["type"],  # "estimated", "actual"
+)
+
+# Rate Limiting Precision Metrics
+rate_limit_retry_after_seconds = Histogram(
+    "rate_limit_retry_after_seconds",
+    "Retry-After values returned to clients",
+    ["identifier", "window"],  # identifier: "per_user", "global"; window: "minute", "hour"
+    buckets=[1, 5, 10, 30, 60, 300, 600, 1800, 3600],
+)
+
+rate_limit_checks_total = Counter(
+    "rate_limit_checks_total",
+    "Total number of rate limit checks performed",
+    ["check_type", "result"],  # check_type: "individual", "global"; result: "allowed", "rejected"
+)
+
+# Challenge System Metrics
+challenge_generation_total = Counter(
+    "challenge_generation_total",
+    "Total challenges generated",
+    ["result"],  # "success", "rate_limited", "banned", "limit_exceeded"
+)
+
+challenge_validation_failures_total = Counter(
+    "challenge_validation_failures_total",
+    "Failed challenge validations",
+    ["reason"],  # "missing", "expired", "mismatch", "consumed", "invalid_format"
+)
+
+challenge_validations_total = Counter(
+    "challenge_validations_total",
+    "Total challenge validations attempted",
+    ["result"],  # "success", "failure"
+)
+
+challenge_reuse_attempts_total = Counter(
+    "challenge_reuse_attempts_total",
+    "Total attempts to reuse challenges (replay attacks)",
+)
+
+# Atomic Operation Metrics
+lua_script_executions_total = Counter(
+    "lua_script_executions_total",
+    "Total Lua script executions",
+    ["script_name", "result"],  # script_name: "sliding_window", "cost_throttle", "record_cost"; result: "success", "error"
+)
+
+lua_script_duration_seconds = Histogram(
+    "lua_script_duration_seconds",
+    "Lua script execution duration in seconds",
+    ["script_name"],
+    buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
+)
+
 
 def setup_metrics():
     """Initialize metrics registry. Called at application startup."""

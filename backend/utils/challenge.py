@@ -17,6 +17,27 @@ from backend.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
 
+# Import metrics
+try:
+    from backend.monitoring.metrics import (
+        challenge_generation_total,
+        challenge_validation_failures_total,
+        challenge_validations_total,
+        challenge_reuse_attempts_total,
+    )
+    METRICS_ENABLED = True
+except ImportError:
+    METRICS_ENABLED = False
+    # Create no-op functions if metrics not available
+    def challenge_generation_total(*args, **kwargs):
+        pass
+    def challenge_validation_failures_total(*args, **kwargs):
+        pass
+    def challenge_validations_total(*args, **kwargs):
+        pass
+    def challenge_reuse_attempts_total(*args, **kwargs):
+        pass
+
 # Environment variables (will be read dynamically from Redis/env)
 # These are defaults, actual values are read in functions that need them
 
@@ -123,6 +144,8 @@ async def generate_challenge(identifier: str) -> Dict[str, Any]:
                 f"last_request={last_request_int}, time_since={time_since_last}s, "
                 f"limit={challenge_request_rate_limit_seconds}s, retry_after={retry_after}s"
             )
+            if METRICS_ENABLED:
+                challenge_generation_total.labels(result="rate_limited").inc()
             raise HTTPException(
                 status_code=429,
                 detail={
@@ -150,6 +173,8 @@ async def generate_challenge(identifier: str) -> Dict[str, Any]:
                 f"Challenge generation blocked: identifier {identifier} is banned. "
                 f"Violation count: {violation_count}, Ban expires in {retry_after}s"
             )
+            if METRICS_ENABLED:
+                challenge_generation_total.labels(result="banned").inc()
             raise HTTPException(
                 status_code=429,
                 detail={
@@ -187,6 +212,8 @@ async def generate_challenge(identifier: str) -> Dict[str, Any]:
             f"ban_expires_at={ban_expiry}"
         )
         
+        if METRICS_ENABLED:
+            challenge_generation_total.labels(result="limit_exceeded").inc()
         raise HTTPException(
             status_code=429,
             detail={
@@ -226,6 +253,10 @@ async def generate_challenge(identifier: str) -> Dict[str, Any]:
     await redis.expire(active_challenges_key, challenge_ttl_seconds + 60)  # Cleanup after TTL
     
     logger.debug(f"Generated challenge {challenge_id} for identifier {identifier}")
+    
+    # Track successful challenge generation
+    if METRICS_ENABLED:
+        challenge_generation_total.labels(result="success").inc()
     
     return {
         "challenge": challenge_id,
@@ -275,6 +306,9 @@ async def validate_and_consume_challenge(challenge_id: str, identifier: str) -> 
         logger.warning(
             f"Challenge validation failed: challenge {challenge_id} not found or expired"
         )
+        if METRICS_ENABLED:
+            challenge_validation_failures_total.labels(reason="missing").inc()
+            challenge_validations_total.labels(result="failure").inc()
         raise HTTPException(
             status_code=403,
             detail={
@@ -288,6 +322,10 @@ async def validate_and_consume_challenge(challenge_id: str, identifier: str) -> 
         logger.warning(
             f"Challenge validation failed: challenge {challenge_id} issued to {stored_identifier} but used by {identifier}"
         )
+        if METRICS_ENABLED:
+            challenge_validation_failures_total.labels(reason="mismatch").inc()
+            challenge_validations_total.labels(result="failure").inc()
+            challenge_reuse_attempts_total.inc()  # This is a replay attack attempt
         raise HTTPException(
             status_code=403,
             detail={
@@ -304,6 +342,10 @@ async def validate_and_consume_challenge(challenge_id: str, identifier: str) -> 
     await redis.zrem(active_challenges_key, challenge_id)
     
     logger.debug(f"Challenge {challenge_id} validated and consumed for identifier {identifier}")
+    
+    # Track successful validation
+    if METRICS_ENABLED:
+        challenge_validations_total.labels(result="success").inc()
     
     return True
 
