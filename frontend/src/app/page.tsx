@@ -58,7 +58,7 @@ export default function Home() {
   const eventSourceRef = useRef<EventSource | null>(null);
   const chatWindowRef = useRef<ChatWindowRef>(null);
   const lastUserMessageIdRef = useRef<string | null>(null);
-  const { setScrollPosition } = useScrollContext();
+  const { setScrollPosition, setPinnedMessageId, resetPinningContext, pinnedMessageId } = useScrollContext();
   
   
   // Helper function to extract base fingerprint hash from fingerprint string
@@ -364,6 +364,9 @@ export default function Home() {
     const messageId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const newUserMessage: Message = { role: "human", content: trimmedMessage, id: messageId };
 
+    // Reset pinning context for new message
+    resetPinningContext();
+
     // Prepare chat history for the backend - only include complete exchanges
     const chatHistoryForBackend = messages.map(msg => ({
       role: msg.role,
@@ -373,6 +376,19 @@ export default function Home() {
     setMessages((prevMessages) => [...prevMessages, newUserMessage]);
     lastUserMessageIdRef.current = messageId;
     setIsLoading(true);
+
+    // Set pinned message ID and scroll to top
+    setPinnedMessageId(messageId);
+    
+    // Scroll user message to top immediately
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const messageElement = document.getElementById(messageId);
+        if (messageElement && chatWindowRef.current) {
+          chatWindowRef.current.scrollToElement(messageElement);
+        }
+      });
+    });
 
     // Initialize streaming message
     const initialStreamingMessage: Message = {
@@ -978,58 +994,14 @@ export default function Home() {
     }
   };
 
-  // Effect to scroll user message to top when it's added
+  // Effect to clear pinned message ID when streaming completes
   useEffect(() => {
-    // Only scroll if we have a pending user message ID
-    if (lastUserMessageIdRef.current && chatWindowRef.current) {
-      const messageId = lastUserMessageIdRef.current;
-      
-      // Function to attempt scrolling
-      const attemptScroll = (retryCount = 0) => {
-        const messageElement = document.getElementById(messageId);
-        if (messageElement && chatWindowRef.current) {
-          chatWindowRef.current.scrollToElement(messageElement);
-          // Don't clear the ref yet - we'll clear it after streaming message appears
-          return true;
-        } else if (retryCount < 5) {
-          // Retry up to 5 times with increasing delays
-          setTimeout(() => attemptScroll(retryCount + 1), 50 * (retryCount + 1));
-        }
-        return false;
-      };
-      
-      // Try immediate scroll, then with delays
-      requestAnimationFrame(() => {
-        attemptScroll(0);
-      });
+    if (streamingMessage && (streamingMessage.status === 'complete' || streamingMessage.status === 'error')) {
+      // Keep the message pinned even after streaming completes
+      // The spacer logic will handle maintaining empty space for short messages
+      // and transitioning to native scrolling for long messages
     }
-  }, [messages]); // Trigger when messages array changes
-
-  // Effect to re-scroll when streaming message appears to ensure proper positioning
-  useEffect(() => {
-    // Re-scroll to user message when streaming message is set to account for layout changes
-    if (lastUserMessageIdRef.current && chatWindowRef.current && streamingMessage) {
-      const messageId = lastUserMessageIdRef.current;
-      
-      const scrollToMessage = () => {
-        const messageElement = document.getElementById(messageId);
-        if (messageElement && chatWindowRef.current) {
-          chatWindowRef.current.scrollToElement(messageElement);
-          // Clear the ref after scrolling to prevent re-scrolling
-          lastUserMessageIdRef.current = null;
-        }
-      };
-      
-      // Wait for streaming message to render, with multiple attempts
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setTimeout(scrollToMessage, 100);
-          // Also try again after a longer delay in case layout is still settling
-          setTimeout(scrollToMessage, 300);
-        });
-      });
-    }
-  }, [streamingMessage]); // Trigger when streaming message changes
+  }, [streamingMessage]);
 
   // Effect to move completed streaming message to messages array
   useEffect(() => {
@@ -1089,6 +1061,7 @@ export default function Home() {
             ref={chatWindowRef} 
             shouldScrollToBottom={false}
             onScrollChange={setScrollPosition}
+            pinnedMessageId={pinnedMessageId}
           >
             {messages.map((msg, index) => (
               <Message
@@ -1110,12 +1083,6 @@ export default function Home() {
               />
             )}
             {!streamingMessage && isLoading && <MessageLoader />}
-            {/* Spacer to provide scrollable space below messages so they can scroll to top */}
-            {/* Only show spacer when streaming, loading, or actively scrolling a new message to avoid empty space after completion */}
-            {/* Height accounts for header (~80px) and input box (~150px) */}
-            {(streamingMessage || isLoading || lastUserMessageIdRef.current) && (
-              <div className="min-h-screen" />
-            )}
           </ChatWindow>
         )}
         <InputBox onSendMessage={handleSendMessage} isLoading={isLoading} />

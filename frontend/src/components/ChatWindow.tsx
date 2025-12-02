@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from "react";
+import React, { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef, useLayoutEffect } from "react";
 
 interface ChatWindowProps {
   children: React.ReactNode;
   shouldScrollToBottom?: boolean;
   onScrollChange?: (scrollTop: number) => void;
+  pinnedMessageId?: string | null;
 }
 
 export interface ChatWindowRef {
@@ -12,8 +13,11 @@ export interface ChatWindowRef {
 }
 
 const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(
-  ({ children, shouldScrollToBottom = false, onScrollChange }, ref) => {
+  ({ children, shouldScrollToBottom = false, onScrollChange, pinnedMessageId = null }, ref) => {
     const scrollRef = useRef<HTMLDivElement>(null);
+    const spacerRef = useRef<HTMLDivElement>(null);
+    const userMessageRef = useRef<HTMLElement | null>(null);
+    const aiResponseRef = useRef<HTMLElement | null>(null);
     const [isUserScrolling, setIsUserScrolling] = useState(false);
     const [lastScrollTop, setLastScrollTop] = useState(0);
     const isProgrammaticScrollRef = useRef(false);
@@ -150,9 +154,132 @@ const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(
     }
   }, [handleScroll]);
 
+  // Find and track user message and AI response elements
+  useEffect(() => {
+    if (pinnedMessageId) {
+      // Use requestAnimationFrame to ensure DOM is updated
+      requestAnimationFrame(() => {
+        const userElement = document.getElementById(pinnedMessageId);
+        userMessageRef.current = userElement;
+        
+        // Find the next sibling element which should be the AI response
+        // This could be a StreamingMessage or a completed Message component
+        if (userElement) {
+          let nextSibling = userElement.nextElementSibling;
+          // Skip any non-content elements (like loaders, etc.)
+          while (nextSibling && nextSibling.classList.contains('hidden')) {
+            nextSibling = nextSibling.nextElementSibling;
+          }
+          aiResponseRef.current = nextSibling as HTMLElement || null;
+        } else {
+          aiResponseRef.current = null;
+        }
+      });
+    } else {
+      userMessageRef.current = null;
+      aiResponseRef.current = null;
+    }
+  }, [pinnedMessageId, children]);
+
+  // Calculate spacer height to prevent reverse scrolling
+  // The spacer maintains constant scrollable height so the scroll position doesn't shift
+  // as the AI response grows, but users can still scroll up naturally
+  useLayoutEffect(() => {
+    if (!pinnedMessageId || !scrollRef.current || !spacerRef.current) {
+      // Reset spacer height when not pinning
+      if (spacerRef.current) {
+        spacerRef.current.style.height = '0px';
+      }
+      return;
+    }
+
+    const calculateAndApplySpacerHeight = () => {
+      const container = scrollRef.current;
+      const spacer = spacerRef.current;
+      const userMessage = userMessageRef.current;
+      const aiResponse = aiResponseRef.current;
+
+      if (!container || !spacer || !userMessage) {
+        return;
+      }
+
+      // Get container padding to account for it in calculations
+      const containerStyles = window.getComputedStyle(container);
+      const paddingTop = parseFloat(containerStyles.paddingTop) || 0;
+      const paddingBottom = parseFloat(containerStyles.paddingBottom) || 0;
+
+      // Get heights
+      const userHeight = userMessage.offsetHeight;
+      const aiHeight = aiResponse?.offsetHeight || 0;
+      const viewportHeight = container.clientHeight;
+      const totalContentHeight = userHeight + aiHeight;
+
+      // Calculate spacer height
+      let spacerHeight = 0;
+      const isContentShort = totalContentHeight < viewportHeight;
+      
+      if (isContentShort) {
+        // Content is short - maintain viewport height to keep empty space
+        spacerHeight = viewportHeight - totalContentHeight - paddingTop - paddingBottom;
+        spacerHeight = Math.max(0, spacerHeight);
+      } else {
+        // Content exceeds viewport - spacer is 0, allow native scrolling
+        spacerHeight = 0;
+      }
+
+      // Apply spacer height directly to DOM to prevent jitter
+      // This maintains constant scrollable height, preventing reverse scrolling
+      // but allows users to scroll up naturally
+      spacer.style.height = `${spacerHeight}px`;
+    };
+
+    // Initial calculation
+    calculateAndApplySpacerHeight();
+
+    // Set up ResizeObserver to watch for height changes
+    const observers: ResizeObserver[] = [];
+
+    if (userMessageRef.current) {
+      const userObserver = new ResizeObserver(() => {
+        requestAnimationFrame(() => {
+          calculateAndApplySpacerHeight();
+        });
+      });
+      userObserver.observe(userMessageRef.current);
+      observers.push(userObserver);
+    }
+
+    if (aiResponseRef.current) {
+      const aiObserver = new ResizeObserver(() => {
+        requestAnimationFrame(() => {
+          calculateAndApplySpacerHeight();
+        });
+      });
+      aiObserver.observe(aiResponseRef.current);
+      observers.push(aiObserver);
+    }
+
+    if (scrollRef.current) {
+      const containerObserver = new ResizeObserver(() => {
+        requestAnimationFrame(() => {
+          calculateAndApplySpacerHeight();
+        });
+      });
+      containerObserver.observe(scrollRef.current);
+      observers.push(containerObserver);
+    }
+
+    return () => {
+      observers.forEach(observer => observer.disconnect());
+    };
+  }, [pinnedMessageId, children]);
+
     return (
       <div ref={scrollRef} className="flex flex-col h-full m-4 px-4 md:px-16 py-16 pb-32 overflow-y-auto">
         {children}
+        {pinnedMessageId && (
+          <div ref={spacerRef} style={{ height: '0px', flexShrink: 0 }} />
+        )}
       </div>
     );
   }
