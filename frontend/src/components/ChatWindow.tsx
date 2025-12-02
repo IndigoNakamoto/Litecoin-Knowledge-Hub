@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState, useCallback, useImperativeHandle, f
 interface ChatWindowProps {
   children: React.ReactNode;
   shouldScrollToBottom?: boolean;
+  onScrollChange?: (scrollTop: number) => void;
 }
 
 export interface ChatWindowRef {
@@ -11,7 +12,7 @@ export interface ChatWindowRef {
 }
 
 const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(
-  ({ children, shouldScrollToBottom = false }, ref) => {
+  ({ children, shouldScrollToBottom = false, onScrollChange }, ref) => {
     const scrollRef = useRef<HTMLDivElement>(null);
     const [isUserScrolling, setIsUserScrolling] = useState(false);
     const [lastScrollTop, setLastScrollTop] = useState(0);
@@ -105,12 +106,18 @@ const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(
   const handleScroll = useCallback(() => {
     if (!scrollRef.current) return;
     
-    // Ignore scroll events during programmatic scrolling
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    
+    // Always notify parent component of scroll position change (for navigation updates)
+    if (onScrollChange) {
+      onScrollChange(scrollTop);
+    }
+    
+    // Only detect user interaction if not programmatic scrolling
     if (isProgrammaticScrollRef.current) {
       return;
     }
 
-    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
     const isAtBottom = scrollTop + clientHeight >= scrollHeight - 10; // 10px tolerance
 
     // If user scrolls up, mark as user scrolling
@@ -123,7 +130,7 @@ const ChatWindow = forwardRef<ChatWindowRef, ChatWindowProps>(
     }
 
     setLastScrollTop(scrollTop);
-  }, [lastScrollTop]);
+  }, [lastScrollTop, onScrollChange]);
 
   // Auto-scroll when content changes (if not user scrolling)
   useEffect(() => {

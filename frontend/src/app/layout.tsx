@@ -1,5 +1,6 @@
 import Navigation from '@/components/NavigationMain';
 import { AuthProvider } from '@/contexts/AuthContext';
+import { ScrollProvider } from '@/contexts/ScrollContext';
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono, Space_Grotesk, Inter } from 'next/font/google';
 import './globals.css';
@@ -47,8 +48,10 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} ${inter.variable} antialiased font-sans`}
       >
         <AuthProvider>
-          <Navigation />
-          <div className="">{children}</div>
+          <ScrollProvider>
+            <Navigation />
+            <div className="">{children}</div>
+          </ScrollProvider>
         </AuthProvider>
       </body>
     </html>

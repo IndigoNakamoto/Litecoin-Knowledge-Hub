@@ -4,6 +4,7 @@ import siteMetadata from '@/data/siteMetadata';
 
 import HorizontalSocialIcons from '@/components/HorizontalSocialIcons';
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
+import { useScrollContext } from '@/contexts/ScrollContext';
 const LitecoinLogo = ({ width, height }: { width: number; height: number }) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -185,7 +186,9 @@ const menuSpacingConfig: MenuSpacingConfig = {
 };
 
 const Navigation = () => {
-  const [scrollPosition, setScrollPosition] = useState(0);
+  // Get scroll position from context (for ChatWindow) or window (for other pages)
+  const { scrollPosition: contextScrollPosition } = useScrollContext();
+  const [windowScrollPosition, setWindowScrollPosition] = useState(0);
   const [dropdownOpen, setDropdownOpen] = useState<DropdownState>({
     useLitecoin: false,
     theFoundation: false,
@@ -203,18 +206,24 @@ const Navigation = () => {
   const theFoundationRef = useRef<HTMLLIElement | null>(null);
   const learnRef = useRef<HTMLLIElement | null>(null);
 
+  // Use the maximum of context scroll (from ChatWindow) and window scroll (from other pages)
+  // This ensures we use the correct scroll source depending on which page we're on
+  const scrollPosition = Math.max(contextScrollPosition, windowScrollPosition);
+
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth < 992);
     };
 
     const handleScroll = () => {
-      setScrollPosition(window.scrollY);
+      setWindowScrollPosition(window.scrollY);
     };
 
     window.addEventListener('resize', handleResize);
     window.addEventListener('scroll', handleScroll);
     handleResize();
+    // Initialize window scroll position
+    setWindowScrollPosition(window.scrollY);
 
     return () => {
       window.removeEventListener('resize', handleResize);

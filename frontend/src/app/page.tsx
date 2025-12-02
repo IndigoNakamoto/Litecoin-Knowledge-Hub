@@ -8,6 +8,7 @@ import MessageLoader from "@/components/MessageLoader";
 import InputBox from "@/components/InputBox";
 import SuggestedQuestions from "@/components/SuggestedQuestions";
 import { getFingerprintWithChallenge, getFingerprint } from "@/lib/utils/fingerprint";
+import { useScrollContext } from "@/contexts/ScrollContext";
 
 interface Message {
   role: "human" | "ai"; // Changed to match backend Pydantic model
@@ -57,6 +58,7 @@ export default function Home() {
   const eventSourceRef = useRef<EventSource | null>(null);
   const chatWindowRef = useRef<ChatWindowRef>(null);
   const lastUserMessageIdRef = useRef<string | null>(null);
+  const { setScrollPosition } = useScrollContext();
   
   
   // Helper function to extract base fingerprint hash from fingerprint string
@@ -1083,7 +1085,11 @@ export default function Home() {
             <SuggestedQuestions onQuestionClick={handleSendMessage} />
           </div>
         ) : (
-          <ChatWindow ref={chatWindowRef} shouldScrollToBottom={false}>
+          <ChatWindow 
+            ref={chatWindowRef} 
+            shouldScrollToBottom={false}
+            onScrollChange={setScrollPosition}
+          >
             {messages.map((msg, index) => (
               <Message
                 key={msg.id || index}
