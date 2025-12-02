@@ -793,6 +793,11 @@ export default function Home() {
       let buffer = ""; // Buffer for incomplete lines
       let shouldBreak = false;
 
+      // Helper function to check if tab is visible
+      const isTabVisible = () => {
+        return !document.hidden;
+      };
+
       // Type for SSE data objects
       type SSEData = 
         | { status: 'thinking' }
@@ -823,16 +828,35 @@ export default function Home() {
             sources: sources
           } : null);
         } else if (data.status === 'streaming') {
-          // Accumulate characters and display word by word
-          let wordBuffer = "";
-          for (const char of data.chunk) {
-            wordBuffer += char;
-            accumulatedContent += char;
+          // When tab is hidden, process chunks immediately without delay to avoid throttling
+          const tabVisible = isTabVisible();
+          
+          if (tabVisible) {
+            // Accumulate characters and display word by word (only when tab is visible)
+            let wordBuffer = "";
+            for (const char of data.chunk) {
+              wordBuffer += char;
+              accumulatedContent += char;
 
-            // Check if we've completed a word (space, punctuation, or end of chunk)
-            const isWordBoundary = char === ' ' || char === '\n' || char === '.' || char === '!' || char === '?' || char === ',' || char === ';' || char === ':';
+              // Check if we've completed a word (space, punctuation, or end of chunk)
+              const isWordBoundary = char === ' ' || char === '\n' || char === '.' || char === '!' || char === '?' || char === ',' || char === ';' || char === ':';
 
-            if (isWordBoundary || wordBuffer.length > 20) { // Also break long words
+              if (isWordBoundary || wordBuffer.length > 20) { // Also break long words
+                setStreamingMessage(prev => prev ? {
+                  ...prev,
+                  content: accumulatedContent,
+                  status: 'streaming',
+                  sources: sources,
+                  isStreamActive: true
+                } : null);
+                // Delay between words for natural typing rhythm (only when visible)
+                await new Promise(resolve => setTimeout(resolve, 25));
+                wordBuffer = "";
+              }
+            }
+
+            // Display any remaining characters in the buffer
+            if (wordBuffer.length > 0) {
               setStreamingMessage(prev => prev ? {
                 ...prev,
                 content: accumulatedContent,
@@ -840,14 +864,10 @@ export default function Home() {
                 sources: sources,
                 isStreamActive: true
               } : null);
-              // Delay between words for natural typing rhythm
-              await new Promise(resolve => setTimeout(resolve, 25));
-              wordBuffer = "";
             }
-          }
-
-          // Display any remaining characters in the buffer
-          if (wordBuffer.length > 0) {
+          } else {
+            // Tab is hidden - process entire chunk immediately without delay
+            accumulatedContent += data.chunk;
             setStreamingMessage(prev => prev ? {
               ...prev,
               content: accumulatedContent,

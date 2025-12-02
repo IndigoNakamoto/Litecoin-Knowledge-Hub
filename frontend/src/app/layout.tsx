@@ -29,8 +29,11 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Litecoin Knowledge Hub",
+  title: "Litecoin - Chat",
   description: "Litecoin Knowledge Hub",
+  icons: {
+    icon: '/favicon.png',
+  },
 };
 
 export default function RootLayout({
