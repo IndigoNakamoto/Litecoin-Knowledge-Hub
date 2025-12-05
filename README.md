@@ -27,7 +27,7 @@ The project has successfully completed the implementation of the core RAG pipeli
 | **Question Logging** | ✅ **IMPLEMENTED** - All user questions are logged to MongoDB for analysis, enabling insights into user needs, query patterns, and system usage. Questions are accessible via direct MongoDB queries for internal analysis. |
 | **LLM Spend Limit Monitoring** | ✅ **IMPLEMENTED** - Multi-layered cost control system with daily/hourly spend limits, pre-flight cost estimation, Prometheus metrics, and Discord alerting. Prevents billing overages with hard stops. Cost estimates: $800/million questions (without cache), $300/million questions (with cache). See [FEATURE_SPEND_LIMIT_MONITORING.md](./docs/features/FEATURE_SPEND_LIMIT_MONITORING.md) for details. |
 | **Suggested Question Caching** | ✅ **IMPLEMENTED** - Redis-based cache layer for suggested questions with 24-hour TTL, pre-populated on startup, providing instant responses (<100ms) for common questions. See [FEATURE_SUGGESTED_QUESTION_CACHING.md](./docs/features/FEATURE_SUGGESTED_QUESTION_CACHING.md) for details. |
-| **Security Hardening** | ✅ **COMPLETE** - Comprehensive security review and hardening completed. All critical/high vulnerabilities resolved including webhook authentication, CORS configuration, error disclosure fixes, rate limiting, and security headers. All public launch blockers resolved. See [RED_TEAM_ASSESSMENT_COMBINED.md](./docs/security/RED_TEAM_ASSESSMENT_COMBINED.md) for details. |
+| **Security Hardening** | ✅ **COMPLETE** - Comprehensive security review and hardening completed. All critical/high vulnerabilities resolved including webhook authentication, CORS configuration, error disclosure fixes, rate limiting, and security headers. All public launch blockers resolved. Multi-layered abuse prevention stack with rate limiting, challenge-response fingerprinting, bot protection, input sanitization, and cost throttling. See [ABUSE_PREVENTION_STACK.md](./docs/security/ABUSE_PREVENTION_STACK.md) for complete documentation and [RED_TEAM_ASSESSMENT_COMBINED.md](./docs/security/RED_TEAM_ASSESSMENT_COMBINED.md) for security audit details. |
 | **Litecoin Basics & FAQ** | ✅ **IMPLEMENTED** - Provides clear, concise answers to fundamental questions about Litecoin, its history, how it works, and common terminology. Caters especially to new users. Content population complete. |
 | **Transaction & Block Explorer** | 📝 **PLANNED** - Allows users to look up details of Litecoin transactions and explore block information. |
 | **Market Data & Insights** | 📝 **PLANNED** - Delivers real-time Litecoin price information, market capitalization, and trading volume from reliable market APIs. |
@@ -199,7 +199,7 @@ For more details, see cline_docs/techStack.md.
 * **Database:** MongoDB, MongoDB Atlas Vector Search / FAISS (hybrid for local development)
 * **Monitoring:** Prometheus, Grafana, LangSmith (optional LLM tracing)
 * **Deployment:** Vercel (Frontend), Railway/Render/Fly.io (Backend), Vercel/Docker (Payload CMS)
-  * See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment instructions
+  * See [DEPLOYMENT.md](./docs/DEPLOYMENT.md) for detailed deployment instructions
   * See [monitoring/README.md](./monitoring/README.md) for monitoring setup
 
 ## **Directory Structure**
@@ -355,7 +355,7 @@ For the complete testing guide including prerequisites, optional commands (cover
 
 ## **Deployment**
 
-For detailed deployment instructions for all services (Frontend, Backend, and Payload CMS), see [DEPLOYMENT.md](./DEPLOYMENT.md).
+For detailed deployment instructions for all services (Frontend, Backend, Payload CMS, and the complete Docker production stack), see [DEPLOYMENT.md](./docs/DEPLOYMENT.md).
 
 ## **Changelog**
 
