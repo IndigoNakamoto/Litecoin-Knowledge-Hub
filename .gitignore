@@ -10,7 +10,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+/lib/
 lib60/
 parts/
 sdist/
@@ -93,7 +93,7 @@ frontend/build/
 frontend/npm-debug.log*
 frontend/yarn-debug.log*
 frontend/yarn-error.log*
-frontend/package-lock.json
+# Note: package-lock.json should be committed for reproducible builds
 frontend/yarn.lock
 frontend/pnpm-lock.yaml
 # Next.js specific
