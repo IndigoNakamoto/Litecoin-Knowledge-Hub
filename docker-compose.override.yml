@@ -8,13 +8,14 @@ version: '3.8'
 #   docker compose -f docker-compose.prod.yml -f docker-compose.override.yml up -d
 
 services:
-  mongodb:
-    env_file:
-      - ./.env.secrets
-    environment:
-      # Override with secrets from .env.secrets
-      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+  # mongodb service is commented out - using MongoDB Atlas (cloud)
+  # mongodb:
+  #   env_file:
+  #     - ./.env.secrets
+  #   environment:
+  #     # Override with secrets from .env.secrets
+  #     - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+  #     - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
 
   redis:
     env_file:
@@ -27,10 +28,9 @@ services:
     env_file:
       - ./.env.secrets
     environment:
-      # MongoDB connection with authentication
-      # Variables are URL-encoded by run-prod.sh script to handle special characters
-      # Use _ENCODED versions for connection strings, original for container env vars
-      - MONGO_DETAILS=mongodb://${MONGO_INITDB_ROOT_USERNAME_ENCODED:-admin}:${MONGO_INITDB_ROOT_PASSWORD_ENCODED}@mongodb:27017/litecoin_rag_db?authSource=admin
+      # MongoDB connection is now in .env.docker.prod (MongoDB Atlas)
+      # MONGO_DETAILS and MONGO_URI are set in .env.docker.prod with Atlas connection strings
+      # - MONGO_DETAILS=mongodb://${MONGO_INITDB_ROOT_USERNAME_ENCODED:-admin}:${MONGO_INITDB_ROOT_PASSWORD_ENCODED}@mongodb:27017/litecoin_rag_db?authSource=admin
       # Redis connection with password (if set, otherwise without password)
       # Note: If REDIS_PASSWORD is empty, this will create redis://:@redis:6379/0
       # The redis service handles empty passwords gracefully
@@ -40,8 +40,7 @@ services:
     env_file:
       - ./.env.secrets
     environment:
-      # MongoDB connection with authentication
-      # Variables are URL-encoded by run-prod.sh script to handle special characters
-      # Use _ENCODED versions for connection strings to properly escape special chars
-      - DATABASE_URI=mongodb://${MONGO_INITDB_ROOT_USERNAME_ENCODED:-admin}:${MONGO_INITDB_ROOT_PASSWORD_ENCODED}@mongodb:27017/payload_cms?authSource=admin
+      # MongoDB connection is now in .env.docker.prod (MongoDB Atlas)
+      # DATABASE_URI is set in .env.docker.prod with Atlas connection string
+      # - DATABASE_URI=mongodb://${MONGO_INITDB_ROOT_USERNAME_ENCODED:-admin}:${MONGO_INITDB_ROOT_PASSWORD_ENCODED}@mongodb:27017/payload_cms?authSource=admin
 

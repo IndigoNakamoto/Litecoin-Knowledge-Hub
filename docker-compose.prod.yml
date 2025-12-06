@@ -1,40 +1,45 @@
 version: '3.8'
 
 services:
-  mongodb:
-    image: mongo:7.0
-    container_name: litecoin-mongodb
-    env_file:
-      - ./.env.docker.prod
-    environment:
-      # Only set init DB variables if MONGO_ROOT_PASSWORD is set
-      # MongoDB requires both USERNAME and PASSWORD to be set together
-      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USERNAME:-admin}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:-}
-    # Only enable --auth if MONGO_ROOT_PASSWORD is set
-    # --bind_ip_all allows connections from other containers
-    # Use entrypoint override to conditionally set/unset init DB vars
-    entrypoint: >
-      sh -c "
-      if [ -n \"$$MONGO_ROOT_PASSWORD\" ]; then
-        export MONGO_INITDB_ROOT_USERNAME=\"$${MONGO_ROOT_USERNAME:-admin}\";
-        export MONGO_INITDB_ROOT_PASSWORD=\"$$MONGO_ROOT_PASSWORD\";
-      else
-        unset MONGO_INITDB_ROOT_USERNAME;
-        unset MONGO_INITDB_ROOT_PASSWORD;
-      fi;
-      exec docker-entrypoint.sh mongod --bind_ip_all $${MONGO_ROOT_PASSWORD:+--auth}
-      "
-    volumes:
-      - mongodb_dev_data:/data/db
-      # - mongodb_data:/data/db
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "if [ -n \"$$MONGO_ROOT_PASSWORD\" ]; then mongosh --quiet --username $$MONGO_ROOT_USERNAME --password $$MONGO_ROOT_PASSWORD --authenticationDatabase admin --eval \"db.adminCommand('ping')\"; else mongosh --quiet --eval \"db.adminCommand('ping')\"; fi"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+  # MongoDB service is commented out for cloud deployment
+  # To use local MongoDB, uncomment this section and update connection strings in .env files
+  # For cloud MongoDB (MongoDB Atlas), set MONGO_URI, MONGO_DETAILS, and DATABASE_URI
+  # in your environment files to point to your cloud MongoDB instance.
+  # See docs/deployment/MONGODB_CLOUD_MIGRATION.md for migration guide.
+  # mongodb:
+  #   image: mongo:7.0
+  #   container_name: litecoin-mongodb
+  #   env_file:
+  #     - ./.env.docker.prod
+  #   environment:
+  #     # Only set init DB variables if MONGO_ROOT_PASSWORD is set
+  #     # MongoDB requires both USERNAME and PASSWORD to be set together
+  #     - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USERNAME:-admin}
+  #     - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:-}
+  #   # Only enable --auth if MONGO_ROOT_PASSWORD is set
+  #   # --bind_ip_all allows connections from other containers
+  #   # Use entrypoint override to conditionally set/unset init DB vars
+  #   entrypoint: >
+  #     sh -c "
+  #     if [ -n \"$$MONGO_ROOT_PASSWORD\" ]; then
+  #       export MONGO_INITDB_ROOT_USERNAME=\"$${MONGO_ROOT_USERNAME:-admin}\";
+  #       export MONGO_INITDB_ROOT_PASSWORD=\"$$MONGO_ROOT_PASSWORD\";
+  #     else
+  #       unset MONGO_INITDB_ROOT_USERNAME;
+  #       unset MONGO_INITDB_ROOT_PASSWORD;
+  #     fi;
+  #     exec docker-entrypoint.sh mongod --bind_ip_all $${MONGO_ROOT_PASSWORD:+--auth}
+  #     "
+  #   volumes:
+  #     - mongodb_dev_data:/data/db
+  #     # - mongodb_data:/data/db
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "if [ -n \"$$MONGO_ROOT_PASSWORD\" ]; then mongosh --quiet --username $$MONGO_ROOT_USERNAME --password $$MONGO_ROOT_PASSWORD --authenticationDatabase admin --eval \"db.adminCommand('ping')\"; else mongosh --quiet --eval \"db.adminCommand('ping')\"; fi"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 5
+  #     start_period: 30s
 
   backend:
     build:
@@ -60,8 +65,8 @@ services:
       # Or set: ADMIN_FRONTEND_URL=http://localhost:3003 (automatically added to CORS)
       - CORS_ORIGINS=${CORS_ORIGINS}
     depends_on:
-      mongodb:
-        condition: service_healthy
+      # mongodb:
+      #   condition: service_healthy
       payload_cms:
         condition: service_healthy
     volumes:
@@ -88,9 +93,9 @@ services:
       # Production-specific overrides
       # Note: PAYLOAD_SECRET is loaded from ./payload_cms/.env via env_file above
       - NODE_ENV=production
-    depends_on:
-      mongodb:
-        condition: service_healthy
+    # depends_on:
+    #   # mongodb:
+    #   #   condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
@@ -225,6 +230,6 @@ services:
 volumes:
   prometheus_data:
   grafana_data:
-  mongodb_dev_data:
+  # mongodb_dev_data:  # Commented out - using cloud MongoDB
   redis_data:
 

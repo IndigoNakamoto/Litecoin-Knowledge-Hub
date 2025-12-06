@@ -125,3 +125,6 @@ backend/.env.bak
 backend/faiss_index/
 faiss_index/
 backend/monitoring/data/llm_cost_totals.json
+
+# MongoDB Backups
+mongodb-migration-backup/
