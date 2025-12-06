@@ -934,7 +934,166 @@ redis_cache_memory_usage_bytes = Gauge("redis_cache_memory_usage_bytes")
 
 ---
 
-## Future Enhancements
+## Response Quality Optimization
+
+### Current Configuration
+
+The current RAG pipeline uses:
+- **Model**: `gemini-2.5-flash-lite-preview-09-2025` (lite version)
+- **Documents Retrieved**: `RETRIEVER_K = 8` (configurable via env var)
+- **Temperature**: `0.2` (conservative, very factual)
+- **Max Output Tokens**: Not explicitly set (defaults to model maximum)
+- **Chat History**: `MAX_CHAT_HISTORY_PAIRS = 2` (last 2 exchanges)
+
+### Options to Improve Response Quality
+
+#### 1. Increase Documents Retrieved (Easiest, Low Cost)
+
+**Impact**: Medium  
+**Cost**: Low (more context tokens, same generation cost)
+
+```python
+# Current: RETRIEVER_K = 8
+# Recommended: RETRIEVER_K = 12 or 16
+```
+
+**Pros**:
+- More context for the model
+- Better coverage of related topics
+- Easy to test and tune
+
+**Cons**:
+- More input tokens (higher cost)
+- Risk of irrelevant docs diluting context
+- Slightly slower retrieval
+
+**Recommendation**: Start with `RETRIEVER_K=12`, monitor quality vs. cost.
+
+---
+
+#### 2. Increase Max Output Tokens (If Responses Are Being Cut Off)
+
+**Impact**: High (if truncation is the issue)  
+**Cost**: Medium (more output tokens)
+
+```python
+# Add to ChatGoogleGenerativeAI initialization:
+self.llm = ChatGoogleGenerativeAI(
+    model=LLM_MODEL_NAME,
+    temperature=0.2,
+    max_output_tokens=4096,  # or 8192 if model supports it
+    google_api_key=google_api_key,
+    ...
+)
+```
+
+**Pros**:
+- Allows longer, more detailed responses
+- Better for complex topics requiring depth
+
+**Cons**:
+- Higher cost per response
+- Slower generation
+- May produce unnecessarily verbose answers
+
+**Recommendation**: Only if responses are being truncated. Check if answers end mid-sentence.
+
+---
+
+#### 3. Upgrade to Larger Model (Highest Impact, Higher Cost)
+
+**Impact**: High  
+**Cost**: High
+
+**Current**: `gemini-2.5-flash-lite-preview-09-2025`  
+**Options**:
+- `gemini-2.5-flash-preview-09-2025` (full Flash, better quality)
+- `gemini-2.0-flash-exp` (if available)
+- `gemini-1.5-pro` (best quality, slower/more expensive)
+
+**Pros**:
+- Better understanding and reasoning
+- More nuanced responses
+- Better at following complex instructions
+
+**Cons**:
+- Higher cost (2-5x)
+- Slower latency
+- May be overkill for simple queries
+
+**Recommendation**: Test `gemini-2.5-flash-preview` first (drop the "lite"). Good balance of quality and cost.
+
+---
+
+#### 4. Adjust Temperature (Free, Quick Test)
+
+**Impact**: Low-Medium  
+**Cost**: None
+
+```python
+# Current: temperature=0.2 (very conservative)
+# Recommended: temperature=0.4-0.6 (more natural, slightly more creative)
+```
+
+**Pros**:
+- More natural language
+- Better for conversational tone
+- No cost change
+
+**Cons**:
+- Slightly less deterministic
+- May occasionally hallucinate
+
+**Recommendation**: Try `0.4` for more natural tone while staying factual.
+
+---
+
+### Recommended Testing Order
+
+1. **Increase `RETRIEVER_K` to 12**
+   - Set `RETRIEVER_K=12` in env
+   - Test on a few queries
+   - Monitor cost vs. quality
+
+2. **Upgrade Model** (if budget allows)
+   - Change to `gemini-2.5-flash-preview-09-2025`
+   - Compare quality on same queries
+
+3. **Increase Max Output Tokens** (if truncation occurs)
+   - Add `max_output_tokens=4096` to LLM init
+   - Monitor if responses improve
+
+4. **Adjust Temperature** (optional)
+   - Try `0.4` for more natural responses
+
+### Cost Impact Estimate
+
+| Change | Cost Multiplier | Latency Impact |
+|--------|----------------|----------------|
+| `RETRIEVER_K: 8→12` | ~1.2x (input tokens) | +50-100ms |
+| `max_output_tokens: default→4096` | ~1.5-2x (output tokens) | +200-500ms |
+| `lite → flash` | ~2-3x | +100-300ms |
+| `flash → pro` | ~5-10x | +500-1000ms |
+
+### Quick Win Configuration
+
+For immediate quality improvement with moderate cost increase:
+
+```python
+# In backend/rag_pipeline.py:
+RETRIEVER_K = int(os.getenv("RETRIEVER_K", "12"))  # Changed from 8
+LLM_MODEL_NAME = "gemini-2.5-flash-preview-09-2025"  # Drop "lite"
+temperature=0.4,  # Changed from 0.2
+```
+
+**Expected Results**:
+- More context (12 docs vs 8)
+- Better model quality (flash vs lite)
+- More natural tone (temp 0.4 vs 0.2)
+- Moderate cost increase (~2-3x)
+
+---
+
 
 ### Phase 2: Advanced Optimizations
 
