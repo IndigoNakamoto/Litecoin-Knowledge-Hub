@@ -42,6 +42,8 @@ These variables differ based on the environment (localhost vs Docker service nam
 
 These variables use different hostnames based on the environment. **Authentication is required for production deployments** (see [MongoDB/Redis Authentication Migration Guide](./MONGODB_REDIS_AUTH_MIGRATION.md)).
 
+#### Local MongoDB (Docker Container)
+
 | Variable | Local Dev | Docker (No Auth) | Docker (With Auth) | Description |
 |----------|-----------|------------------|-------------------|-------------|
 | `MONGO_URI` | `mongodb://localhost:27017` | `mongodb://mongodb:27017` | `mongodb://litecoin_app:PASSWORD@mongodb:27017/litecoin_rag_db?authSource=litecoin_rag_db` | MongoDB connection string |
@@ -51,9 +53,38 @@ These variables use different hostnames based on the environment. **Authenticati
 | `DATABASE_URI` | `mongodb://localhost:27017/payload_cms` | `mongodb://mongodb:27017/payload_cms` | `mongodb://litecoin_app:PASSWORD@mongodb:27017/payload_cms?authSource=payload_cms` | Payload CMS database URI |
 | `REDIS_URL` | `redis://localhost:6379/0` | `redis://redis:6379/0` | `redis://:PASSWORD@redis:6379/0` | Redis connection URL (used for rate limiting and suggested question cache) |
 
-**Where to set:** Root-level `.env.*` files
-
 **Note:** Replace `PASSWORD` with actual passwords from `MONGO_APP_PASSWORD` and `REDIS_PASSWORD` environment variables. The `authSource` parameter tells MongoDB which database to authenticate against.
+
+#### Cloud MongoDB (MongoDB Atlas)
+
+For cloud deployments using MongoDB Atlas, use connection strings in the format:
+
+| Variable | Cloud MongoDB (Atlas) | Description |
+|----------|----------------------|-------------|
+| `MONGO_URI` | `mongodb+srv://username:password@cluster.mongodb.net/litecoin_rag_db?retryWrites=true&w=majority` | MongoDB Atlas connection string for backend |
+| `MONGO_DETAILS` | `mongodb+srv://username:password@cluster.mongodb.net/litecoin_rag_db?retryWrites=true&w=majority` | MongoDB Atlas connection string (alias, same as MONGO_URI) |
+| `DATABASE_URI` | `mongodb+srv://username:password@cluster.mongodb.net/payload_cms?retryWrites=true&w=majority` | MongoDB Atlas connection string for Payload CMS |
+
+**Example Atlas Connection Strings:**
+```bash
+# Backend MongoDB connection
+MONGO_URI=mongodb+srv://litecoin_app:YOUR_PASSWORD@cluster0.xxxxx.mongodb.net/litecoin_rag_db?retryWrites=true&w=majority
+MONGO_DETAILS=mongodb+srv://litecoin_app:YOUR_PASSWORD@cluster0.xxxxx.mongodb.net/litecoin_rag_db?retryWrites=true&w=majority
+
+# Payload CMS MongoDB connection
+DATABASE_URI=mongodb+srv://litecoin_app:YOUR_PASSWORD@cluster0.xxxxx.mongodb.net/payload_cms?retryWrites=true&w=majority
+```
+
+**Important Notes for Cloud MongoDB:**
+- **URL Encoding:** If your password contains special characters, URL-encode them (e.g., `@` becomes `%40`, `:` becomes `%3A`)
+- **Network Access:** Ensure your server IPs are whitelisted in MongoDB Atlas Network Access settings
+- **Authentication:** Atlas requires authentication - ensure username and password are in the connection string
+- **SSL/TLS:** The `mongodb+srv://` protocol automatically uses SSL/TLS encryption
+- **Database Names:** Can use the same database or separate databases (`litecoin_rag_db` and `payload_cms`)
+
+**Migration Guide:** See [MongoDB Cloud Migration Guide](../deployment/MONGODB_CLOUD_MIGRATION.md) for step-by-step instructions on migrating from local MongoDB to MongoDB Atlas.
+
+**Where to set:** Root-level `.env.*` files (e.g., `.env.docker.prod` for production)
 
 ### 3. Secrets
 
@@ -232,6 +263,8 @@ docker-compose -f docker-compose.prod.yml down -v
 
 ### For Docker Production
 
+#### Option A: Using Local MongoDB (Docker Container)
+
 1. Copy `.env.example` to `.env.docker.prod`:
    ```bash
    cp .env.example .env.docker.prod
@@ -267,10 +300,54 @@ docker-compose -f docker-compose.prod.yml down -v
 
 6. **Before first run with authentication:** Create MongoDB users (see [MongoDB/Redis Authentication Migration Guide](./MONGODB_REDIS_AUTH_MIGRATION.md))
 
-7. Run with:
+7. **Uncomment MongoDB service** in `docker-compose.prod.yml` if using local MongoDB
+
+8. Run with:
    ```bash
    docker-compose -f docker-compose.prod.yml up
    ```
+
+#### Option B: Using Cloud MongoDB (MongoDB Atlas) - Recommended
+
+1. Copy `.env.example` to `.env.docker.prod`:
+   ```bash
+   cp .env.example .env.docker.prod
+   ```
+
+2. Set up MongoDB Atlas cluster (see [MongoDB Cloud Migration Guide](../deployment/MONGODB_CLOUD_MIGRATION.md))
+
+3. Update production URLs in `.env.docker.prod`:
+   - `PAYLOAD_PUBLIC_SERVER_URL=https://cms.lite.space`
+   - `FRONTEND_URL=https://chat.lite.space`
+   - `NEXT_PUBLIC_BACKEND_URL=https://api.lite.space`
+   - `NEXT_PUBLIC_PAYLOAD_URL=https://cms.lite.space`
+   - `CORS_ORIGINS=https://chat.lite.space,https://www.chat.lite.space`
+
+4. Add MongoDB Atlas connection strings to `.env.docker.prod`:
+   ```bash
+   # MongoDB Atlas connection strings
+   MONGO_URI=mongodb+srv://litecoin_app:YOUR_PASSWORD@cluster0.xxxxx.mongodb.net/litecoin_rag_db?retryWrites=true&w=majority
+   MONGO_DETAILS=mongodb+srv://litecoin_app:YOUR_PASSWORD@cluster0.xxxxx.mongodb.net/litecoin_rag_db?retryWrites=true&w=majority
+   DATABASE_URI=mongodb+srv://litecoin_app:YOUR_PASSWORD@cluster0.xxxxx.mongodb.net/payload_cms?retryWrites=true&w=majority
+   ```
+
+5. Generate Redis password (if using local Redis):
+   ```bash
+   REDIS_PASSWORD=$(openssl rand -base64 32)
+   echo "REDIS_PASSWORD=$REDIS_PASSWORD" >> .env.docker.prod
+   echo "REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0" >> .env.docker.prod
+   ```
+
+6. Ensure service-specific `.env` files have production secrets
+
+7. **MongoDB service is already commented out** in `docker-compose.prod.yml` for cloud MongoDB
+
+8. Run with:
+   ```bash
+   docker-compose -f docker-compose.prod.yml up
+   ```
+
+**Note:** The `docker-compose.prod.yml` file has MongoDB service commented out by default for cloud deployments. Uncomment it only if you want to use local MongoDB.
 
 ### For Local Production Build Verification
 

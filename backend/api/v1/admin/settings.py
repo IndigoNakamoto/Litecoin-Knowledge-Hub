@@ -42,10 +42,10 @@ class AbusePreventionSettings(BaseModel):
     high_cost_window_seconds: Optional[int] = Field(None, ge=60, description="High cost window in seconds")
     enable_cost_throttling: Optional[bool] = Field(None, description="Enable cost-based throttling")
     cost_throttle_duration_seconds: Optional[int] = Field(None, ge=1, description="Cost throttle duration in seconds")
-    daily_cost_limit_usd: Optional[float] = Field(None, ge=0.01, description="Daily cost limit per identifier in USD")
+    daily_cost_limit_usd: Optional[float] = Field(None, ge=0.0001, description="Daily cost limit per identifier in USD")
     challenge_request_rate_limit_seconds: Optional[int] = Field(None, ge=1, description="Challenge request rate limit in seconds")
-    daily_spend_limit_usd: Optional[float] = Field(None, ge=0.01, description="Global daily LLM spend limit in USD")
-    hourly_spend_limit_usd: Optional[float] = Field(None, ge=0.01, description="Global hourly LLM spend limit in USD")
+    daily_spend_limit_usd: Optional[float] = Field(None, ge=0.0001, description="Global daily LLM spend limit in USD")
+    hourly_spend_limit_usd: Optional[float] = Field(None, ge=0.0001, description="Global hourly LLM spend limit in USD")
 
 
 def verify_admin_token(authorization: str = None) -> bool:

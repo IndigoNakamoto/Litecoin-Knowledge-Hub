@@ -257,8 +257,8 @@ async def check_cost_based_throttling(
             throttle_duration = ttl_or_duration
             logger.warning(
                 f"Daily cost limit exceeded for stable_identifier {stable_identifier} (fingerprint: {fingerprint}). "
-                f"Estimated cost: ${estimated_cost:.4f}, "
-                f"Daily limit: ${daily_cost_limit_usd:.2f}"
+                f"Estimated cost: ${estimated_cost:.6f}, "
+                f"Daily limit: ${daily_cost_limit_usd:.6f}"
             )
             if METRICS_ENABLED:
                 cost_throttle_triggers_total.labels(reason="daily_limit").inc()
@@ -269,8 +269,8 @@ async def check_cost_based_throttling(
             throttle_duration = ttl_or_duration
             logger.warning(
                 f"Cost-based throttling triggered for stable_identifier {stable_identifier} (fingerprint: {fingerprint}). "
-                f"Estimated cost: ${estimated_cost:.4f}, "
-                f"Threshold: ${high_cost_threshold_usd:.2f}"
+                f"Estimated cost: ${estimated_cost:.6f}, "
+                f"Threshold: ${high_cost_threshold_usd:.6f}"
             )
             if METRICS_ENABLED:
                 cost_throttle_triggers_total.labels(reason="window_burst").inc()

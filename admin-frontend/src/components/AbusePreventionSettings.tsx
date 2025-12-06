@@ -162,10 +162,10 @@ export function AbusePreventionSettings() {
                 <Input
                   id="daily_spend_limit_usd"
                   type="number"
-                  step="0.01"
+                  step="0.0001"
                   value={settings.daily_spend_limit_usd || ""}
                   onChange={(e) => updateSetting("daily_spend_limit_usd", parseFloat(e.target.value) || undefined)}
-                  min="0.01"
+                  min="0.0001"
                 />
               </div>
               <div className="space-y-2">
@@ -180,10 +180,10 @@ export function AbusePreventionSettings() {
                 <Input
                   id="hourly_spend_limit_usd"
                   type="number"
-                  step="0.01"
+                  step="0.0001"
                   value={settings.hourly_spend_limit_usd || ""}
                   onChange={(e) => updateSetting("hourly_spend_limit_usd", parseFloat(e.target.value) || undefined)}
-                  min="0.01"
+                  min="0.0001"
                 />
               </div>
               <div className="flex items-center space-x-2">
@@ -297,10 +297,10 @@ export function AbusePreventionSettings() {
                 <Input
                   id="daily_cost_limit_usd"
                   type="number"
-                  step="0.01"
+                  step="0.0001"
                   value={settings.daily_cost_limit_usd || ""}
                   onChange={(e) => updateSetting("daily_cost_limit_usd", parseFloat(e.target.value) || undefined)}
-                  min="0.01"
+                  min="0.0001"
                 />
               </div>
             </CardContent>
