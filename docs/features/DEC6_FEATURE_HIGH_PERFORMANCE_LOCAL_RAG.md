@@ -318,10 +318,13 @@ MAX_LOCAL_QUEUE_DEPTH=3       # If >3 concurrent requests, use Gemini
 LOCAL_TIMEOUT_SECONDS=2.0     # If local hangs, cancel and use Gemini
 GEMINI_API_KEY="${GOOGLE_API_KEY}"  # Reuse existing
 
-# Service URLs (Docker internal)
-OLLAMA_URL="http://ollama:11434"
-INFINITY_URL="http://infinity:7997"
-REDIS_STACK_URL="redis://redis_stack:6379"
+# Service URLs
+# Note: Docker container names (e.g., http://ollama:11434) work when backend runs inside Docker.
+# When running scripts from host (Mac terminal), use localhost instead (e.g., http://localhost:11434).
+# See Phase 5.5 for details on running migration scripts from host.
+OLLAMA_URL="http://ollama:11434"  # Use "http://localhost:11434" when running from host
+INFINITY_URL="http://infinity:7997"  # Use "http://localhost:7997" when running from host
+REDIS_STACK_URL="redis://redis_stack:6379"  # Use "redis://localhost:6379" when running from host
 
 # Redis Stack Vector Cache Config
 REDIS_CACHE_INDEX_NAME="cache:index"
@@ -465,9 +468,19 @@ class GeminiRewriter:
 
 **Implementation**:
 ```python
+from typing import Optional
+
 class InfinityEmbeddings:
-    def __init__(self):
-        self.infinity_url = os.getenv("INFINITY_URL", "http://localhost:7997")
+    def __init__(self, infinity_url: Optional[str] = None):
+        """Initialize Infinity embeddings client.
+        
+        Args:
+            infinity_url: Optional override for Infinity service URL.
+                         If None, uses INFINITY_URL env var or defaults to localhost.
+                         Use 'http://localhost:7997' when running from host,
+                         or 'http://infinity:7997' when running from Docker.
+        """
+        self.infinity_url = infinity_url or os.getenv("INFINITY_URL", "http://localhost:7997")
         self.model_id = os.getenv("EMBEDDING_MODEL_ID", "dunzhang/stella_en_1.5B_v5")
     
     async def embed_query(self, text: str) -> List[float]:
@@ -563,6 +576,45 @@ async def reindex_vectors():
 ```bash
 python scripts/reindex_vectors.py
 ```
+
+**⚠️ Docker vs. Host Networking Nuance**:
+
+This script will likely be run from your Mac terminal (host), not inside a Docker container. However, the service URLs in Phase 2 are configured with Docker container names (e.g., `http://infinity:7997`).
+
+**The Problem**:
+- When the backend runs **inside Docker**: Container names like `http://infinity:7997` work perfectly (Docker's internal DNS resolves them)
+- When running scripts from **Mac terminal (host)**: Container names cannot be resolved. You'll get connection errors like `Failed to resolve 'infinity'` or `Name resolution failed`
+
+**Solutions**:
+
+**Option 1: Override URL in Script** (Recommended)
+Update `InfinityEmbeddings` to support hostname override:
+```python
+class InfinityEmbeddings:
+    def __init__(self, infinity_url: Optional[str] = None):
+        self.infinity_url = infinity_url or os.getenv("INFINITY_URL", "http://localhost:7997")
+        # ... rest of implementation
+```
+
+Then in `reindex_vectors.py`:
+```python
+# When running from host, override with localhost
+infinity_embeddings = InfinityEmbeddings(infinity_url="http://localhost:7997")
+```
+
+**Option 2: Temporarily Swap Environment Variable**
+Before running the script from host:
+```bash
+export INFINITY_URL="http://localhost:7997"
+python scripts/reindex_vectors.py
+```
+
+**Option 3: Use Docker Exec** (Run script inside backend container)
+```bash
+docker exec -it litecoin-backend python scripts/reindex_vectors.py
+```
+
+**Recommendation**: Implement Option 1 for flexibility. The script should detect if it's running from host and automatically use `localhost`, or allow explicit override via parameter.
 
 **Success Criteria**:
 - ✅ All documents re-indexed with 1024-dim vectors
@@ -1094,6 +1146,7 @@ temperature=0.4,  # Changed from 0.2
 
 ---
 
+## Future Enhancements
 
 ### Phase 2: Advanced Optimizations
 
