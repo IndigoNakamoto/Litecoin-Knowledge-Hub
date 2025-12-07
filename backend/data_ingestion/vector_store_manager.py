@@ -222,9 +222,29 @@ class VectorStoreManager:
             logger.warning("MONGO_URI not set. Using FAISS only mode.")
             self.mongodb_available = False
 
-        # Initialize embeddings (local or Google)
-        self.embeddings = get_embedding_model()
-        self.faiss_index_path = os.getenv("FAISS_INDEX_PATH", "./backend/faiss_index")
+        # Check if we should use Infinity embeddings with 1024-dim index
+        self.use_infinity = os.getenv("USE_INFINITY_EMBEDDINGS", "false").lower() == "true"
+        
+        if self.use_infinity:
+            # Use 1024-dim index with placeholder embeddings
+            # Actual embedding is done by InfinityEmbeddings, FAISS just needs a compatible function
+            self.faiss_index_path = os.getenv("FAISS_INDEX_PATH_1024", "./backend/faiss_index_1024")
+            logger.info(f"Using Infinity embeddings mode with 1024-dim index: {self.faiss_index_path}")
+            
+            # Placeholder embeddings for LangChain FAISS compatibility
+            # The actual embedding is done externally via InfinityEmbeddings
+            class PlaceholderEmbeddings:
+                """Placeholder for LangChain FAISS compatibility when using external embeddings."""
+                def embed_documents(self, texts): 
+                    raise NotImplementedError("Use InfinityEmbeddings.embed_documents() instead")
+                def embed_query(self, text):
+                    raise NotImplementedError("Use InfinityEmbeddings.embed_query() instead")
+            
+            self.embeddings = PlaceholderEmbeddings()
+        else:
+            # Initialize embeddings (local or Google) - legacy mode
+            self.embeddings = get_embedding_model()
+            self.faiss_index_path = os.getenv("FAISS_INDEX_PATH", "./backend/faiss_index")
         
         # Ensure directory exists
         os.makedirs(self.faiss_index_path, exist_ok=True)

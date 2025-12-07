@@ -1,0 +1,458 @@
+"""
+Redis Stack Vector Cache
+
+Provides semantic caching using Redis Stack's vector search capabilities.
+Uses HNSW index for fast approximate nearest neighbor search with
+cosine similarity.
+
+The cache stores rewritten query vectors alongside their responses,
+enabling semantic matching for similar queries (not just exact matches).
+
+Features:
+- HNSW vector index (1024-dim for stella_en_1.5B_v5)
+- Cosine similarity with configurable threshold (default: 0.90)
+- LFU eviction via Redis maxmemory-policy
+- Persistent storage with optional AOF
+
+Usage:
+    cache = RedisVectorCache()
+    
+    # Check cache
+    result = await cache.get(query_vector)
+    if result:
+        answer, sources = result
+    
+    # Store in cache
+    await cache.set(query_vector, answer, sources)
+"""
+
+import os
+import json
+import hashlib
+import logging
+from typing import List, Optional, Tuple, Any, Dict
+from dataclasses import dataclass
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+# Import metrics if available
+try:
+    from prometheus_client import Counter, Gauge, Histogram
+    
+    redis_cache_hits_total = Counter(
+        "redis_vector_cache_hits_total",
+        "Total Redis vector cache hits"
+    )
+    redis_cache_misses_total = Counter(
+        "redis_vector_cache_misses_total",
+        "Total Redis vector cache misses"
+    )
+    redis_cache_size = Gauge(
+        "redis_vector_cache_size",
+        "Number of entries in Redis vector cache"
+    )
+    redis_cache_memory_bytes = Gauge(
+        "redis_vector_cache_memory_bytes",
+        "Memory usage of Redis vector cache in bytes"
+    )
+    redis_cache_lookup_seconds = Histogram(
+        "redis_vector_cache_lookup_seconds",
+        "Redis vector cache lookup latency",
+        buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25]
+    )
+    METRICS_ENABLED = True
+except ImportError:
+    METRICS_ENABLED = False
+    logger.debug("Prometheus metrics not available for Redis cache")
+
+
+@dataclass
+class CacheEntry:
+    """Cached query-response entry."""
+    query: str
+    response: str
+    sources: List[Dict[str, Any]]
+    similarity: float
+
+
+class RedisVectorCache:
+    """
+    Redis Stack vector cache with HNSW index.
+    
+    Uses Redis Stack's vector search capabilities for semantic caching.
+    Queries are matched based on embedding similarity rather than exact match.
+    
+    Attributes:
+        redis_url: Redis Stack connection URL
+        index_name: Name of the vector search index
+        dimension: Vector dimension (1024 for stella_en_1.5B_v5)
+        threshold: Minimum similarity for cache hit (default: 0.90)
+    """
+    
+    INDEX_NAME = "cache:semantic_index"
+    KEY_PREFIX = "cache:entry:"
+    
+    def __init__(
+        self,
+        redis_url: Optional[str] = None,
+        index_name: Optional[str] = None,
+        dimension: Optional[int] = None,
+        threshold: Optional[float] = None,
+    ):
+        """
+        Initialize Redis vector cache.
+        
+        Args:
+            redis_url: Redis Stack URL (default: REDIS_STACK_URL env var)
+            index_name: Index name (default: REDIS_CACHE_INDEX_NAME env var)
+            dimension: Vector dimension (default: VECTOR_DIMENSION env var or 1024)
+            threshold: Similarity threshold (default: REDIS_CACHE_SIMILARITY_THRESHOLD env var or 0.90)
+        """
+        self.redis_url = redis_url or os.getenv("REDIS_STACK_URL", "redis://localhost:6379")
+        self.index_name = index_name or os.getenv("REDIS_CACHE_INDEX_NAME", self.INDEX_NAME)
+        self.dimension = dimension or int(os.getenv("VECTOR_DIMENSION", "1024"))
+        self.threshold = threshold or float(os.getenv("REDIS_CACHE_SIMILARITY_THRESHOLD", "0.90"))
+        
+        self._client = None
+        self._index_created = False
+        
+        logger.info(
+            f"RedisVectorCache initialized: url={self._mask_url(self.redis_url)}, "
+            f"index={self.index_name}, dim={self.dimension}, threshold={self.threshold}"
+        )
+    
+    def _mask_url(self, url: str) -> str:
+        """Mask password in URL for logging."""
+        if "@" in url:
+            parts = url.split("@")
+            return f"redis://***@{parts[-1]}"
+        return url
+    
+    async def _get_client(self):
+        """Get or create Redis client with vector search support."""
+        if self._client is None:
+            try:
+                import redis.asyncio as redis
+                
+                self._client = redis.from_url(
+                    self.redis_url,
+                    decode_responses=False,  # Need bytes for vectors
+                )
+                
+                # Test connection
+                await self._client.ping()
+                logger.info("Redis Stack connection established")
+                
+                # Ensure index exists
+                await self._ensure_index()
+                
+            except ImportError:
+                logger.error("redis package not installed. Install with: pip install redis")
+                raise
+            except Exception as e:
+                logger.error(f"Failed to connect to Redis Stack: {e}")
+                raise
+        
+        return self._client
+    
+    async def _ensure_index(self):
+        """Create vector search index if it doesn't exist."""
+        client = self._client
+        
+        try:
+            # Check if index exists
+            try:
+                await client.ft(self.index_name).info()
+                logger.debug(f"Vector index '{self.index_name}' already exists")
+                self._index_created = True
+                return
+            except Exception as e:
+                # Index doesn't exist, create it
+                logger.debug(f"Index '{self.index_name}' not found, creating it: {e}")
+            
+            # Create HNSW vector index
+            from redis.commands.search.field import VectorField, TextField
+            from redis.commands.search.index_definition import IndexDefinition, IndexType
+            
+            schema = [
+                VectorField(
+                    "embedding",
+                    "HNSW",
+                    {
+                        "TYPE": "FLOAT32",
+                        "DIM": self.dimension,
+                        "DISTANCE_METRIC": "COSINE",
+                        "INITIAL_CAP": 1000,
+                        "M": 16,
+                        "EF_CONSTRUCTION": 200,
+                    },
+                ),
+                TextField("query"),
+                TextField("response"),
+            ]
+            
+            definition = IndexDefinition(
+                prefix=[self.KEY_PREFIX],
+                index_type=IndexType.HASH,
+            )
+            
+            await client.ft(self.index_name).create_index(
+                schema,
+                definition=definition,
+            )
+            
+            logger.info(f"Created vector index '{self.index_name}' (dim={self.dimension})")
+            self._index_created = True
+            
+        except Exception as e:
+            # If index creation fails, reset flag to retry next time
+            self._index_created = False
+            logger.error(f"Failed to create vector index: {e}", exc_info=True)
+            raise
+    
+    def _vector_to_bytes(self, vector: List[float]) -> bytes:
+        """Convert vector to bytes for Redis storage."""
+        return np.array(vector, dtype=np.float32).tobytes()
+    
+    def _bytes_to_vector(self, data: bytes) -> List[float]:
+        """Convert bytes back to vector."""
+        return np.frombuffer(data, dtype=np.float32).tolist()
+    
+    def _generate_key(self, vector: List[float]) -> str:
+        """Generate cache key from vector hash."""
+        vector_bytes = self._vector_to_bytes(vector)
+        hash_value = hashlib.md5(vector_bytes).hexdigest()
+        return f"{self.KEY_PREFIX}{hash_value}"
+    
+    async def get(
+        self,
+        query_vector: List[float],
+        k: int = 1,
+    ) -> Optional[Tuple[str, List[Dict[str, Any]]]]:
+        """
+        Search cache for similar query.
+        
+        Args:
+            query_vector: Query embedding vector
+            k: Number of results to return (default: 1)
+            
+        Returns:
+            Tuple of (response, sources) if cache hit, None if miss
+        """
+        import time
+        start_time = time.time()
+        
+        try:
+            client = await self._get_client()
+            
+            # Ensure index exists (in case it was lost after restart)
+            await self._ensure_index()
+            
+            from redis.commands.search.query import Query
+            
+            # Build KNN query
+            query_bytes = self._vector_to_bytes(query_vector)
+            
+            q = (
+                Query(f"*=>[KNN {k} @embedding $vec AS score]")
+                .return_fields("query", "response", "sources", "score")
+                .sort_by("score")
+                .dialect(2)
+            )
+            
+            results = await client.ft(self.index_name).search(
+                q,
+                query_params={"vec": query_bytes},
+            )
+            
+            latency = time.time() - start_time
+            if METRICS_ENABLED:
+                redis_cache_lookup_seconds.observe(latency)
+            
+            if not results.docs:
+                if METRICS_ENABLED:
+                    redis_cache_misses_total.inc()
+                logger.debug(f"Cache miss (no results) in {latency:.3f}s")
+                return None
+            
+            # Check similarity threshold
+            # Redis returns cosine distance (0 = identical, 2 = opposite)
+            # Convert to similarity: similarity = 1 - (distance / 2)
+            best_match = results.docs[0]
+            distance = float(best_match.score)
+            similarity = 1 - (distance / 2)
+            
+            if similarity < self.threshold:
+                if METRICS_ENABLED:
+                    redis_cache_misses_total.inc()
+                logger.debug(
+                    f"Cache miss (similarity {similarity:.3f} < threshold {self.threshold}) "
+                    f"in {latency:.3f}s"
+                )
+                return None
+            
+            # Cache hit!
+            if METRICS_ENABLED:
+                redis_cache_hits_total.inc()
+            
+            response = best_match.response
+            if isinstance(response, bytes):
+                response = response.decode("utf-8")
+            
+            sources_raw = best_match.sources
+            if isinstance(sources_raw, bytes):
+                sources_raw = sources_raw.decode("utf-8")
+            sources = json.loads(sources_raw) if sources_raw else []
+            
+            logger.debug(
+                f"Cache hit (similarity {similarity:.3f}) in {latency:.3f}s"
+            )
+            return response, sources
+            
+        except Exception as e:
+            logger.error(f"Redis cache get error: {e}")
+            if METRICS_ENABLED:
+                redis_cache_misses_total.inc()
+            return None
+    
+    async def set(
+        self,
+        query_vector: List[float],
+        query_text: str,
+        response: str,
+        sources: List[Dict[str, Any]],
+    ) -> bool:
+        """
+        Store entry in cache.
+        
+        Args:
+            query_vector: Query embedding vector
+            query_text: Original query text (for debugging)
+            response: Response to cache
+            sources: Source documents
+            
+        Returns:
+            True if stored successfully, False otherwise
+        """
+        try:
+            client = await self._get_client()
+            
+            key = self._generate_key(query_vector)
+            
+            # Serialize sources
+            sources_json = json.dumps(sources, default=str)
+            
+            # Store as hash with vector
+            await client.hset(
+                key,
+                mapping={
+                    "embedding": self._vector_to_bytes(query_vector),
+                    "query": query_text.encode("utf-8"),
+                    "response": response.encode("utf-8"),
+                    "sources": sources_json.encode("utf-8"),
+                },
+            )
+            
+            logger.debug(f"Cached response for query: {query_text[:50]}...")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Redis cache set error: {e}")
+            return False
+    
+    async def delete(self, query_vector: List[float]) -> bool:
+        """Delete entry from cache."""
+        try:
+            client = await self._get_client()
+            key = self._generate_key(query_vector)
+            await client.delete(key)
+            return True
+        except Exception as e:
+            logger.error(f"Redis cache delete error: {e}")
+            return False
+    
+    async def clear(self) -> bool:
+        """Clear all cache entries."""
+        try:
+            client = await self._get_client()
+            
+            # Get all keys with prefix
+            keys = []
+            async for key in client.scan_iter(match=f"{self.KEY_PREFIX}*"):
+                keys.append(key)
+            
+            if keys:
+                await client.delete(*keys)
+                logger.info(f"Cleared {len(keys)} cache entries")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Redis cache clear error: {e}")
+            return False
+    
+    async def stats(self) -> Dict[str, Any]:
+        """Get cache statistics."""
+        try:
+            client = await self._get_client()
+            
+            # Count entries
+            count = 0
+            async for _ in client.scan_iter(match=f"{self.KEY_PREFIX}*"):
+                count += 1
+            
+            # Get memory info
+            info = await client.info("memory")
+            used_memory = info.get("used_memory", 0)
+            
+            # Get index info
+            try:
+                index_info = await client.ft(self.index_name).info()
+                num_docs = int(index_info.get("num_docs", 0))
+            except Exception:
+                num_docs = count
+            
+            if METRICS_ENABLED:
+                redis_cache_size.set(count)
+                redis_cache_memory_bytes.set(used_memory)
+            
+            return {
+                "entries": count,
+                "indexed_docs": num_docs,
+                "memory_bytes": used_memory,
+                "dimension": self.dimension,
+                "threshold": self.threshold,
+                "index_name": self.index_name,
+            }
+            
+        except Exception as e:
+            logger.error(f"Redis cache stats error: {e}")
+            return {"error": str(e)}
+    
+    async def health_check(self) -> bool:
+        """Check if Redis Stack is healthy."""
+        try:
+            client = await self._get_client()
+            await client.ping()
+            
+            # Check if vector search is available
+            try:
+                await client.ft(self.index_name).info()
+            except Exception:
+                # Index might not exist yet, but Redis is healthy
+                pass
+            
+            return True
+            
+        except Exception as e:
+            logger.warning(f"Redis Stack health check failed: {e}")
+            return False
+    
+    async def close(self):
+        """Close Redis connection."""
+        if self._client:
+            await self._client.close()
+            self._client = None
+            logger.debug("Redis connection closed")
+

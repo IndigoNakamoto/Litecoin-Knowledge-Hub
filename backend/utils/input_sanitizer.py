@@ -9,7 +9,9 @@ from typing import Tuple, Optional
 logger = logging.getLogger(__name__)
 
 # Maximum length for chat queries and search inputs
-MAX_QUERY_LENGTH = 400
+# Increased from 400 to 2000 to accommodate longer chat history messages
+# Individual messages can be long, and we need room for context
+MAX_QUERY_LENGTH = 2000
 
 # Prompt injection patterns to detect and neutralize
 PROMPT_INJECTION_PATTERNS = [

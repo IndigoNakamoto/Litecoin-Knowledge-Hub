@@ -24,6 +24,14 @@ services:
       # Override with password from .env.secrets
       - REDIS_PASSWORD=${REDIS_PASSWORD}
 
+  # Redis Stack for local RAG vector cache (only starts with --profile local-rag)
+  redis_stack:
+    env_file:
+      - ./.env.secrets
+    environment:
+      # Use same password as regular Redis for consistency
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+
   backend:
     env_file:
       - ./.env.secrets
@@ -32,9 +40,10 @@ services:
       # MONGO_DETAILS and MONGO_URI are set in .env.docker.prod with Atlas connection strings
       # - MONGO_DETAILS=mongodb://${MONGO_INITDB_ROOT_USERNAME_ENCODED:-admin}:${MONGO_INITDB_ROOT_PASSWORD_ENCODED}@mongodb:27017/litecoin_rag_db?authSource=admin
       # Redis connection with password (if set, otherwise without password)
-      # Note: If REDIS_PASSWORD is empty, this will create redis://:@redis:6379/0
-      # The redis service handles empty passwords gracefully
-      - REDIS_URL=${REDIS_PASSWORD_ENCODED:+redis://:${REDIS_PASSWORD_ENCODED}@redis:6379/0}${REDIS_PASSWORD_ENCODED:-redis://redis:6379/0}
+      - REDIS_URL=redis://${REDIS_PASSWORD_ENCODED:+:${REDIS_PASSWORD_ENCODED}@}redis:6379/0
+      # Redis Stack URL for local RAG vector cache (uses same password as regular Redis)
+      # Internal port is 6379, external host port is 6380
+      - REDIS_STACK_URL=redis://${REDIS_PASSWORD_ENCODED:+:${REDIS_PASSWORD_ENCODED}@}redis_stack:6379
 
   payload_cms:
     env_file:

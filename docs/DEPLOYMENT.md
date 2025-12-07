@@ -20,6 +20,7 @@ This guide covers deploying all components of the Litecoin Knowledge Hub. The pr
 - [Backend Deployment (FastAPI)](#backend-deployment-fastapi)
 - [Payload CMS Deployment](#payload-cms-deployment)
 - [Docker Deployment (All Services)](#docker-deployment-all-services)
+- [Local RAG Deployment (Optional)](#local-rag-deployment-optional)
 - [Post-Deployment Checklist](#post-deployment-checklist)
 
 ---
@@ -498,6 +499,293 @@ docker-compose -f docker-compose.prod.yml down
 # Stop and remove volumes (WARNING: deletes all data)
 docker-compose -f docker-compose.prod.yml down -v
 ```
+
+---
+
+## Local RAG Deployment (Optional)
+
+The system supports high-performance local RAG with cloud spillover, using local models for query rewriting, embeddings, and caching. This feature is **optional** and can be enabled via the `--local-rag` flag when starting the production stack.
+
+### Overview
+
+Local RAG services include:
+
+1. **Ollama** - Local LLM for query rewriting (recommended: native on macOS for Metal acceleration)
+2. **Infinity Embeddings** - Local embedding server for document embeddings (BGE-M3 model)
+3. **Redis Stack** - Vector cache for semantic caching with HNSW index
+
+### Prerequisites
+
+1. **macOS with Apple Silicon (M1/M2/M3/M4)** - Recommended for native Metal (MPS) acceleration
+   - For x86_64 systems, services will run in Docker with CPU acceleration
+2. **Python 3.9+** - For native embedding server
+3. **Ollama installed** - Download from [ollama.ai](https://ollama.ai) (for native deployment)
+
+### Quick Start
+
+**Option 1: Using the helper script (Recommended)**
+
+```bash
+# Start all services including local RAG
+./scripts/run-prod.sh --local-rag
+
+# Stop all services including local RAG
+./scripts/down-prod.sh
+```
+
+**Option 2: Manual deployment**
+
+```bash
+# 1. Start local RAG services (Redis Stack, Ollama, Embedding Server)
+./scripts/run-local-rag.sh
+
+# 2. Start main production stack
+docker-compose -f docker-compose.prod.yml up -d
+
+# 3. Stop local RAG services
+./scripts/down-local-rag.sh
+```
+
+### Configuration
+
+#### 1. Environment Variables
+
+Add to `.env.docker.prod`:
+
+```bash
+# Local RAG Configuration
+USE_LOCAL_REWRITER=true          # Enable local query rewriting with Ollama
+USE_INFINITY_EMBEDDINGS=true     # Enable local embeddings with Infinity
+USE_REDIS_CACHE=true             # Enable semantic caching with Redis Stack
+
+# Embedding Model (CRITICAL: Must be BAAI/bge-m3 for best quality)
+EMBEDDING_MODEL_ID=BAAI/bge-m3   # Recommended: BGE-M3 (1024-dim, better Q&A)
+# EMBEDDING_MODEL_ID=dunzhang/stella_en_1.5B_v5  # Legacy: Stella 1.5B (not recommended)
+
+# Service URLs
+OLLAMA_URL=http://host.docker.internal:11434              # Native Ollama on macOS
+INFINITY_URL=http://host.docker.internal:7997             # Native embedding server on macOS
+REDIS_STACK_URL=redis://redis_stack:6380                  # Docker Redis Stack
+
+# Router Configuration
+MAX_LOCAL_QUEUE_DEPTH=3           # Max queue depth before spillover to cloud
+LOCAL_TIMEOUT_SECONDS=5.0         # Timeout for local services (seconds)
+
+# Model Configuration
+LOCAL_REWRITER_MODEL=llama3.2:3b  # Ollama model for query rewriting
+VECTOR_DIMENSION=1024              # BGE-M3 vector dimension
+
+# Redis Stack Cache Configuration
+REDIS_CACHE_INDEX_NAME=cache:index
+REDIS_CACHE_SIMILARITY_THRESHOLD=0.90
+```
+
+**⚠️ Important**: 
+- Default `EMBEDDING_MODEL_ID` in code is `BAAI/bge-m3`, but `.env.docker.prod` may override it
+- Always verify your `.env.docker.prod` has `EMBEDDING_MODEL_ID=BAAI/bge-m3` for optimal retrieval quality
+- See [Embedding Model Update Guide](./fixes/EMBEDDING_MODEL_UPDATE.md) for migration instructions
+
+#### 2. Native Ollama Setup (macOS)
+
+For best performance on Apple Silicon, run Ollama natively:
+
+```bash
+# Install Ollama (if not already installed)
+# Download from https://ollama.ai or:
+brew install ollama
+
+# Start Ollama service
+ollama serve
+
+# Pull the model (first time only)
+ollama pull llama3.2:3b
+
+# Verify it's running
+curl http://localhost:11434/api/tags
+```
+
+The `run-local-rag.sh` script will detect native Ollama and skip starting the Dockerized version.
+
+#### 3. Native Embedding Server Setup (macOS)
+
+For Apple Silicon with Metal acceleration:
+
+```bash
+# Create virtual environment (if not already done)
+python3 -m venv ~/infinity-env
+source ~/infinity-env/bin/activate
+
+# Install dependencies
+pip install "sentence-transformers[torch]" fastapi uvicorn scikit-learn
+
+# Start embedding server
+source ~/infinity-env/bin/activate
+export EMBEDDING_MODEL_ID='BAAI/bge-m3'
+python scripts/local-rag/embeddings_server.py --device mps --port 7997 &
+
+# Verify it's running
+curl http://localhost:7997/health
+```
+
+**Note**: First run will download BGE-M3 model (~1.2GB). This is a one-time download.
+
+#### 4. Redis Stack Setup
+
+Redis Stack is started automatically via Docker Compose when using the `--local-rag` flag. It runs as part of the `local-rag` profile:
+
+```bash
+# Verify Redis Stack is running
+docker ps | grep redis_stack
+
+# Check Redis Stack logs
+docker logs litecoin-redis-stack
+```
+
+### Services Architecture
+
+```
+┌─────────────────┐
+│   Frontend      │
+└────────┬────────┘
+         │
+┌────────▼────────┐
+│    Backend      │
+│  (FastAPI)      │
+└────────┬────────┘
+         │
+    ┌────┴──────────────────┐
+    │                       │
+┌───▼────────┐      ┌───────▼──────────┐
+│  Ollama    │      │ Infinity Server  │
+│ (Native)   │      │   (Native MPS)   │
+└────────────┘      └──────────────────┘
+    │                       │
+    └───────────┬───────────┘
+                │
+        ┌───────▼────────┐
+        │  Redis Stack   │
+        │  (Docker)      │
+        └────────────────┘
+```
+
+### Feature Flags
+
+Enable/disable individual components via environment variables:
+
+- `USE_LOCAL_REWRITER=true` - Use Ollama for query rewriting (spills to Gemini if timeout/queue full)
+- `USE_INFINITY_EMBEDDINGS=true` - Use local Infinity server for embeddings (1024-dim BGE-M3)
+- `USE_REDIS_CACHE=true` - Use Redis Stack for semantic caching (HNSW vector index)
+
+All flags default to `false` - enable them explicitly in `.env.docker.prod`.
+
+### Vector Store Re-indexing
+
+After enabling local RAG, you may need to re-index documents with the new embedding model:
+
+```bash
+# Set environment variables
+export INFINITY_URL=http://localhost:7997
+export MONGO_URI="your-mongodb-uri"
+export EMBEDDING_MODEL_ID=BAAI/bge-m3
+
+# Activate virtual environment
+source ~/infinity-env/bin/activate
+
+# Install re-indexing dependencies
+pip install pymongo faiss-cpu langchain langchain-community
+
+# Run re-indexing script
+python scripts/reindex_vectors.py
+```
+
+The script will:
+1. Fetch all documents from MongoDB
+2. Generate 1024-dim embeddings using BGE-M3
+3. Create FAISS index at `backend/faiss_index_1024/`
+4. Update `FAISS_INDEX_PATH_1024` in `.env.docker.prod`
+
+### Verification
+
+1. **Check Ollama**:
+   ```bash
+   curl http://localhost:11434/api/tags
+   # Should return: {"models":[...]}
+   ```
+
+2. **Check Embedding Server**:
+   ```bash
+   curl http://localhost:7997/health
+   # Should return: {"status":"healthy","model":"BAAI/bge-m3"}
+   ```
+
+3. **Check Redis Stack**:
+   ```bash
+   docker exec -it litecoin-redis-stack redis-cli -p 6380 PING
+   # Should return: PONG
+   ```
+
+4. **Check Backend Logs**:
+   ```bash
+   docker logs litecoin-backend | grep -E "(InfinityEmbeddings|InferenceRouter|RedisVectorCache)"
+   # Should show initialization messages
+   ```
+
+5. **Test RAG Query**:
+   ```bash
+   curl -X POST http://localhost:8000/api/v1/chat/stream \
+     -H "Content-Type: application/json" \
+     -d '{"query": "What is Litecoin?", "chat_history": []}'
+   ```
+
+### Performance Tuning
+
+1. **Memory Optimization** (see [Memory Optimization Guide](./fixes/MEMORY_OPTIMIZATION.md)):
+   - Reduce Docker Desktop VM memory to 8GB
+   - Use `float16` for BGE-M3 on MPS (already enabled)
+   - Set backend container memory limit: `deploy.resources.limits.memory: 2G`
+
+2. **Query Rewriting Timeout**:
+   - Increase `LOCAL_TIMEOUT_SECONDS` if Ollama is slow (default: 5.0s)
+   - System automatically spills to Gemini if timeout exceeded
+
+3. **Retrieval Quality**:
+   - Ensure `EMBEDDING_MODEL_ID=BAAI/bge-m3` (not Stella 1.5B)
+   - Adjust `VECTOR_SEARCH_SIMILARITY_THRESHOLD` (default: 0.75) to filter irrelevant documents
+   - Increase `RETRIEVER_K` (default: 12) for more context
+
+### Troubleshooting
+
+**Issue: Embedding server not starting**
+- Check Python version: `python3 --version` (needs 3.9+)
+- Verify virtual environment is activated
+- Check logs: `tail -f logs/embeddings_server.log`
+
+**Issue: Backend can't connect to embedding server**
+- Verify `INFINITY_URL=http://host.docker.internal:7997` in `.env.docker.prod`
+- Check embedding server is running: `curl http://localhost:7997/health`
+- Restart backend: `docker restart litecoin-backend`
+
+**Issue: Poor retrieval quality**
+- Verify `EMBEDDING_MODEL_ID=BAAI/bge-m3` in `.env.docker.prod`
+- Re-index documents with BGE-M3 (see Vector Store Re-indexing above)
+- Check similarity threshold: `VECTOR_SEARCH_SIMILARITY_THRESHOLD=0.75`
+
+**Issue: Ollama timeout errors**
+- Increase `LOCAL_TIMEOUT_SECONDS` in `.env.docker.prod`
+- Check Ollama is responding: `curl http://localhost:11434/api/tags`
+- Consider using native Ollama instead of Dockerized version
+
+**Issue: Memory pressure spikes**
+- Reduce Docker Desktop VM memory to 8GB
+- Verify backend container has memory limit: `deploy.resources.limits.memory: 2G`
+- See [Memory Optimization Guide](./fixes/MEMORY_OPTIMIZATION.md)
+
+### Related Documentation
+
+- [High-Performance Local RAG Feature](./features/DEC6_FEATURE_HIGH_PERFORMANCE_LOCAL_RAG.md) - Complete feature documentation
+- [Embedding Model Update Guide](./fixes/EMBEDDING_MODEL_UPDATE.md) - Migrating from Stella to BGE-M3
+- [Memory Optimization Guide](./fixes/MEMORY_OPTIMIZATION.md) - Reducing memory usage
+- [UnboundLocalError Fix](./fixes/UNBOUNDLOCALERROR_FIX.md) - Bug fix documentation
 
 ---
 

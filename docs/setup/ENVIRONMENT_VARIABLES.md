@@ -198,6 +198,57 @@ docker-compose -f docker-compose.prod.yml down -v
 
 **Where to set:** Root-level `.env.docker.*` files
 
+### 7. Local RAG - High-Performance Local Processing
+
+These variables configure the local-first RAG pipeline with cloud spillover. See [DEC6_FEATURE_HIGH_PERFORMANCE_LOCAL_RAG.md](../features/DEC6_FEATURE_HIGH_PERFORMANCE_LOCAL_RAG.md) for full documentation.
+
+**To enable local RAG services:**
+1. Start Docker with the `local-rag` profile: `docker-compose -f docker-compose.prod.yml --profile local-rag up`
+2. Pull the Ollama model: `docker exec -it litecoin-ollama ollama pull llama3.2:3b`
+3. Set the feature flags to `true` in your environment file
+
+#### Feature Flags
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `USE_LOCAL_REWRITER` | `false` | Enable local query rewriting with Ollama (falls back to Gemini when queue full or timeout) |
+| `USE_INFINITY_EMBEDDINGS` | `false` | Enable local embeddings with Infinity (1024-dim vectors) |
+| `USE_REDIS_CACHE` | `false` | Enable Redis Stack vector cache with HNSW index |
+
+#### Service URLs
+
+| Variable | Docker Internal | Host Access | Description |
+|----------|-----------------|-------------|-------------|
+| `OLLAMA_URL` | `http://ollama:11434` | `http://localhost:11434` | Ollama API URL for query rewriting |
+| `INFINITY_URL` | `http://infinity:7997` | `http://localhost:7997` | Infinity API URL for embeddings |
+| `REDIS_STACK_URL` | `redis://redis_stack:6379` | `redis://localhost:6380` | Redis Stack URL for vector cache |
+
+**Note:** Use Docker internal URLs when running inside Docker containers. Use host access URLs (localhost) when running scripts from your Mac terminal.
+
+#### Router Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MAX_LOCAL_QUEUE_DEPTH` | `3` | Maximum concurrent requests to local rewriter before spillover to Gemini |
+| `LOCAL_TIMEOUT_SECONDS` | `2.0` | Timeout for local rewriter before failing over to Gemini |
+
+#### Model Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LOCAL_REWRITER_MODEL` | `llama3.2:3b` | Ollama model for query rewriting |
+| `EMBEDDING_MODEL_ID` | `BAAI/bge-m3` | Embedding model (1024-dim, ~2GB RAM) |
+| `VECTOR_DIMENSION` | `1024` | Vector dimension (must match embedding model) |
+
+#### Redis Stack Vector Cache
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_CACHE_INDEX_NAME` | `cache:index` | Index name for vector cache |
+| `REDIS_CACHE_SIMILARITY_THRESHOLD` | `0.90` | Similarity threshold for cache hits (0.90 = 90% similarity required) |
+
+**Where to set:** Root-level `.env.*` files or in `docker-compose.prod.yml` environment section
+
 ## Setup Instructions
 
 ### For Local Development

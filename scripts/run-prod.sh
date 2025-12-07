@@ -2,8 +2,34 @@
 # Helper script to run production builds with --no-cache and rebuild
 # This script uses docker-compose.prod.yml and docker-compose.override.yml
 # which loads .env.docker.prod and .env.secrets
+#
+# Usage:
+#   ./scripts/run-prod.sh -d                    # Start production services (detached)
+#   ./scripts/run-prod.sh -d --local-rag        # Start production + local RAG services
+#   ./scripts/run-prod.sh -d --local-rag --pull # Also pull Ollama model
 
 set -e
+
+# =============================================================================
+# Parse arguments
+# =============================================================================
+START_LOCAL_RAG=false
+PULL_OLLAMA_MODEL=false
+DOCKER_ARGS=()
+
+for arg in "$@"; do
+    case $arg in
+        --local-rag)
+            START_LOCAL_RAG=true
+            ;;
+        --pull)
+            PULL_OLLAMA_MODEL=true
+            ;;
+        *)
+            DOCKER_ARGS+=("$arg")
+            ;;
+    esac
+done
 
 # Detect Docker Compose command (v2 uses 'docker compose', v1 uses 'docker-compose')
 if docker compose version &>/dev/null; then
@@ -268,8 +294,147 @@ echo "   Payload CMS: http://localhost:3001 (via Cloudflare)"
 echo "   Grafana: http://localhost:3002 (local only)"
 echo "   Admin Frontend: http://localhost:3003 (local only, not via Cloudflare)"
 echo "   Prometheus: http://localhost:9090 (local only)"
+if $START_LOCAL_RAG; then
+echo "   ---"
+echo "   Embedding Server: http://localhost:7997 (local RAG)"
+echo "   Ollama: http://localhost:11434 (local RAG)"
+echo "   Redis Stack: redis://localhost:6380 (local RAG)"
+fi
 echo ""
 
-# Start services (pass through any additional arguments like -d for detached mode)
-$DOCKER_COMPOSE $COMPOSE_FILES up "$@"
+# Start main production services (pass through filtered arguments like -d for detached mode)
+$DOCKER_COMPOSE $COMPOSE_FILES up "${DOCKER_ARGS[@]}"
+
+# =============================================================================
+# Start Local RAG Services (if --local-rag flag is set)
+# =============================================================================
+if $START_LOCAL_RAG; then
+    echo ""
+    echo "🧠 Starting Local RAG services..."
+    echo ""
+    
+    # Detect architecture
+    ARCH=$(uname -m)
+    IS_ARM64=false
+    if [[ "$ARCH" == "arm64" || "$ARCH" == "aarch64" ]]; then
+        IS_ARM64=true
+    fi
+    
+    # Configuration
+    VENV_DIR="$HOME/infinity-env"
+    OLLAMA_MODEL="${LOCAL_REWRITER_MODEL:-llama3.2:3b}"
+    INFINITY_PORT="${INFINITY_PORT:-7997}"
+    LOCAL_RAG_DIR="$SCRIPT_DIR/local-rag"
+    
+    # Export URLs for Docker containers to reach local services
+    # On Apple Silicon, embedding server runs natively on host
+    if $IS_ARM64; then
+        export INFINITY_URL="http://host.docker.internal:${INFINITY_PORT}"
+    else
+        export INFINITY_URL="http://infinity:${INFINITY_PORT}"
+    fi
+    
+    # Check if native Ollama is already running
+    NATIVE_OLLAMA_RUNNING=false
+    if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+        # Verify it's NOT the Docker container (which would be stopped/starting)
+        if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q "litecoin-ollama"; then
+            NATIVE_OLLAMA_RUNNING=true
+            echo "   🍎 Native Ollama detected on port 11434 - using it instead of Docker"
+            export OLLAMA_URL="http://host.docker.internal:11434"
+        fi
+    fi
+    
+    if $NATIVE_OLLAMA_RUNNING; then
+        # Only start Redis Stack when using native Ollama
+        echo "   Starting Redis Stack (native Ollama detected)..."
+        $DOCKER_COMPOSE $COMPOSE_FILES --profile local-rag up -d redis_stack
+        echo "   ✓ Redis Stack started (port 6380)"
+        echo "   ✓ Ollama running natively (port 11434)"
+    else
+        # Start both Redis Stack and Ollama in Docker
+        export OLLAMA_URL="http://ollama:11434"
+        echo "   Starting Redis Stack and Ollama in Docker..."
+        $DOCKER_COMPOSE $COMPOSE_FILES --profile local-rag up -d redis_stack ollama
+        echo "   ✓ Redis Stack started (port 6380)"
+        echo "   ✓ Ollama started (port 11434)"
+    fi
+    
+    # Start Embedding Server
+    if $IS_ARM64; then
+        # Apple Silicon: Run natively with Metal
+        echo ""
+        echo "   🍎 Starting native embedding server (Apple Silicon + Metal)..."
+        
+        # Check if virtual environment exists
+        if [ ! -d "$VENV_DIR" ]; then
+            echo "   Creating virtual environment at $VENV_DIR..."
+            python3 -m venv "$VENV_DIR"
+        fi
+        
+        # Activate and check dependencies
+        source "$VENV_DIR/bin/activate"
+        if ! python3 -c "import sentence_transformers, fastapi, uvicorn" 2>/dev/null; then
+            echo "   Installing dependencies..."
+            pip install --quiet sentence-transformers fastapi uvicorn pydantic
+        fi
+        
+        # Check if already running
+        if curl -s http://localhost:$INFINITY_PORT/health > /dev/null 2>&1; then
+            echo "   ✓ Embedding server already running on port $INFINITY_PORT"
+        else
+            # Create logs directory if needed
+            mkdir -p "$PROJECT_ROOT/logs"
+            
+            # Start the server
+            nohup python3 "$LOCAL_RAG_DIR/embeddings_server.py" --port $INFINITY_PORT --device mps \
+                > "$PROJECT_ROOT/logs/infinity.log" 2>&1 &
+            echo $! > "$PROJECT_ROOT/.infinity.pid"
+            
+            # Wait for startup
+            echo "   Waiting for model to load (this may take 60-90 seconds)..."
+            MAX_WAIT=120
+            WAITED=0
+            while ! curl -s http://localhost:$INFINITY_PORT/health > /dev/null 2>&1; do
+                sleep 5
+                WAITED=$((WAITED + 5))
+                if [ $WAITED -ge $MAX_WAIT ]; then
+                    echo "   ❌ Timeout waiting for embedding server"
+                    echo "   Check logs: tail -f $PROJECT_ROOT/logs/infinity.log"
+                    deactivate
+                    exit 1
+                fi
+                echo "   Still loading... ($WAITED/$MAX_WAIT seconds)"
+            done
+            echo "   ✓ Embedding server ready on port $INFINITY_PORT"
+        fi
+        deactivate
+    else
+        # x86_64: Use Docker
+        echo ""
+        echo "   🐳 Starting Infinity via Docker..."
+        $DOCKER_COMPOSE $COMPOSE_FILES --profile local-rag up -d infinity
+        echo "   ✓ Infinity starting (check: docker logs litecoin-infinity)"
+    fi
+    
+    # Pull Ollama model if requested
+    if $PULL_OLLAMA_MODEL; then
+        echo ""
+        echo "   📥 Pulling Ollama model: $OLLAMA_MODEL..."
+        if $NATIVE_OLLAMA_RUNNING; then
+            ollama pull "$OLLAMA_MODEL"
+        else
+            docker exec litecoin-ollama ollama pull "$OLLAMA_MODEL"
+        fi
+        echo "   ✓ Model $OLLAMA_MODEL ready"
+    fi
+    
+    echo ""
+    echo "✅ Local RAG services started!"
+    echo ""
+    echo "💡 To use local RAG, ensure these are set in .env.docker.prod:"
+    echo "   USE_LOCAL_REWRITER=true"
+    echo "   USE_INFINITY_EMBEDDINGS=true"
+    echo "   USE_REDIS_CACHE=true"
+fi
 

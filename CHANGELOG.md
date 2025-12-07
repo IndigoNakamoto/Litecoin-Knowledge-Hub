@@ -4,6 +4,18 @@ All notable changes and completed milestones for the Litecoin Knowledge Hub proj
 
 ## Log of Completed Milestones
 
+* **High-Performance Local RAG Implementation (12/07/2025)**
+  * Implemented local RAG pipeline with Ollama, Infinity embeddings, and Redis Stack semantic cache
+  * Added native embedding server for Apple Silicon with Metal (MPS) acceleration
+  * Integrated BGE-M3 embedding model (1024-dim) for improved Q&A retrieval quality
+  * Implemented hybrid retrieval combining vector search, BM25 keyword search, and sparse embeddings
+  * Added intelligent routing with automatic spillover to cloud services (Gemini) on timeout/overload
+  * Implemented Redis Stack vector cache with HNSW index for semantic caching with chat history awareness
+  * Added feature flags for gradual rollout and testing of local RAG components
+  * Fixed UnboundLocalError bug in RAG pipeline when using Infinity embeddings
+  * Improved retrieval quality with similarity score filtering and increased RETRIEVER_K to 12
+  * Documented deployment procedures and configuration for local RAG services
+  * See [DEC6_FEATURE_HIGH_PERFORMANCE_LOCAL_RAG.md](./docs/features/DEC6_FEATURE_HIGH_PERFORMANCE_LOCAL_RAG.md) for complete details
 * **Production-Grade Abuse Prevention Improvements (12/01/2025)**
   * Enhanced abuse prevention system with production-grade optimizations
   * Fixed rate limiter to handle 3-value Lua script return format

@@ -64,6 +64,31 @@ services:
       # Example: CORS_ORIGINS=https://chat.lite.space,http://localhost:3003
       # Or set: ADMIN_FRONTEND_URL=http://localhost:3003 (automatically added to CORS)
       - CORS_ORIGINS=${CORS_ORIGINS}
+      # =============================================================================
+      # Local RAG Configuration (optional - enable via feature flags)
+      # =============================================================================
+      # Service URLs
+      # - Ollama: Docker container (ollama:11434)
+      # - Infinity: Native on host for Apple Silicon (host.docker.internal:7997)
+      #   or Docker container on x86_64 (infinity:7997)
+      # - Redis Stack: Docker container (redis_stack:6380)
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+      - INFINITY_URL=${INFINITY_URL:-http://host.docker.internal:7997}
+      - REDIS_STACK_URL=${REDIS_STACK_URL:-redis://redis_stack:6380}
+      # Feature flags (set to 'true' to enable local RAG)
+      - USE_LOCAL_REWRITER=${USE_LOCAL_REWRITER:-false}
+      - USE_INFINITY_EMBEDDINGS=${USE_INFINITY_EMBEDDINGS:-false}
+      - USE_REDIS_CACHE=${USE_REDIS_CACHE:-false}
+      # Router configuration
+      - MAX_LOCAL_QUEUE_DEPTH=${MAX_LOCAL_QUEUE_DEPTH:-3}
+      - LOCAL_TIMEOUT_SECONDS=${LOCAL_TIMEOUT_SECONDS:-2.0}
+      # Model configuration
+      - LOCAL_REWRITER_MODEL=${LOCAL_REWRITER_MODEL:-llama3.2:3b}
+      - EMBEDDING_MODEL_ID=${EMBEDDING_MODEL_ID:-BAAI/bge-m3}
+      - VECTOR_DIMENSION=${VECTOR_DIMENSION:-1024}
+      # Redis Stack cache configuration
+      - REDIS_CACHE_INDEX_NAME=${REDIS_CACHE_INDEX_NAME:-cache:index}
+      - REDIS_CACHE_SIMILARITY_THRESHOLD=${REDIS_CACHE_SIMILARITY_THRESHOLD:-0.90}
     depends_on:
       # mongodb:
       #   condition: service_healthy
@@ -71,6 +96,12 @@ services:
         condition: service_healthy
     volumes:
       - ./backend/monitoring/data:/app/backend/monitoring/data
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
@@ -227,9 +258,86 @@ services:
       - redis_data:/data
     restart: unless-stopped
 
+  # =============================================================================
+  # LOCAL RAG SERVICES (High-Performance Local RAG with Cloud Spillover)
+  # =============================================================================
+  # These services enable local-first query processing with automatic cloud fallback.
+  # See docs/features/DEC6_FEATURE_HIGH_PERFORMANCE_LOCAL_RAG.md for full documentation.
+  #
+  # To enable: Set USE_LOCAL_REWRITER=true, USE_INFINITY_EMBEDDINGS=true, USE_REDIS_CACHE=true
+  # in your environment file.
+  # =============================================================================
+
+  # Redis Stack - Vector search cache with HNSW index for semantic caching
+  # Replaces basic Redis when USE_REDIS_CACHE=true
+  # Uses redis-stack-server which includes RediSearch, ReJSON modules
+  redis_stack:
+    image: redis/redis-stack-server:latest
+    container_name: litecoin-redis-stack
+    env_file:
+      - ./.env.docker.prod
+    environment:
+      # Configure Redis Stack via environment variables (preserves module loading)
+      - REDIS_ARGS=--maxmemory 4gb --maxmemory-policy allkeys-lfu --appendonly no --loglevel warning ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - redis_stack_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "${REDIS_PASSWORD:+-a}", "${REDIS_PASSWORD:-}", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    profiles:
+      - local-rag
+
+  # Ollama - Local LLM for query rewriting (llama3.2:3b)
+  # Used when USE_LOCAL_REWRITER=true and queue depth < MAX_LOCAL_QUEUE_DEPTH
+  ollama:
+    image: ollama/ollama:latest
+    container_name: litecoin-ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    profiles:
+      - local-rag
+
+  # Infinity - Local embedding service (stella_en_1.5B_v5, 1024-dim)
+  # Used when USE_INFINITY_EMBEDDINGS=true
+  # Note: Running under Rosetta on Apple Silicon - memory usage is higher than native
+  infinity:
+    image: michaelf34/infinity:latest
+    container_name: litecoin-infinity
+    command: v2 --model-id dunzhang/stella_en_1.5B_v5 --port 7997 --device cpu
+    ports:
+      - "127.0.0.1:7997:7997"
+    volumes:
+      - infinity_model_cache:/app/.cache
+    # No memory limit - Rosetta emulation needs more RAM for 1.5B model
+    restart: "no"
+    # Disable healthcheck - the image doesn't have curl and model loading is slow
+    healthcheck:
+      disable: true
+    profiles:
+      - local-rag
+
 volumes:
   prometheus_data:
   grafana_data:
   # mongodb_dev_data:  # Commented out - using cloud MongoDB
   redis_data:
+  # Local RAG volumes
+  redis_stack_data:
+  ollama_data:
+  infinity_model_cache:
 
