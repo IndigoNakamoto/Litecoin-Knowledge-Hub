@@ -117,3 +117,134 @@ async def send_spend_limit_alert(
         logger.error(f"Failed to send Discord alert: {e}", exc_info=True)
         return False
 
+
+def _mask_identifier(identifier: str) -> str:
+    """
+    Mask an identifier (IP or fingerprint) for privacy in Discord alerts.
+    
+    Args:
+        identifier: The full identifier string
+        
+    Returns:
+        Masked identifier showing only first/last few characters
+    """
+    if not identifier:
+        return "unknown"
+    
+    # For IPs, show first octet and mask rest
+    if "." in identifier and identifier.count(".") == 3:
+        # IPv4: show first octet
+        parts = identifier.split(".")
+        return f"{parts[0]}.***.***"
+    elif ":" in identifier:
+        # IPv6 or fingerprint with colons
+        if identifier.startswith("fp:"):
+            # Fingerprint: show type and last 4 chars
+            return f"fp:***{identifier[-4:]}"
+        else:
+            # IPv6: show first segment
+            parts = identifier.split(":")
+            return f"{parts[0]}:***"
+    else:
+        # Other identifier: show first 4 and last 4 chars
+        if len(identifier) > 10:
+            return f"{identifier[:4]}***{identifier[-4:]}"
+        return f"{identifier[:2]}***"
+
+
+async def send_rate_limit_alert(
+    limit_type: str,
+    identifier: str,
+    requests_made: int,
+    limit: int,
+    endpoint_type: str = "chat",
+) -> bool:
+    """
+    Send a Discord alert when a user hits their rate limit.
+    
+    Args:
+        limit_type: "minute" or "hour" indicating which limit was hit
+        identifier: The user identifier (IP or fingerprint) - will be masked
+        requests_made: Number of requests made in the window
+        limit: The rate limit that was exceeded
+        endpoint_type: The endpoint type (e.g., "chat", "chat_stream")
+    
+    Returns:
+        True if alert was sent successfully, False otherwise
+    """
+    if not DISCORD_WEBHOOK_URL:
+        # Discord webhook not configured, skip silently
+        return False
+    
+    try:
+        # Mask identifier for privacy
+        masked_id = _mask_identifier(identifier)
+        
+        # Format limit type for display
+        limit_display = "per minute" if limit_type == "minute" else "per hour"
+        window_display = "Minute" if limit_type == "minute" else "Hourly"
+        
+        title = f"🚫 Rate Limit Hit - {window_display.upper()}"
+        description = f"A user has exceeded their {limit_display} rate limit."
+        color = 0xFF6B6B  # Coral red
+        
+        embed = {
+            "title": title,
+            "description": description,
+            "color": color,
+            "fields": [
+                {
+                    "name": "User Identifier",
+                    "value": f"`{masked_id}`",
+                    "inline": True
+                },
+                {
+                    "name": "Endpoint",
+                    "value": endpoint_type,
+                    "inline": True
+                },
+                {
+                    "name": "Limit Type",
+                    "value": window_display,
+                    "inline": True
+                },
+                {
+                    "name": "Requests Made",
+                    "value": str(requests_made),
+                    "inline": True
+                },
+                {
+                    "name": "Limit",
+                    "value": str(limit),
+                    "inline": True
+                },
+                {
+                    "name": "Status",
+                    "value": "🔴 Blocked",
+                    "inline": True
+                },
+            ],
+            "footer": {
+                "text": "Litecoin Knowledge Hub - Rate Limiting"
+            },
+            "timestamp": None
+        }
+        
+        payload = {
+            "embeds": [embed]
+        }
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(DISCORD_WEBHOOK_URL, json=payload)
+            response.raise_for_status()
+        
+        logger.info(f"Discord rate limit alert sent: {masked_id} hit {limit_type} limit on {endpoint_type}")
+        return True
+        
+    except httpx.HTTPError as e:
+        logger.error(f"Failed to send Discord rate limit alert (HTTP error): {e}", exc_info=True)
+        return False
+    except Exception as e:
+        logger.error(f"Failed to send Discord rate limit alert: {e}", exc_info=True)
+        return False
+

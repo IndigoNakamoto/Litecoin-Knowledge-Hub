@@ -2,6 +2,7 @@ import os
 import logging
 from typing import Optional
 from contextvars import ContextVar
+from urllib.parse import quote
 
 import redis.asyncio as redis
 
@@ -30,7 +31,9 @@ def get_redis_url() -> str:
   # If REDIS_PASSWORD is set and REDIS_URL doesn't already contain a password, inject it
   if redis_password and "@" not in redis_url:
     # Insert password into URL: redis://:password@host:port/db
-    redis_url = redis_url.replace("redis://", f"redis://:{redis_password}@")
+    # URL-encode the password to handle special characters like /, +, =
+    encoded_password = quote(redis_password, safe="")
+    redis_url = redis_url.replace("redis://", f"redis://:{encoded_password}@")
   
   return redis_url
 

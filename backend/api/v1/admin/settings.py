@@ -46,6 +46,7 @@ class AbusePreventionSettings(BaseModel):
     challenge_request_rate_limit_seconds: Optional[int] = Field(None, ge=1, description="Challenge request rate limit in seconds")
     daily_spend_limit_usd: Optional[float] = Field(None, ge=0.0001, description="Global daily LLM spend limit in USD")
     hourly_spend_limit_usd: Optional[float] = Field(None, ge=0.0001, description="Global hourly LLM spend limit in USD")
+    enable_rate_limit_discord_alerts: Optional[bool] = Field(None, description="Enable Discord alerts when users hit rate limits")
 
 
 def verify_admin_token(authorization: str = None) -> bool:
@@ -135,6 +136,7 @@ def get_settings_from_env() -> Dict[str, Any]:
         "challenge_request_rate_limit_seconds": int(os.getenv("CHALLENGE_REQUEST_RATE_LIMIT_SECONDS", "1")),
         "daily_spend_limit_usd": float(os.getenv("DAILY_SPEND_LIMIT_USD", "5.00")),
         "hourly_spend_limit_usd": float(os.getenv("HOURLY_SPEND_LIMIT_USD", "1.00")),
+        "enable_rate_limit_discord_alerts": os.getenv("ENABLE_RATE_LIMIT_DISCORD_ALERTS", "false").lower() == "true",
     }
 
 

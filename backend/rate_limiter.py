@@ -18,6 +18,7 @@ from backend.monitoring.metrics import (
     lua_script_executions_total,
     lua_script_duration_seconds,
 )
+from backend.monitoring.discord_alerts import send_rate_limit_alert
 from backend.utils.lua_scripts import SLIDING_WINDOW_LUA
 
 logger = logging.getLogger(__name__)
@@ -501,6 +502,29 @@ async def check_rate_limit(request: Request, config: RateLimitConfig) -> None:
       # Use retry_after from atomic function (already calculated)
       violation_count = None
       ban_expiry = None
+
+    # Send Discord alert if enabled
+    try:
+      from backend.utils.settings_reader import get_setting_from_redis_or_env
+      enable_discord_alerts = await get_setting_from_redis_or_env(
+        redis, "enable_rate_limit_discord_alerts", "ENABLE_RATE_LIMIT_DISCORD_ALERTS", False, bool
+      )
+      if enable_discord_alerts:
+        limit_type = "minute" if exceeded_minute else "hour"
+        limit_value = config.requests_per_minute if exceeded_minute else config.requests_per_hour
+        # Fire and forget - don't await to avoid slowing down the response
+        import asyncio
+        asyncio.create_task(
+          send_rate_limit_alert(
+            limit_type=limit_type,
+            identifier=stable_identifier,
+            requests_made=limit_value,  # They hit the limit
+            limit=limit_value,
+            endpoint_type=config.identifier,
+          )
+        )
+    except Exception as e:
+      logger.warning(f"Failed to send rate limit Discord alert: {e}")
 
     detail = {
       "error": "rate_limited",

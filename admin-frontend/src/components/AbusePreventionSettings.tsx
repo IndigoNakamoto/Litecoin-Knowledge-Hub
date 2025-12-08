@@ -220,6 +220,23 @@ export function AbusePreventionSettings() {
                   )}
                 </Label>
               </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="enable_rate_limit_discord_alerts"
+                  checked={settings.enable_rate_limit_discord_alerts ?? false}
+                  onChange={(e) => updateSetting("enable_rate_limit_discord_alerts", e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <Label htmlFor="enable_rate_limit_discord_alerts">
+                  Enable Rate Limit Discord Alerts
+                  {sources.enable_rate_limit_discord_alerts && (
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      ({sources.enable_rate_limit_discord_alerts})
+                    </span>
+                  )}
+                </Label>
+              </div>
             </CardContent>
           </Card>
 

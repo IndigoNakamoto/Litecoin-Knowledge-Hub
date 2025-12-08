@@ -13,6 +13,7 @@ export interface AbusePreventionSettings {
   challenge_request_rate_limit_seconds?: number;
   daily_spend_limit_usd?: number;
   hourly_spend_limit_usd?: number;
+  enable_rate_limit_discord_alerts?: boolean;
 }
 
 export interface SettingsResponse {
