@@ -4,6 +4,16 @@ All notable changes and completed milestones for the Litecoin Knowledge Hub proj
 
 ## Log of Completed Milestones
 
+* **Monitoring Enhancements & Rate Limit Discord Alerts (12/08/2025)**
+  * Added Discord notifications for rate limit violations (hourly/minute limits)
+  * New admin setting `enable_rate_limit_discord_alerts` to toggle rate limit alerts
+  * Added 8 new Grafana panels for Local RAG monitoring:
+    - Local vs Cloud Rewriter Usage, Router Spillover Rate, Queue Depth
+    - Rewriter Latency, Redis Vector Cache Hit Rate/Size/Latency
+    - Rate Limit Rejections by Endpoint
+  * Added 4 new Prometheus alert rules for Local RAG health:
+    - LocalRewriterHighTimeoutRate, HighRouterSpilloverRate
+    - LowRedisVectorCacheHitRate, RateLimitRejectionsSpike
 * **High-Performance Local RAG Implementation (12/07/2025)**
   * Implemented local RAG pipeline with Ollama, Infinity embeddings, and Redis Stack semantic cache
   * Added native embedding server for Apple Silicon with Metal (MPS) acceleration
