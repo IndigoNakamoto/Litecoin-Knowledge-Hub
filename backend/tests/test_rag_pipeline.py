@@ -76,7 +76,20 @@ TEST_METADATA_TAG = "testing"
 async def test_hierarchical_chunking_and_retrieval():
     """
     Tests the hierarchical chunking and retrieval for Markdown documents.
+    
+    This is an integration test that requires:
+    - Google API key for embeddings
+    - MongoDB connection
+    - NOT using Infinity embeddings mode (USE_INFINITY_EMBEDDINGS=false)
     """
+    # Skip if using Infinity embeddings (incompatible with this test)
+    if os.getenv("USE_INFINITY_EMBEDDINGS", "false").lower() == "true":
+        pytest.skip("Test requires Google embeddings, not compatible with Infinity embeddings mode")
+    
+    # Skip if no Google API key
+    if not os.getenv("GOOGLE_API_KEY"):
+        pytest.skip("Test requires GOOGLE_API_KEY environment variable")
+    
     print("\n--- Starting Hierarchical Chunking and Retrieval Test ---")
 
     # 1. Initialize components

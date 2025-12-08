@@ -503,6 +503,22 @@ async def test_global_spend_limits_use_updated_settings(mock_redis, monkeypatch)
     
     mock_redis.get = AsyncMock(side_effect=get_side_effect)
     
+    # Mock the Lua script eval() - CHECK_AND_RESERVE_SPEND_LUA returns:
+    # [status_code, daily_cost, hourly_cost]
+    # status_code: 0 = allowed, 1 = daily limit exceeded, 2 = hourly limit exceeded
+    async def mock_eval(script, num_keys, *args):
+        # args: daily_key, hourly_key, buffered_cost, daily_limit, hourly_limit, daily_ttl, hourly_ttl
+        buffered_cost = float(args[2]) if len(args) > 2 else 0.0
+        daily_limit_arg = float(args[3]) if len(args) > 3 else 10.00
+        
+        # Simulate: current daily = 9.5, adding 0.66 (0.6*1.1) would exceed 10.00
+        current_daily = 9.5
+        if current_daily + buffered_cost > daily_limit_arg:
+            return [1, current_daily, 0.0]  # status=1 (daily exceeded)
+        return [0, current_daily + buffered_cost, 0.0]  # status=0 (allowed)
+    
+    mock_redis.eval = mock_eval
+    
     # Request that would exceed the new daily limit (with 10% buffer)
     # 9.5 + 0.6*1.1 = 10.16 > 10.00 → blocked
     allowed, error_msg, usage_info = await check_spend_limit(0.6, "test-model")
