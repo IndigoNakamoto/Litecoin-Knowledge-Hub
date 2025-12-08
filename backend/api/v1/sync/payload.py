@@ -7,10 +7,11 @@ import os
 import json
 
 from backend.data_models import PayloadWebhookDoc
-from backend.data_ingestion.embedding_processor import process_payload_documents
+from backend.data_ingestion.embedding_processor import process_payload_documents, process_payload_documents_with_faq
 from backend.data_ingestion.vector_store_manager import VectorStoreManager
 from backend.rag_pipeline import RAGPipeline
 from backend.utils.webhook_auth import verify_webhook_request
+import asyncio
 
 # Global RAG pipeline instance reference (set by main.py to avoid circular imports)
 # This prevents creating new connection pools per webhook request
@@ -101,11 +102,12 @@ def delete_and_refresh_vector_store(payload_id, operation="delete"):
             vector_store_manager = VectorStoreManager()
             logger.warning(f"🗑️ [Delete Task: {payload_id}] Created new VectorStoreManager (global instance unavailable)")
 
-        # Delete documents
-        deleted_count = vector_store_manager.delete_documents_by_metadata_field('payload_id', payload_id)
-        logger.info(f"🗑️ [Delete Task: {payload_id}] Deleted {deleted_count} document(s).")
+        # Delete documents AND rebuild FAISS (since we're not adding new content)
+        # For unpublish/delete, we need to rebuild to remove the deleted vectors
+        deleted_count = vector_store_manager.delete_documents_by_metadata_field('payload_id', payload_id, rebuild_faiss=True)
+        logger.info(f"🗑️ [Delete Task: {payload_id}] Deleted {deleted_count} document(s) and rebuilt FAISS index.")
 
-        # Refresh the RAG pipeline using global instance
+        # Refresh the RAG pipeline to reload retrievers (this just reloads from disk now)
         try:
             if _global_rag_pipeline:
                 _global_rag_pipeline.refresh_vector_store()
@@ -153,6 +155,12 @@ def process_and_embed_document(payload_doc, operation="create"):
     """
     Background task to process and embed a single document from Payload.
     
+    Supports FAQ indexing (Parent Document Pattern) when USE_FAQ_INDEXING=true.
+    Synthetic questions are generated and indexed alongside the original chunks.
+    
+    CRUD Lifecycle: Synthetic questions inherit payload_id from parent chunk,
+    so deletion by payload_id automatically removes both parent AND synthetic.
+    
     Args:
         payload_doc: The Payload CMS document
         operation: The operation type ("create" or "update")
@@ -176,25 +184,45 @@ def process_and_embed_document(payload_doc, operation="create"):
         logger.info(f"✅ [Task ID: {payload_id}] Vector store connected successfully")
 
         # 1. Delete existing documents for this payload_id to handle updates cleanly.
+        # This removes BOTH original chunks AND synthetic questions (they share payload_id)
         logger.info(f"🗑️ [Task ID: {payload_id}] Deleting existing chunks from vector store...")
         deleted_count = vector_store_manager.delete_documents_by_metadata_field('payload_id', payload_id)
-        logger.info(f"🗑️ [Task ID: {payload_id}] Deleted {deleted_count} existing chunk(s).")
+        logger.info(f"🗑️ [Task ID: {payload_id}] Deleted {deleted_count} existing chunk(s) (includes synthetic questions).")
 
-        # 2. Process the new document into chunks.
-        logger.info(f"📝 [Task ID: {payload_id}] Processing document into hierarchical chunks...")
-        processed_chunks = process_payload_documents([payload_doc])
+        # 2. Process the new document into chunks with optional FAQ generation.
+        # Check if FAQ indexing is enabled
+        USE_FAQ_INDEXING = os.getenv("USE_FAQ_INDEXING", "true").lower() == "true"
+        
+        if USE_FAQ_INDEXING:
+            logger.info(f"📝 [Task ID: {payload_id}] Processing document with FAQ generation (Parent Document Pattern)...")
+            try:
+                # Use asyncio.run to call the async FAQ processing function
+                processed_chunks = asyncio.run(process_payload_documents_with_faq([payload_doc], generate_faq=True))
+            except RuntimeError as e:
+                # Handle case where event loop is already running (shouldn't happen in background task)
+                if "already running" in str(e):
+                    logger.warning(f"⚠️ [Task ID: {payload_id}] Event loop already running, falling back to sync processing")
+                    processed_chunks = process_payload_documents([payload_doc])
+                else:
+                    raise
+        else:
+            logger.info(f"📝 [Task ID: {payload_id}] Processing document into hierarchical chunks (FAQ generation disabled)...")
+            processed_chunks = process_payload_documents([payload_doc])
 
         if processed_chunks is None:
             logger.error(f"❌ [Task ID: {payload_id}] process_payload_documents returned None")
             return
 
-        logger.info(f"📦 [Task ID: {payload_id}] Generated {len(processed_chunks)} chunks")
+        # Count synthetic questions vs original chunks
+        synthetic_count = sum(1 for c in processed_chunks if c.metadata.get("is_synthetic", False))
+        original_count = len(processed_chunks) - synthetic_count
+        logger.info(f"📦 [Task ID: {payload_id}] Generated {original_count} chunks + {synthetic_count} synthetic questions")
 
         # 3. Add the new chunks to the vector store.
         if processed_chunks:
-            logger.info(f"💾 [Task ID: {payload_id}] Adding {len(processed_chunks)} new chunks to the vector store...")
+            logger.info(f"💾 [Task ID: {payload_id}] Adding {len(processed_chunks)} documents to the vector store...")
             vector_store_manager.add_documents(processed_chunks)
-            logger.info(f"✅ [Task ID: {payload_id}] Successfully added {len(processed_chunks)} chunks to the vector store.")
+            logger.info(f"✅ [Task ID: {payload_id}] Successfully added {len(processed_chunks)} documents to the vector store.")
         else:
             logger.warning(f"⚠️ [Task ID: {payload_id}] No chunks were generated from the document.")
 

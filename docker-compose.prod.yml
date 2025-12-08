@@ -55,6 +55,8 @@ services:
       # Production-specific overrides
       # Note: GOOGLE_API_KEY is loaded from ./backend/.env via env_file above
       - NODE_ENV=production
+      # Fix gRPC/asyncio compatibility issue on Python 3.11+ in Linux containers
+      - GRPC_POLL_STRATEGY=epoll1
       # Internal Docker service URL for Payload CMS (for suggested questions cache)
       - PAYLOAD_URL=http://payload_cms:3000
       # Disable HTTPS redirect middleware when behind Cloudflare (Cloudflare handles redirects at edge)
@@ -96,6 +98,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend/monitoring/data:/app/backend/monitoring/data
+      - faiss_index_data:/app/backend/faiss_index_1024  # Persist FAISS index between restarts
     deploy:
       resources:
         limits:
@@ -336,6 +339,7 @@ volumes:
   grafana_data:
   # mongodb_dev_data:  # Commented out - using cloud MongoDB
   redis_data:
+  faiss_index_data:  # Persist FAISS index between container restarts
   # Local RAG volumes
   redis_stack_data:
   ollama_data:

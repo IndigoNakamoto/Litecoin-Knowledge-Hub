@@ -26,10 +26,16 @@ USE_LOCAL_REWRITER = os.getenv("USE_LOCAL_REWRITER", "false").lower() == "true"
 USE_INFINITY_EMBEDDINGS = os.getenv("USE_INFINITY_EMBEDDINGS", "false").lower() == "true"
 USE_REDIS_CACHE = os.getenv("USE_REDIS_CACHE", "false").lower() == "true"
 
+# --- Advanced RAG Feature Flags ---
+USE_INTENT_CLASSIFICATION = os.getenv("USE_INTENT_CLASSIFICATION", "true").lower() == "true"
+USE_FAQ_INDEXING = os.getenv("USE_FAQ_INDEXING", "true").lower() == "true"
+
 # Lazy-load local RAG services only when enabled
 _inference_router = None
 _infinity_embeddings = None
 _redis_vector_cache = None
+_intent_classifier = None
+_suggested_question_cache = None
 
 def _get_inference_router():
     """Lazy-load inference router for query rewriting."""
@@ -66,6 +72,46 @@ def _get_redis_vector_cache():
         except Exception as e:
             logging.getLogger(__name__).warning(f"Failed to initialize RedisVectorCache: {e}")
     return _redis_vector_cache
+
+def _get_intent_classifier():
+    """Lazy-load intent classifier for query routing."""
+    global _intent_classifier
+    if _intent_classifier is None and USE_INTENT_CLASSIFICATION:
+        try:
+            from backend.services.intent_classifier import IntentClassifier
+            _intent_classifier = IntentClassifier()
+            logging.getLogger(__name__).info("IntentClassifier initialized for query routing")
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"Failed to initialize IntentClassifier: {e}")
+    return _intent_classifier
+
+def _get_suggested_question_cache():
+    """Lazy-load suggested question cache."""
+    global _suggested_question_cache
+    if _suggested_question_cache is None:
+        try:
+            from backend.cache_utils import SuggestedQuestionCache
+            _suggested_question_cache = SuggestedQuestionCache()
+            logging.getLogger(__name__).info("SuggestedQuestionCache initialized")
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"Failed to initialize SuggestedQuestionCache: {e}")
+    return _suggested_question_cache
+
+async def _load_faq_questions_for_intent_classifier():
+    """Load FAQ questions from CMS and update intent classifier."""
+    intent_classifier = _get_intent_classifier()
+    if not intent_classifier:
+        return
+    
+    try:
+        from backend.utils.suggested_questions import fetch_suggested_questions
+        questions = await fetch_suggested_questions(active_only=True)
+        question_texts = [q.get("question", "") for q in questions if q.get("question")]
+        intent_classifier.update_faq_questions(question_texts)
+        logging.getLogger(__name__).info(f"Loaded {len(question_texts)} FAQ questions into IntentClassifier")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Failed to load FAQ questions: {e}")
+
 # --- Environment Variable Checks ---
 google_api_key = os.getenv("GOOGLE_API_KEY")
 if not google_api_key:
@@ -301,6 +347,50 @@ class RAGPipeline:
             logger.error(f"Failed to load documents from MongoDB for BM25: {e}", exc_info=True)
             return []
 
+    def _load_parent_chunks_map(self) -> Dict[str, Document]:
+        """
+        Load parent chunks map from MongoDB for Parent Document Pattern resolution.
+        
+        Loads all non-synthetic documents (original chunks) and builds a map
+        from chunk_id to Document. This map is used to swap synthetic question
+        hits with their full-text parent chunks at retrieval time.
+        
+        Returns:
+            Dict mapping chunk_id -> Document for all non-synthetic chunks
+        """
+        if not USE_FAQ_INDEXING:
+            return {}
+        
+        if not self.vector_store_manager.mongodb_available:
+            logger.warning("MongoDB not available, cannot load parent chunks map")
+            return {}
+        
+        try:
+            # Query for non-synthetic documents with chunk_id
+            cursor = self.vector_store_manager.collection.find(
+                {
+                    "metadata.is_synthetic": {"$ne": True},
+                    "metadata.chunk_id": {"$exists": True}
+                },
+                {"text": 1, "metadata": 1}
+            ).limit(20000)  # Safety limit
+            
+            chunks_map: Dict[str, Document] = {}
+            for doc in cursor:
+                chunk_id = doc.get("metadata", {}).get("chunk_id")
+                if chunk_id:
+                    chunks_map[chunk_id] = Document(
+                        page_content=doc.get("text", ""),
+                        metadata=doc.get("metadata", {})
+                    )
+            
+            logger.debug(f"Loaded {len(chunks_map)} parent chunks for FAQ resolution")
+            return chunks_map
+            
+        except Exception as e:
+            logger.error(f"Failed to load parent chunks map: {e}", exc_info=True)
+            return {}
+
     def _setup_retrievers(self):
         """Setup hybrid retriever with proper document loading."""
         # 1. Load published docs from MongoDB
@@ -526,15 +616,20 @@ class RAGPipeline:
         """
         Refreshes the vector store by reloading from disk and recreating the RAG chain.
         This should be called after new documents are added to ensure queries use the latest content.
+        
+        NOTE: This does NOT rebuild from MongoDB - it only reloads the FAISS index from disk.
+        The add_documents() method already saves to disk after adding, so this just picks up
+        those changes. For a full rebuild from MongoDB, use vector_store_manager._create_faiss_from_mongodb().
         """
         try:
             logger.info("Refreshing vector store and hybrid retrievers...")
 
-            # Reload the vector store from disk
+            # Reload the vector store from disk (fast - no rebuild!)
             if hasattr(self, 'vector_store_manager') and self.vector_store_manager:
-                # Rebuild FAISS from MongoDB
-                self.vector_store_manager.vector_store = self.vector_store_manager._create_faiss_from_mongodb()
-                logger.info("Vector store reloaded from disk")
+                if self.vector_store_manager.reload_from_disk():
+                    logger.info("Vector store reloaded from disk")
+                else:
+                    logger.warning("Failed to reload from disk, vector store unchanged")
 
             # RECREATE ALL RETRIEVERS (this is the critical fix!)
             self._setup_retrievers()
@@ -593,6 +688,64 @@ class RAGPipeline:
         
         # Truncate chat history to prevent token overflow
         truncated_history = self._truncate_chat_history(sanitized_history)
+        
+        # === 0. Intent Classification (skip if follow-up question) ===
+        # Greetings, thanks, and FAQ matches are handled without LLM calls
+        if USE_INTENT_CLASSIFICATION and not truncated_history:
+            intent_classifier = _get_intent_classifier()
+            if intent_classifier:
+                from backend.services.intent_classifier import Intent
+                intent, matched_faq, static_response = intent_classifier.classify(query_text)
+                
+                if intent in (Intent.GREETING, Intent.THANKS):
+                    logger.info(f"Intent classified as {intent.value} - returning static response")
+                    if MONITORING_ENABLED:
+                        rag_cache_hits_total.labels(cache_type="intent_static").inc()
+                        rag_query_duration_seconds.labels(
+                            query_type="async",
+                            cache_hit="true"
+                        ).observe(time.time() - start_time)
+                    metadata = {
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "cost_usd": 0.0,
+                        "duration_seconds": time.time() - start_time,
+                        "cache_hit": True,
+                        "cache_type": f"intent_{intent.value}",
+                        "intent": intent.value,
+                    }
+                    return static_response, [], metadata
+                
+                elif intent == Intent.FAQ_MATCH and matched_faq:
+                    # Try to get cached response for the matched FAQ question
+                    suggested_cache = _get_suggested_question_cache()
+                    if suggested_cache:
+                        try:
+                            cached_result = await suggested_cache.get(matched_faq)
+                            if cached_result:
+                                answer, sources = cached_result
+                                logger.info(f"FAQ match cache HIT: '{query_text[:30]}...' -> '{matched_faq[:30]}...'")
+                                if MONITORING_ENABLED:
+                                    rag_cache_hits_total.labels(cache_type="intent_faq").inc()
+                                    rag_query_duration_seconds.labels(
+                                        query_type="async",
+                                        cache_hit="true"
+                                    ).observe(time.time() - start_time)
+                                metadata = {
+                                    "input_tokens": 0,
+                                    "output_tokens": 0,
+                                    "cost_usd": 0.0,
+                                    "duration_seconds": time.time() - start_time,
+                                    "cache_hit": True,
+                                    "cache_type": "intent_faq_match",
+                                    "intent": "faq_match",
+                                    "matched_faq": matched_faq,
+                                }
+                                return answer, sources, metadata
+                        except Exception as e:
+                            logger.warning(f"FAQ cache lookup failed: {e}")
+                    # If cache miss, fall through to normal RAG
+                    logger.debug(f"FAQ match but cache miss, proceeding with RAG: {matched_faq[:50]}...")
         
         # === 1. Try semantic cache first (broader recall) ===
         cached_result = self.semantic_cache.get(query_text, truncated_history) if self.semantic_cache else None
@@ -844,6 +997,24 @@ class RAGPipeline:
                     "chat_history": converted_chat_history
                 })
             retrieval_duration = time.time() - retrieval_start
+
+            # === PARENT DOCUMENT PATTERN: Resolve synthetic questions ===
+            # If FAQ indexing is enabled, swap any synthetic question hits
+            # with their full-text parent chunks before sending to LLM
+            if USE_FAQ_INDEXING and context_docs:
+                synthetic_count = sum(1 for d in context_docs if d.metadata.get("is_synthetic", False))
+                if synthetic_count > 0:
+                    try:
+                        from backend.services.faq_generator import resolve_parents
+                        parent_chunks_map = self._load_parent_chunks_map()
+                        if parent_chunks_map:
+                            original_count = len(context_docs)
+                            context_docs = resolve_parents(context_docs, parent_chunks_map)
+                            logger.info(f"🔄 FAQ resolution: {original_count} docs ({synthetic_count} synthetic) → {len(context_docs)} resolved")
+                        else:
+                            logger.debug("Parent chunks map empty, skipping FAQ resolution")
+                    except Exception as resolve_error:
+                        logger.warning(f"FAQ resolution failed, using original docs: {resolve_error}")
 
             # Filter out draft/unpublished documents from sources
             published_sources = [
@@ -1100,6 +1271,88 @@ class RAGPipeline:
             
             # Truncate chat history to prevent token overflow
             truncated_history = self._truncate_chat_history(sanitized_history)
+            
+            # === 0. Intent Classification (skip if follow-up question) ===
+            # Greetings, thanks, and FAQ matches are handled without LLM calls
+            if USE_INTENT_CLASSIFICATION and not truncated_history:
+                intent_classifier = _get_intent_classifier()
+                if intent_classifier:
+                    from backend.services.intent_classifier import Intent
+                    intent, matched_faq, static_response = intent_classifier.classify(query_text)
+                    
+                    if intent in (Intent.GREETING, Intent.THANKS):
+                        logger.info(f"Intent classified as {intent.value} - returning static response (stream)")
+                        if MONITORING_ENABLED:
+                            rag_cache_hits_total.labels(cache_type="intent_static").inc()
+                            rag_query_duration_seconds.labels(
+                                query_type="stream",
+                                cache_hit="true"
+                            ).observe(time.time() - start_time)
+                        
+                        # Send empty sources
+                        yield {"type": "sources", "sources": []}
+                        
+                        # Stream static response
+                        for i, char in enumerate(static_response):
+                            yield {"type": "chunk", "content": char}
+                            if i % 10 == 0:
+                                await asyncio.sleep(0.001)
+                        
+                        metadata = {
+                            "input_tokens": 0,
+                            "output_tokens": 0,
+                            "cost_usd": 0.0,
+                            "duration_seconds": time.time() - start_time,
+                            "cache_hit": True,
+                            "cache_type": f"intent_{intent.value}",
+                            "intent": intent.value,
+                        }
+                        yield {"type": "metadata", "metadata": metadata}
+                        yield {"type": "complete", "from_cache": True}
+                        return
+                    
+                    elif intent == Intent.FAQ_MATCH and matched_faq:
+                        # Try to get cached response for the matched FAQ question
+                        suggested_cache = _get_suggested_question_cache()
+                        if suggested_cache:
+                            try:
+                                cached_result = await suggested_cache.get(matched_faq)
+                                if cached_result:
+                                    answer, sources = cached_result
+                                    logger.info(f"FAQ match cache HIT (stream): '{query_text[:30]}...' -> '{matched_faq[:30]}...'")
+                                    if MONITORING_ENABLED:
+                                        rag_cache_hits_total.labels(cache_type="intent_faq").inc()
+                                        rag_query_duration_seconds.labels(
+                                            query_type="stream",
+                                            cache_hit="true"
+                                        ).observe(time.time() - start_time)
+                                    
+                                    # Send sources first
+                                    yield {"type": "sources", "sources": sources}
+                                    
+                                    # Stream cached answer
+                                    for i, char in enumerate(answer):
+                                        yield {"type": "chunk", "content": char}
+                                        if i % 10 == 0:
+                                            await asyncio.sleep(0.001)
+                                    
+                                    metadata = {
+                                        "input_tokens": 0,
+                                        "output_tokens": 0,
+                                        "cost_usd": 0.0,
+                                        "duration_seconds": time.time() - start_time,
+                                        "cache_hit": True,
+                                        "cache_type": "intent_faq_match",
+                                        "intent": "faq_match",
+                                        "matched_faq": matched_faq,
+                                    }
+                                    yield {"type": "metadata", "metadata": metadata}
+                                    yield {"type": "complete", "from_cache": True}
+                                    return
+                            except Exception as e:
+                                logger.warning(f"FAQ cache lookup failed (stream): {e}")
+                        # If cache miss, fall through to normal RAG
+                        logger.debug(f"FAQ match but cache miss, proceeding with RAG (stream): {matched_faq[:50]}...")
             
             # === 1. Try semantic cache first ===
             cached_result = self.semantic_cache.get(query_text, truncated_history) if self.semantic_cache else None
@@ -1392,6 +1645,24 @@ class RAGPipeline:
                     "chat_history": converted_chat_history
                 })
             retrieval_duration = time.time() - retrieval_start
+            
+            # === PARENT DOCUMENT PATTERN: Resolve synthetic questions ===
+            # If FAQ indexing is enabled, swap any synthetic question hits
+            # with their full-text parent chunks before sending to LLM
+            if USE_FAQ_INDEXING and context_docs:
+                synthetic_count = sum(1 for d in context_docs if d.metadata.get("is_synthetic", False))
+                if synthetic_count > 0:
+                    try:
+                        from backend.services.faq_generator import resolve_parents
+                        parent_chunks_map = self._load_parent_chunks_map()
+                        if parent_chunks_map:
+                            original_count = len(context_docs)
+                            context_docs = resolve_parents(context_docs, parent_chunks_map)
+                            logger.info(f"🔄 FAQ resolution (stream): {original_count} docs ({synthetic_count} synthetic) → {len(context_docs)} resolved")
+                        else:
+                            logger.debug("Parent chunks map empty, skipping FAQ resolution")
+                    except Exception as resolve_error:
+                        logger.warning(f"FAQ resolution failed, using original docs: {resolve_error}")
             
             # Filter published sources
             published_sources = [

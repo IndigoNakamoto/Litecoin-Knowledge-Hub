@@ -35,3 +35,6 @@ sentence-transformers
 transformers
 numpy==2.0.2
 prometheus-client
+rapidfuzz>=3.0.0
+# Fix gRPC/asyncio compatibility with Python 3.11+
+grpcio>=1.60.0

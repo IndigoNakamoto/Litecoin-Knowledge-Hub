@@ -349,6 +349,9 @@ def process_payload_documents(payload_docs: List[PayloadWebhookDoc]) -> List[Doc
     """
     Processes a list of documents from Payload, converting them into Langchain Documents
     and then splitting them hierarchically.
+    
+    Note: This synchronous version does NOT generate FAQ synthetic questions.
+    Use process_payload_documents_with_faq() for FAQ generation support.
     """
     all_chunks = []
     markdown_splitter = MarkdownTextSplitter()
@@ -384,6 +387,58 @@ def process_payload_documents(payload_docs: List[PayloadWebhookDoc]) -> List[Doc
         
     logger.info(f"Processed {len(payload_docs)} Payload document(s) into {len(all_chunks)} chunks.")
     return all_chunks
+
+
+async def process_payload_documents_with_faq(
+    payload_docs: List[PayloadWebhookDoc],
+    generate_faq: bool = True
+) -> List[Document]:
+    """
+    Async version that processes Payload documents with optional FAQ generation.
+    
+    Uses the Parent Document Pattern: synthetic questions are indexed for search,
+    but retrieval returns the full parent chunk.
+    
+    CRITICAL for CRUD lifecycle: Synthetic questions inherit payload_id from
+    parent chunk, ensuring deletion by payload_id removes both.
+    
+    Args:
+        payload_docs: List of Payload CMS documents to process
+        generate_faq: Whether to generate synthetic FAQ questions (default: True)
+        
+    Returns:
+        List of Document chunks (original + synthetic questions if enabled)
+    """
+    import os
+    USE_FAQ_INDEXING = os.getenv("USE_FAQ_INDEXING", "true").lower() == "true"
+    
+    # First, get the base chunks using the standard processing
+    base_chunks = process_payload_documents(payload_docs)
+    
+    # If FAQ generation is disabled, return base chunks
+    if not generate_faq or not USE_FAQ_INDEXING:
+        logger.info("FAQ generation disabled, returning base chunks only")
+        return base_chunks
+    
+    # Generate synthetic questions
+    try:
+        from backend.services.faq_generator import FAQGenerator
+        
+        faq_generator = FAQGenerator()
+        all_docs, parent_chunks_map = await faq_generator.process_chunks_with_questions(base_chunks)
+        
+        # Note: parent_chunks_map is not returned here but is built from MongoDB at retrieval time
+        # The synthetic questions include parent_chunk_id in metadata for resolution
+        
+        logger.info(
+            f"FAQ generation complete: {len(base_chunks)} base chunks → "
+            f"{len(all_docs)} total docs ({len(all_docs) - len(base_chunks)} synthetic questions)"
+        )
+        return all_docs
+        
+    except Exception as e:
+        logger.error(f"FAQ generation failed, returning base chunks only: {e}", exc_info=True)
+        return base_chunks
 
 
 def process_documents(docs: List[Document]) -> List[Document]:
