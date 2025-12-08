@@ -193,3 +193,271 @@ else
 end
 """
 
+VALIDATE_CONSUME_CHALLENGE_LUA = """
+-- Atomic Challenge Validation and Consumption
+-- Prevents TOCTOU race condition where two concurrent requests could both validate
+-- the same challenge before either deletes it.
+--
+-- Keys: [1] challenge_key (challenge:{challenge_id}), [2] active_challenges_key (challenge:active:{identifier})
+-- Args: [1] expected_identifier, [2] challenge_id
+-- Returns: [status_code, stored_identifier_or_nil]
+--   status_code: 0=success (consumed), 1=not_found, 2=identifier_mismatch
+
+local challenge_key = KEYS[1]
+local active_challenges_key = KEYS[2]
+local expected_identifier = ARGV[1]
+local challenge_id = ARGV[2]
+
+-- Atomic GET - check if challenge exists
+local stored_identifier = redis.call('GET', challenge_key)
+if not stored_identifier then
+    -- Challenge not found or already consumed
+    return {1, nil}
+end
+
+-- Verify the challenge was issued to this identifier
+if stored_identifier ~= expected_identifier then
+    -- Identifier mismatch - possible replay attack attempt
+    -- Do NOT consume the challenge, just report mismatch
+    return {2, stored_identifier}
+end
+
+-- Challenge valid - consume it atomically
+-- DELETE the challenge key (one-time use)
+redis.call('DEL', challenge_key)
+
+-- Remove from active challenges set for this identifier
+redis.call('ZREM', active_challenges_key, challenge_id)
+
+-- Return success with the stored identifier
+return {0, stored_identifier}
+"""
+
+GENERATE_CHALLENGE_LUA = """
+-- Atomic Challenge Generation
+-- Prevents race condition where multiple concurrent requests could all pass the count check
+-- before any challenge is added, bypassing max_active_challenges_per_identifier.
+--
+-- Keys: [1] active_challenges_key, [2] challenge_key, [3] violation_count_key, [4] ban_key
+-- Args: [1] now, [2] ttl, [3] max_active, [4] challenge_id, [5] identifier, [6] expiry_time,
+--       [7] ban_durations (comma-separated, e.g. "60,300")
+-- Returns: [status_code, data1, data2]
+--   status_code: 0=success, 1=limit_exceeded, 2=banned
+--   For status 0: [0, 0, 0]
+--   For status 1: [1, violation_count, ban_duration]
+--   For status 2: [2, retry_after, violation_count]
+
+local active_challenges_key = KEYS[1]
+local challenge_key = KEYS[2]
+local violation_count_key = KEYS[3]
+local ban_key = KEYS[4]
+
+local now = tonumber(ARGV[1])
+local ttl = tonumber(ARGV[2])
+local max_active = tonumber(ARGV[3])
+local challenge_id = ARGV[4]
+local identifier = ARGV[5]
+local expiry_time = tonumber(ARGV[6])
+local ban_durations_str = ARGV[7]
+
+-- Parse ban durations from comma-separated string
+local ban_durations = {}
+for d in string.gmatch(ban_durations_str, "([^,]+)") do
+    table.insert(ban_durations, tonumber(d))
+end
+
+-- Check if currently banned
+local ban_expiry = redis.call('GET', ban_key)
+if ban_expiry then
+    ban_expiry = tonumber(ban_expiry)
+    if ban_expiry > now then
+        -- Still banned
+        local retry_after = ban_expiry - now
+        local violation_count = redis.call('GET', violation_count_key)
+        violation_count = violation_count and tonumber(violation_count) or 1
+        return {2, retry_after, violation_count}
+    else
+        -- Ban expired, clean it up
+        redis.call('DEL', ban_key)
+    end
+end
+
+-- Cleanup expired challenges from active set
+redis.call('ZREMRANGEBYSCORE', active_challenges_key, 0, now - ttl)
+
+-- Check current active challenge count
+local current_count = redis.call('ZCARD', active_challenges_key)
+if current_count >= max_active then
+    -- Limit exceeded - increment violations and apply ban atomically
+    local violation_count = redis.call('INCR', violation_count_key)
+    redis.call('EXPIRE', violation_count_key, 3600)  -- Keep violation count for 1 hour
+    
+    -- Determine ban duration based on violation count (progressive)
+    local ban_index = math.min(violation_count, #ban_durations)
+    local ban_duration = ban_durations[ban_index] or ban_durations[#ban_durations] or 60
+    local new_ban_expiry = now + ban_duration
+    
+    -- Apply ban
+    redis.call('SETEX', ban_key, ban_duration, new_ban_expiry)
+    
+    return {1, violation_count, ban_duration}
+end
+
+-- All checks passed - create challenge atomically
+-- Store challenge in Redis with TTL
+redis.call('SETEX', challenge_key, ttl, identifier)
+
+-- Add to active challenges sorted set (score is expiry time)
+redis.call('ZADD', active_challenges_key, expiry_time, challenge_id)
+redis.call('EXPIRE', active_challenges_key, ttl + 60)
+
+-- Reset violation count on successful generation (reward good behavior)
+-- Only if there was a previous violation count and no active ban
+local existing_violations = redis.call('GET', violation_count_key)
+if existing_violations then
+    local active_ban = redis.call('GET', ban_key)
+    if not active_ban then
+        redis.call('DEL', violation_count_key)
+    end
+end
+
+return {0, 0, 0}
+"""
+
+CHECK_AND_RESERVE_SPEND_LUA = """
+-- Atomic Spend Limit Check and Reservation
+-- Prevents race condition where multiple concurrent requests could all pass the limit
+-- check before any spend is recorded, leading to budget overruns.
+--
+-- Keys: [1] daily_cost_key, [2] hourly_cost_key
+-- Args: [1] buffered_cost, [2] daily_limit, [3] hourly_limit, [4] daily_ttl, [5] hourly_ttl
+-- Returns: [status_code, daily_cost, hourly_cost]
+--   status_code: 0=allowed (reserved), 1=daily_limit_exceeded, 2=hourly_limit_exceeded
+
+local daily_key = KEYS[1]
+local hourly_key = KEYS[2]
+
+local buffered_cost = tonumber(ARGV[1])
+local daily_limit = tonumber(ARGV[2])
+local hourly_limit = tonumber(ARGV[3])
+local daily_ttl = tonumber(ARGV[4])
+local hourly_ttl = tonumber(ARGV[5])
+
+-- Get current costs (default to 0 if keys don't exist)
+local daily_cost = tonumber(redis.call('GET', daily_key) or "0")
+local hourly_cost = tonumber(redis.call('GET', hourly_key) or "0")
+
+-- Check daily limit first
+if (daily_cost + buffered_cost) > daily_limit then
+    -- Daily limit would be exceeded
+    return {1, daily_cost, hourly_cost}
+end
+
+-- Check hourly limit
+if (hourly_cost + buffered_cost) > hourly_limit then
+    -- Hourly limit would be exceeded
+    return {2, daily_cost, hourly_cost}
+end
+
+-- Both limits OK - reserve the spend atomically
+redis.call('INCRBYFLOAT', daily_key, buffered_cost)
+redis.call('INCRBYFLOAT', hourly_key, buffered_cost)
+
+-- Set TTLs
+redis.call('EXPIRE', daily_key, daily_ttl)
+redis.call('EXPIRE', hourly_key, hourly_ttl)
+
+-- Return success with new costs
+return {0, daily_cost + buffered_cost, hourly_cost + buffered_cost}
+"""
+
+ADJUST_SPEND_LUA = """
+-- Atomic Spend Adjustment
+-- Adjusts previously reserved spend to actual cost.
+-- Use positive adjustment to add more, negative to refund overestimate.
+--
+-- Keys: [1] daily_cost_key, [2] hourly_cost_key, [3] daily_token_key, [4] hourly_token_key
+-- Args: [1] cost_adjustment, [2] input_tokens, [3] output_tokens, [4] daily_ttl, [5] hourly_ttl
+-- Returns: [daily_cost, hourly_cost]
+
+local daily_key = KEYS[1]
+local hourly_key = KEYS[2]
+local daily_token_key = KEYS[3]
+local hourly_token_key = KEYS[4]
+
+local cost_adjustment = tonumber(ARGV[1])
+local input_tokens = tonumber(ARGV[2])
+local output_tokens = tonumber(ARGV[3])
+local daily_ttl = tonumber(ARGV[4])
+local hourly_ttl = tonumber(ARGV[5])
+
+-- Adjust costs (can be negative to refund overestimate)
+local daily_cost = redis.call('INCRBYFLOAT', daily_key, cost_adjustment)
+local hourly_cost = redis.call('INCRBYFLOAT', hourly_key, cost_adjustment)
+
+-- Set TTLs for cost keys
+redis.call('EXPIRE', daily_key, daily_ttl)
+redis.call('EXPIRE', hourly_key, hourly_ttl)
+
+-- Record token counts
+if input_tokens > 0 then
+    redis.call('HINCRBY', daily_token_key, 'input', input_tokens)
+    redis.call('HINCRBY', hourly_token_key, 'input', input_tokens)
+end
+
+if output_tokens > 0 then
+    redis.call('HINCRBY', daily_token_key, 'output', output_tokens)
+    redis.call('HINCRBY', hourly_token_key, 'output', output_tokens)
+end
+
+-- Set TTLs for token keys (only if we updated them)
+if input_tokens > 0 or output_tokens > 0 then
+    redis.call('EXPIRE', daily_token_key, daily_ttl)
+    redis.call('EXPIRE', hourly_token_key, hourly_ttl)
+end
+
+return {tonumber(daily_cost), tonumber(hourly_cost)}
+"""
+
+APPLY_PROGRESSIVE_BAN_LUA = """
+-- Atomic Progressive Ban Application
+-- Consolidates violation increment, expiry setting, and ban application into a single
+-- atomic operation. Eliminates race conditions on violation count and ensures
+-- consistent ban duration calculation.
+--
+-- Keys: [1] violation_key, [2] ban_key
+-- Args: [1] now (timestamp), [2] ban_durations (comma-separated, e.g. "60,300,900,3600"),
+--       [3] violation_ttl (seconds to keep violation count)
+-- Returns: [violation_count, ban_expiry, ban_duration]
+
+local violation_key = KEYS[1]
+local ban_key = KEYS[2]
+
+local now = tonumber(ARGV[1])
+local ban_durations_str = ARGV[2]
+local violation_ttl = tonumber(ARGV[3])
+
+-- Parse ban durations from comma-separated string
+local ban_durations = {}
+for d in string.gmatch(ban_durations_str, "([^,]+)") do
+    table.insert(ban_durations, tonumber(d))
+end
+
+-- Atomic increment of violation count
+local violation_count = redis.call('INCR', violation_key)
+redis.call('EXPIRE', violation_key, violation_ttl)
+
+-- Determine ban duration based on violation count (progressive)
+-- violation_count is 1-indexed, ban_durations is also 1-indexed in Lua
+local ban_index = math.min(violation_count, #ban_durations)
+local ban_duration = ban_durations[ban_index] or ban_durations[#ban_durations] or 60
+
+-- Calculate ban expiry
+local ban_expiry = now + ban_duration
+
+-- Apply ban atomically
+redis.call('SETEX', ban_key, ban_duration, ban_expiry)
+
+return {violation_count, ban_expiry, ban_duration}
+"""
+

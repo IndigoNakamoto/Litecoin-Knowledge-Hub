@@ -26,15 +26,32 @@ from backend.monitoring.spend_limit import (
 from backend.utils.settings_reader import clear_settings_cache
 
 
+@pytest.fixture(autouse=True)
+def clear_cache_before_test():
+    """Clear settings cache before each test to prevent cache pollution."""
+    clear_settings_cache()
+    yield
+    clear_settings_cache()
+
+
 @pytest.fixture
 def mock_redis_client():
     """Mock Redis client for testing."""
     mock_client = AsyncMock()
-    mock_client.get = AsyncMock(return_value="0.0")
+    
+    # Smart mock for get() that returns None for settings key, "0.0" for cost keys
+    async def smart_get(key):
+        key_str = str(key)
+        if "admin:settings:abuse_prevention" in key_str:
+            return None  # No settings in Redis, use defaults
+        return "0.0"  # Default for cost keys
+    
+    mock_client.get = AsyncMock(side_effect=smart_get)
     mock_client.incrbyfloat = AsyncMock(return_value=1.0)
     mock_client.expire = AsyncMock(return_value=True)
     mock_client.hget = AsyncMock(return_value="0")
     mock_client.hincrby = AsyncMock(return_value=100)
+    mock_client.eval = AsyncMock(return_value=[0, 0.0, 0.0])  # Default for Lua scripts
     return mock_client
 
 
@@ -99,18 +116,11 @@ async def test_get_current_usage_with_costs(mock_redis_client):
 @pytest.mark.asyncio
 async def test_check_spend_limit_allows_request_below_limit(mock_redis_client):
     """Test that requests below the limit are allowed."""
-    # Clear settings cache to ensure fresh state
-    clear_settings_cache()
-    
-    async def get_side_effect(key):
-        key_str = str(key)
-        # Handle settings key (returns None to use defaults)
-        if "admin:settings:abuse_prevention" in key_str:
-            return None
-        # Return low value for cost keys
-        return "0.5"
-    
-    mock_redis_client.get = AsyncMock(side_effect=get_side_effect)
+    # Mock redis.eval() for CHECK_AND_RESERVE_SPEND_LUA
+    # Returns: [status_code, daily_cost, hourly_cost]
+    # status_code: 0=allowed (cost was reserved)
+    buffered_cost = 0.4 * 1.1  # 0.44
+    mock_redis_client.eval = AsyncMock(return_value=[0, 0.5 + buffered_cost, 0.5 + buffered_cost])
     mock_redis_client.hget = AsyncMock(return_value="0")  # Token counts default to 0
     
     with patch("backend.monitoring.spend_limit.get_redis_client", return_value=mock_redis_client):
@@ -124,25 +134,13 @@ async def test_check_spend_limit_allows_request_below_limit(mock_redis_client):
 @pytest.mark.asyncio
 async def test_check_spend_limit_blocks_request_above_daily_limit(mock_redis_client):
     """Test that requests exceeding daily limit are blocked."""
-    # Clear settings cache to ensure fresh state
-    clear_settings_cache()
-    
-    # Set daily cost close to limit - use side_effect to return different values for hourly vs daily
+    # Set daily cost close to limit
     daily_cost = DEFAULT_DAILY_SPEND_LIMIT_USD - 0.5  # 4.5
-    async def get_side_effect(key):
-        key_str = str(key)
-        # Handle settings key (returns None to use defaults)
-        if "admin:settings:abuse_prevention" in key_str:
-            return None
-        # Return daily cost for daily key, low value for hourly key
-        if "daily" in key_str and "llm:cost:daily" in key_str:
-            return str(daily_cost)
-        elif "hourly" in key_str and "llm:cost:hourly" in key_str:
-            return "0.0"  # Hourly is low, so daily limit is checked first
-        else:
-            return "0.0"  # Default for other keys
     
-    mock_redis_client.get = AsyncMock(side_effect=get_side_effect)
+    # Mock redis.eval() to simulate Lua script response for daily limit exceeded
+    # CHECK_AND_RESERVE_SPEND_LUA returns: [status_code, daily_cost, hourly_cost]
+    # status_code: 0=allowed, 1=daily_limit_exceeded, 2=hourly_limit_exceeded
+    mock_redis_client.eval = AsyncMock(return_value=[1, daily_cost, 0.0])  # Daily limit exceeded
     mock_redis_client.hget = AsyncMock(return_value="0")  # Token counts default to 0
     
     with patch("backend.monitoring.spend_limit.get_redis_client", return_value=mock_redis_client):
@@ -158,25 +156,13 @@ async def test_check_spend_limit_blocks_request_above_daily_limit(mock_redis_cli
 @pytest.mark.asyncio
 async def test_check_spend_limit_blocks_request_above_hourly_limit(mock_redis_client):
     """Test that requests exceeding hourly limit are blocked."""
-    # Clear settings cache to ensure fresh state
-    clear_settings_cache()
-    
-    # Set hourly cost close to limit - use a function to return different values based on key
+    # Set hourly cost close to limit
     hourly_cost = DEFAULT_HOURLY_SPEND_LIMIT_USD - 0.1  # 0.9
-    async def get_side_effect(key):
-        key_str = str(key)
-        # Handle settings key (returns None to use defaults)
-        if "admin:settings:abuse_prevention" in key_str:
-            return None
-        # Return hourly cost for hourly key, 0.0 for daily key
-        if "hourly" in key_str and "llm:cost:hourly" in key_str:
-            return str(hourly_cost)
-        elif "daily" in key_str and "llm:cost:daily" in key_str:
-            return "0.0"
-        else:
-            return "0.0"  # Default for other keys
     
-    mock_redis_client.get = AsyncMock(side_effect=get_side_effect)
+    # Mock redis.eval() to simulate Lua script response for hourly limit exceeded
+    # CHECK_AND_RESERVE_SPEND_LUA returns: [status_code, daily_cost, hourly_cost]
+    # status_code: 0=allowed, 1=daily_limit_exceeded, 2=hourly_limit_exceeded
+    mock_redis_client.eval = AsyncMock(return_value=[2, 0.0, hourly_cost])  # Hourly limit exceeded
     mock_redis_client.hget = AsyncMock(return_value="0")  # Token counts default to 0
     
     with patch("backend.monitoring.spend_limit.get_redis_client", return_value=mock_redis_client):
@@ -193,7 +179,7 @@ async def test_check_spend_limit_blocks_request_above_hourly_limit(mock_redis_cl
 async def test_check_spend_limit_allows_zero_cost(mock_redis_client):
     """Test that zero cost requests are always allowed."""
     # Zero cost path calls get_current_usage() which needs get() and hget()
-    mock_redis_client.get = AsyncMock(return_value="0.0")
+    # The fixture already has smart_get that handles settings key
     mock_redis_client.hget = AsyncMock(return_value="0")
     
     with patch("backend.monitoring.spend_limit.get_redis_client", return_value=mock_redis_client):
@@ -205,9 +191,9 @@ async def test_check_spend_limit_allows_zero_cost(mock_redis_client):
 
 @pytest.mark.asyncio
 async def test_record_spend_increments_counters(mock_redis_client):
-    """Test that recording spend increments Redis counters."""
-    mock_redis_client.incrbyfloat = AsyncMock(return_value=1.5)
-    mock_redis_client.hincrby = AsyncMock(return_value=1000)
+    """Test that recording spend calls the atomic Lua script."""
+    # Mock redis.eval() for ADJUST_SPEND_LUA which returns [daily_cost, hourly_cost]
+    mock_redis_client.eval = AsyncMock(return_value=[1.5, 1.5])
     
     with patch("backend.monitoring.spend_limit.get_redis_client", return_value=mock_redis_client):
         with patch("backend.monitoring.spend_limit.get_current_usage", new_callable=AsyncMock) as mock_usage:
@@ -218,15 +204,18 @@ async def test_record_spend_increments_counters(mock_redis_client):
             
             result = await record_spend(0.5, 1000, 500, "test-model")
             
-            # Verify Redis operations were called
-            assert mock_redis_client.incrbyfloat.call_count >= 2  # Daily and hourly
-            assert mock_redis_client.hincrby.call_count >= 2  # Input and output tokens
-            assert mock_redis_client.expire.call_count >= 4  # TTLs for all keys
+            # Verify the atomic Lua script was called
+            assert mock_redis_client.eval.call_count == 1
+            # Verify the result contains usage info
+            assert "daily" in result
+            assert "hourly" in result
 
 
 @pytest.mark.asyncio
 async def test_record_spend_handles_zero_cost(mock_redis_client):
-    """Test that zero cost is not recorded."""
+    """Test that zero cost with zero tokens skips Redis operations."""
+    mock_redis_client.eval = AsyncMock()
+    
     with patch("backend.monitoring.spend_limit.get_redis_client", return_value=mock_redis_client):
         with patch("backend.monitoring.spend_limit.get_current_usage", new_callable=AsyncMock) as mock_usage:
             mock_usage.return_value = {
@@ -236,8 +225,8 @@ async def test_record_spend_handles_zero_cost(mock_redis_client):
             
             result = await record_spend(0.0, 0, 0, "test-model")
             
-            # Verify no Redis operations were called for zero cost
-            mock_redis_client.incrbyfloat.assert_not_called()
+            # Verify no Redis eval was called for zero adjustment and zero tokens
+            mock_redis_client.eval.assert_not_called()
 
 
 def test_get_daily_key_format():
@@ -280,8 +269,9 @@ async def test_get_current_usage_handles_redis_error(mock_redis_client):
 @pytest.mark.asyncio
 async def test_check_spend_limit_handles_redis_error(mock_redis_client):
     """Test that check_spend_limit handles Redis errors gracefully."""
-    # First call to get() raises, but get_current_usage() in except block also needs mocks
-    mock_redis_client.get = AsyncMock(side_effect=Exception("Redis error"))
+    # Make redis.eval() raise an exception to simulate Redis error
+    mock_redis_client.eval = AsyncMock(side_effect=Exception("Redis error"))
+    # The fixture already has smart_get that handles settings key
     mock_redis_client.hget = AsyncMock(return_value="0")  # For get_current_usage() in error path
     
     with patch("backend.monitoring.spend_limit.get_redis_client", return_value=mock_redis_client):

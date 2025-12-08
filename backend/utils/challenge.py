@@ -14,6 +14,7 @@ from typing import Dict, Any, Optional
 from fastapi import HTTPException
 
 from backend.redis_client import get_redis_client
+from backend.utils.lua_scripts import VALIDATE_CONSUME_CHALLENGE_LUA, GENERATE_CHALLENGE_LUA
 
 logger = logging.getLogger(__name__)
 
@@ -158,56 +159,71 @@ async def generate_challenge(identifier: str) -> Dict[str, Any]:
     # Update rate limit timestamp
     await redis.setex(rate_limit_key, challenge_request_rate_limit_seconds + 1, now)
     
-    # Check if identifier is currently banned
-    ban_key = f"challenge:ban:{identifier}"
-    ban_expiry = await redis.get(ban_key)
-    if ban_expiry:
-        ban_expiry_int = int(ban_expiry)
-        if ban_expiry_int > now:
-            retry_after = ban_expiry_int - now
-            violation_count_key = f"challenge:violations:{identifier}"
-            violation_count = await redis.get(violation_count_key)
-            violation_count = int(violation_count) if violation_count else 1
-            
-            logger.warning(
-                f"Challenge generation blocked: identifier {identifier} is banned. "
-                f"Violation count: {violation_count}, Ban expires in {retry_after}s"
-            )
-            if METRICS_ENABLED:
-                challenge_generation_total.labels(result="banned").inc()
-            raise HTTPException(
-                status_code=429,
-                detail={
-                    "error": "too_many_challenges",
-                    "message": f"Too many requests. Please wait {retry_after} seconds before trying again.",
-                    "retry_after_seconds": retry_after,
-                    "ban_expires_at": ban_expiry_int,
-                    "violation_count": violation_count
-                }
-            )
-        else:
-            # Ban expired, clean it up
-            await redis.delete(ban_key)
+    # Generate unique challenge ID (64 hex chars = 32 bytes)
+    challenge_id = secrets.token_hex(32)
+    expiry_time = now + challenge_ttl_seconds
     
-    # Check current active challenge count
-    current_active_count = await redis.zcard(active_challenges_key)
-    if current_active_count >= max_active_challenges_per_identifier:
-        # Get violation count and increment
-        violation_count_key = f"challenge:violations:{identifier}"
-        violation_count = await redis.incr(violation_count_key)
-        await redis.expire(violation_count_key, 3600)  # Keep violation count for 1 hour
+    # Prepare keys for atomic Lua script
+    challenge_key = f"challenge:{challenge_id}"
+    violation_count_key = f"challenge:violations:{identifier}"
+    ban_key = f"challenge:ban:{identifier}"
+    
+    # Convert ban durations to comma-separated string for Lua
+    ban_durations_str = ",".join(str(d) for d in CHALLENGE_BAN_DURATIONS)
+    
+    # Use atomic Lua script to check limits and create challenge
+    # This prevents race condition where multiple concurrent requests could all pass
+    # the count check before any challenge is added.
+    result = await redis.eval(
+        GENERATE_CHALLENGE_LUA,
+        4,  # Number of keys
+        active_challenges_key,
+        challenge_key,
+        violation_count_key,
+        ban_key,
+        now,  # ARGV[1]
+        challenge_ttl_seconds,  # ARGV[2]
+        max_active_challenges_per_identifier,  # ARGV[3]
+        challenge_id,  # ARGV[4]
+        identifier,  # ARGV[5]
+        expiry_time,  # ARGV[6]
+        ban_durations_str,  # ARGV[7]
+    )
+    
+    status_code = result[0]
+    
+    if status_code == 2:
+        # Currently banned
+        retry_after = result[1]
+        violation_count = result[2]
+        ban_expiry_int = now + retry_after
         
-        # Determine ban duration based on violation count (progressive)
-        ban_index = min(violation_count - 1, len(CHALLENGE_BAN_DURATIONS) - 1)
-        ban_duration = CHALLENGE_BAN_DURATIONS[ban_index]
+        logger.warning(
+            f"Challenge generation blocked: identifier {identifier} is banned. "
+            f"Violation count: {violation_count}, Ban expires in {retry_after}s"
+        )
+        if METRICS_ENABLED:
+            challenge_generation_total.labels(result="banned").inc()
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "too_many_challenges",
+                "message": f"Too many requests. Please wait {retry_after} seconds before trying again.",
+                "retry_after_seconds": retry_after,
+                "ban_expires_at": ban_expiry_int,
+                "violation_count": violation_count
+            }
+        )
+    
+    if status_code == 1:
+        # Limit exceeded - ban was applied atomically
+        violation_count = result[1]
+        ban_duration = result[2]
         ban_expiry = now + ban_duration
-        
-        # Apply ban
-        await redis.setex(ban_key, ban_duration, ban_expiry)
         
         logger.warning(
             f"Too many active challenges for identifier {identifier}: "
-            f"active_count={current_active_count}, limit={max_active_challenges_per_identifier}, "
+            f"limit={max_active_challenges_per_identifier}, "
             f"violation_count={violation_count}, ban_duration={ban_duration}s, "
             f"ban_expires_at={ban_expiry}"
         )
@@ -225,33 +241,7 @@ async def generate_challenge(identifier: str) -> Dict[str, Any]:
             }
         )
     
-    # Reset violation count on successful challenge generation (reward good behavior)
-    # Only reset if there was a previous ban that has expired
-    violation_count_key = f"challenge:violations:{identifier}"
-    existing_violations = await redis.get(violation_count_key)
-    if existing_violations:
-        # Check if ban has expired (if no active ban, reset violations after successful generation)
-        ban_key = f"challenge:ban:{identifier}"
-        active_ban = await redis.get(ban_key)
-        if not active_ban:
-            # No active ban, reset violation count to reward good behavior
-            await redis.delete(violation_count_key)
-            logger.debug(f"Reset violation count for identifier {identifier} after successful challenge generation")
-    
-    # Generate unique challenge ID (64 hex chars = 32 bytes)
-    challenge_id = secrets.token_hex(32)
-    expiry_time = now + challenge_ttl_seconds
-    
-    # Store challenge in Redis with its expiry
-    # Key: challenge:{challenge_id} -> value: identifier
-    challenge_key = f"challenge:{challenge_id}"
-    await redis.setex(challenge_key, challenge_ttl_seconds, identifier)
-    
-    # Add to active challenges sorted set for this identifier
-    # Score is expiry time, member is challenge_id
-    await redis.zadd(active_challenges_key, {challenge_id: expiry_time})
-    await redis.expire(active_challenges_key, challenge_ttl_seconds + 60)  # Cleanup after TTL
-    
+    # status_code == 0: Success - challenge was created atomically
     logger.debug(f"Generated challenge {challenge_id} for identifier {identifier}")
     
     # Track successful challenge generation
@@ -298,11 +288,30 @@ async def validate_and_consume_challenge(challenge_id: str, identifier: str) -> 
     
     redis = await get_redis_client()
     
-    # Check if challenge exists
+    # Use atomic Lua script to validate and consume challenge
+    # This prevents TOCTOU race condition where two concurrent requests could
+    # both validate the same challenge before either deletes it.
     challenge_key = f"challenge:{challenge_id}"
-    stored_identifier = await redis.get(challenge_key)
+    active_challenges_key = f"challenge:active:{identifier}"
     
-    if not stored_identifier:
+    result = await redis.eval(
+        VALIDATE_CONSUME_CHALLENGE_LUA,
+        2,  # Number of keys
+        challenge_key,
+        active_challenges_key,
+        identifier,  # ARGV[1]: expected_identifier
+        challenge_id,  # ARGV[2]: challenge_id
+    )
+    
+    status_code = result[0]
+    stored_identifier = result[1]
+    
+    # Decode bytes if needed
+    if stored_identifier and isinstance(stored_identifier, bytes):
+        stored_identifier = stored_identifier.decode('utf-8')
+    
+    if status_code == 1:
+        # Challenge not found or already consumed
         logger.warning(
             f"Challenge validation failed: challenge {challenge_id} not found or expired"
         )
@@ -317,8 +326,8 @@ async def validate_and_consume_challenge(challenge_id: str, identifier: str) -> 
             }
         )
     
-    # Verify the challenge was issued to this identifier
-    if stored_identifier != identifier:
+    if status_code == 2:
+        # Identifier mismatch - possible replay attack attempt
         logger.warning(
             f"Challenge validation failed: challenge {challenge_id} issued to {stored_identifier} but used by {identifier}"
         )
@@ -334,13 +343,7 @@ async def validate_and_consume_challenge(challenge_id: str, identifier: str) -> 
             }
         )
     
-    # Consume the challenge (delete it for one-time use)
-    await redis.delete(challenge_key)
-    
-    # Remove from active challenges set
-    active_challenges_key = f"challenge:active:{identifier}"
-    await redis.zrem(active_challenges_key, challenge_id)
-    
+    # status_code == 0: Success - challenge was validated and consumed atomically
     logger.debug(f"Challenge {challenge_id} validated and consumed for identifier {identifier}")
     
     # Track successful validation

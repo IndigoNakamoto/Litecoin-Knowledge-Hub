@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, Any, Tuple
 from backend.redis_client import get_redis_client
 from backend.utils.settings_reader import get_setting_from_redis_or_env
+from backend.utils.lua_scripts import CHECK_AND_RESERVE_SPEND_LUA, ADJUST_SPEND_LUA
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +146,11 @@ async def check_spend_limit(
     model: str
 ) -> Tuple[bool, Optional[str], Dict[str, Any]]:
     """
-    Pre-flight check to determine if a request would exceed spend limits.
+    Pre-flight check and reservation to determine if a request would exceed spend limits.
+    
+    Uses atomic Lua script to check limits AND reserve the buffered cost in a single operation.
+    This prevents race conditions where multiple concurrent requests could all pass the check
+    before any spend is recorded.
     
     Args:
         estimated_cost: Estimated cost in USD for the request
@@ -153,13 +158,14 @@ async def check_spend_limit(
     
     Returns:
         Tuple of (allowed: bool, error_message: Optional[str], usage_info: dict)
-        - allowed: True if request is allowed, False if it would exceed limits
+        - allowed: True if request is allowed (cost reserved), False if it would exceed limits
         - error_message: Error message if not allowed, None otherwise
-        - usage_info: Current usage information
+        - usage_info: Current usage information with 'reserved_cost' field if allowed
     """
     if estimated_cost <= 0:
         # No cost, always allow
         usage_info = await get_current_usage()
+        usage_info['reserved_cost'] = 0.0
         return True, None, usage_info
     
     # Add 10% buffer for safety
@@ -179,16 +185,25 @@ async def check_spend_limit(
     hourly_key = _get_hourly_key()
     
     try:
-        # Get current costs (default to 0.0 if key doesn't exist)
-        daily_cost = float(await redis_client.get(daily_key) or "0.0")
-        hourly_cost = float(await redis_client.get(hourly_key) or "0.0")
+        # Use atomic Lua script to check limits and reserve cost
+        result = await redis_client.eval(
+            CHECK_AND_RESERVE_SPEND_LUA,
+            2,  # Number of keys
+            daily_key,
+            hourly_key,
+            buffered_cost,  # ARGV[1]
+            daily_spend_limit_usd,  # ARGV[2]
+            hourly_spend_limit_usd,  # ARGV[3]
+            DAILY_KEY_TTL,  # ARGV[4]
+            HOURLY_KEY_TTL,  # ARGV[5]
+        )
         
-        # Check if adding buffered cost would exceed limits
-        new_daily_cost = daily_cost + buffered_cost
-        new_hourly_cost = hourly_cost + buffered_cost
+        status_code = result[0]
+        daily_cost = float(result[1])
+        hourly_cost = float(result[2])
         
-        # Check daily limit
-        if new_daily_cost > daily_spend_limit_usd:
+        if status_code == 1:
+            # Daily limit would be exceeded (cost NOT reserved)
             usage_info = await get_current_usage()
             error_msg = (
                 f"Daily LLM spend limit would be exceeded. "
@@ -198,8 +213,8 @@ async def check_spend_limit(
             logger.warning(f"Spend limit check failed (daily): {error_msg}")
             return False, error_msg, usage_info
         
-        # Check hourly limit
-        if new_hourly_cost > hourly_spend_limit_usd:
+        if status_code == 2:
+            # Hourly limit would be exceeded (cost NOT reserved)
             usage_info = await get_current_usage()
             error_msg = (
                 f"Hourly LLM spend limit would be exceeded. "
@@ -209,14 +224,16 @@ async def check_spend_limit(
             logger.warning(f"Spend limit check failed (hourly): {error_msg}")
             return False, error_msg, usage_info
         
-        # Request is allowed
+        # status_code == 0: Request is allowed and cost was reserved atomically
         usage_info = await get_current_usage()
+        usage_info['reserved_cost'] = buffered_cost
         return True, None, usage_info
         
     except Exception as e:
         logger.error(f"Error checking spend limit: {e}", exc_info=True)
         # On error, allow request but log warning (graceful degradation)
         usage_info = await get_current_usage()
+        usage_info['reserved_cost'] = 0.0
         return True, None, usage_info
 
 
@@ -224,24 +241,35 @@ async def record_spend(
     actual_cost: float,
     input_tokens: int,
     output_tokens: int,
-    model: str
+    model: str,
+    reserved_cost: float = 0.0
 ) -> Dict[str, Any]:
     """
-    Record actual cost and tokens after a successful LLM API call.
+    Finalize spend by adjusting from reserved cost to actual cost and recording tokens.
     
-    Uses atomic Redis operations for thread safety across multiple instances.
+    Uses atomic Lua script to adjust costs and record tokens in a single operation.
     
     Args:
         actual_cost: Actual cost in USD for the request
         input_tokens: Number of input tokens used
         output_tokens: Number of output tokens used
         model: LLM model name (for logging)
+        reserved_cost: The cost that was reserved by check_spend_limit() (default: 0.0)
+                      If 0.0, the actual_cost is added directly (backward compatible).
+                      If > 0, the adjustment (actual_cost - reserved_cost) is applied.
     
     Returns:
         Dictionary with updated usage information
     """
-    if actual_cost <= 0:
-        # No cost to record
+    # Calculate adjustment: if reserved_cost was provided, we adjust by the difference
+    # If reserved_cost is 0, we're in backward-compatible mode and just add actual_cost
+    if reserved_cost > 0:
+        cost_adjustment = actual_cost - reserved_cost
+    else:
+        cost_adjustment = actual_cost
+    
+    # Skip if no adjustment and no tokens to record
+    if cost_adjustment == 0 and input_tokens <= 0 and output_tokens <= 0:
         return await get_current_usage()
     
     redis_client = await get_redis_client()
@@ -251,26 +279,20 @@ async def record_spend(
     hourly_token_key = _get_hourly_token_key()
     
     try:
-        # Atomic increment for costs
-        await redis_client.incrbyfloat(daily_key, actual_cost)
-        await redis_client.incrbyfloat(hourly_key, actual_cost)
-        
-        # Set TTLs (only if key was just created, but safe to set every time)
-        await redis_client.expire(daily_key, DAILY_KEY_TTL)
-        await redis_client.expire(hourly_key, HOURLY_KEY_TTL)
-        
-        # Atomic increment for token counts
-        if input_tokens > 0:
-            await redis_client.hincrby(daily_token_key, "input", input_tokens)
-            await redis_client.hincrby(hourly_token_key, "input", input_tokens)
-            await redis_client.expire(daily_token_key, DAILY_KEY_TTL)
-            await redis_client.expire(hourly_token_key, HOURLY_KEY_TTL)
-        
-        if output_tokens > 0:
-            await redis_client.hincrby(daily_token_key, "output", output_tokens)
-            await redis_client.hincrby(hourly_token_key, "output", output_tokens)
-            await redis_client.expire(daily_token_key, DAILY_KEY_TTL)
-            await redis_client.expire(hourly_token_key, HOURLY_KEY_TTL)
+        # Use atomic Lua script to adjust costs and record tokens
+        result = await redis_client.eval(
+            ADJUST_SPEND_LUA,
+            4,  # Number of keys
+            daily_key,
+            hourly_key,
+            daily_token_key,
+            hourly_token_key,
+            cost_adjustment,  # ARGV[1]
+            input_tokens,  # ARGV[2]
+            output_tokens,  # ARGV[3]
+            DAILY_KEY_TTL,  # ARGV[4]
+            HOURLY_KEY_TTL,  # ARGV[5]
+        )
         
         # Update Prometheus metrics
         try:

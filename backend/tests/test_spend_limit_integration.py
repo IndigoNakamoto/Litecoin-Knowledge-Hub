@@ -18,6 +18,14 @@ from backend.monitoring.discord_alerts import send_spend_limit_alert
 from backend.utils.settings_reader import clear_settings_cache
 
 
+@pytest.fixture(autouse=True)
+def clear_cache_before_test():
+    """Clear settings cache before each test to prevent cache pollution."""
+    clear_settings_cache()
+    yield
+    clear_settings_cache()
+
+
 @pytest.mark.asyncio
 async def test_discord_alert_sent_at_80_percent():
     with patch("backend.monitoring.discord_alerts.httpx.AsyncClient") as mock_client_class:
@@ -110,35 +118,38 @@ async def test_discord_alert_handles_http_error():
 @pytest.mark.asyncio
 async def test_spend_limit_check_with_10_percent_buffer():
     """Test that spend limit check includes 10% buffer."""
-    # Clear settings cache to ensure fresh state
-    clear_settings_cache()
-    
     mock_redis_client = AsyncMock()
-    # Set daily cost to limit - 0.5
-    daily_cost = 5.0 - 0.5  # 4.5
-    # Use side_effect to return different values for hourly vs daily
-    async def get_side_effect(key):
-        key_str = str(key)
-        # Handle settings key (returns None to use defaults)
-        if "admin:settings:abuse_prevention" in key_str:
-            return None
-        # Return daily cost for daily key, low value for hourly key
-        if "daily" in key_str and "llm:cost:daily" in key_str:
-            return str(daily_cost)
-        elif "hourly" in key_str and "llm:cost:hourly" in key_str:
-            return "0.0"  # Hourly is low, so daily limit is checked first
-        else:
-            return "0.0"  # Default for other keys
     
-    mock_redis_client.get = AsyncMock(side_effect=get_side_effect)
+    # Smart mock for get() that returns None for settings key
+    async def smart_get(key):
+        key_str = str(key)
+        if "admin:settings:abuse_prevention" in key_str:
+            return None  # No settings in Redis, use defaults
+        return "0.0"  # Default for cost keys
+    
+    mock_redis_client.get = AsyncMock(side_effect=smart_get)
     mock_redis_client.hget = AsyncMock(return_value="0")  # Token counts default to 0
     
+    # Set daily cost to limit - 0.5 = 4.5
+    daily_cost = 5.0 - 0.5  # 4.5
+    
+    # First request: 0.4 should be allowed (4.5 + 0.4*1.1 = 4.94 < 5.0)
+    # Mock redis.eval() for CHECK_AND_RESERVE_SPEND_LUA - returns success
+    # Returns: [status_code, daily_cost, hourly_cost]
+    buffered_cost_1 = 0.4 * 1.1  # 0.44
+    mock_redis_client.eval = AsyncMock(return_value=[0, daily_cost + buffered_cost_1, buffered_cost_1])
+    
     with patch("backend.monitoring.spend_limit.get_redis_client", return_value=mock_redis_client):
-        # Request of 0.4 should be allowed (4.5 + 0.4*1.1 = 4.94 < 5.0)
+        # Request of 0.4 should be allowed
         allowed, error_msg, _ = await check_spend_limit(0.4, "test-model")
         assert allowed is True
-        
-        # Request of 0.6 should be blocked (4.5 + 0.6*1.1 = 5.16 > 5.0)
+    
+    # Second request: 0.6 should be blocked (4.5 + 0.6*1.1 = 5.16 > 5.0)
+    # Mock redis.eval() for CHECK_AND_RESERVE_SPEND_LUA - returns daily limit exceeded
+    mock_redis_client.eval = AsyncMock(return_value=[1, daily_cost, 0.0])  # status_code=1 = daily exceeded
+    
+    with patch("backend.monitoring.spend_limit.get_redis_client", return_value=mock_redis_client):
+        # Request of 0.6 should be blocked
         allowed, error_msg, _ = await check_spend_limit(0.6, "test-model")
         assert allowed is False
 
@@ -147,9 +158,8 @@ async def test_spend_limit_check_with_10_percent_buffer():
 async def test_record_spend_updates_prometheus_metrics():
     """Test that recording spend updates Prometheus metrics."""
     mock_redis_client = AsyncMock()
-    mock_redis_client.incrbyfloat = AsyncMock(return_value=1.0)
-    mock_redis_client.hincrby = AsyncMock(return_value=1000)
-    mock_redis_client.expire = AsyncMock(return_value=True)
+    # Mock redis.eval() for ADJUST_SPEND_LUA which returns [daily_cost, hourly_cost]
+    mock_redis_client.eval = AsyncMock(return_value=[1.0, 1.0])
     
     with patch("backend.monitoring.spend_limit.get_redis_client", return_value=mock_redis_client):
         with patch("backend.monitoring.spend_limit.get_current_usage", new_callable=AsyncMock) as mock_usage:

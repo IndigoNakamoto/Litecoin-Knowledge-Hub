@@ -4,6 +4,15 @@ All notable changes and completed milestones for the Litecoin Knowledge Hub proj
 
 ## Log of Completed Milestones
 
+* **Atomic Lua Scripts for Redis Concurrency Safety (12/08/2025)**
+  * Added 5 new Lua scripts to eliminate race conditions in Redis operations:
+    - `VALIDATE_CONSUME_CHALLENGE_LUA`: Atomic challenge validation and consumption
+    - `GENERATE_CHALLENGE_LUA`: Atomic challenge generation with progressive ban handling
+    - `CHECK_AND_RESERVE_SPEND_LUA`: Atomic spend limit check and cost reservation
+    - `ADJUST_SPEND_LUA`: Atomic spend adjustment with token tracking
+    - `APPLY_PROGRESSIVE_BAN_LUA`: Atomic progressive ban application
+  * Prevents TOCTOU (time-of-check time-of-use) race conditions that could allow attackers to bypass rate limits, spend limits, or challenge validation under high concurrency
+  * Updated challenge.py, spend_limit.py, and rate_limiter.py to use atomic Lua scripts
 * **Monitoring Enhancements & Rate Limit Discord Alerts (12/08/2025)**
   * Added Discord notifications for rate limit violations (hourly/minute limits)
   * New admin setting `enable_rate_limit_discord_alerts` to toggle rate limit alerts

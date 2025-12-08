@@ -19,7 +19,7 @@ from backend.monitoring.metrics import (
     lua_script_duration_seconds,
 )
 from backend.monitoring.discord_alerts import send_rate_limit_alert
-from backend.utils.lua_scripts import SLIDING_WINDOW_LUA
+from backend.utils.lua_scripts import SLIDING_WINDOW_LUA, APPLY_PROGRESSIVE_BAN_LUA
 
 logger = logging.getLogger(__name__)
 
@@ -170,24 +170,55 @@ async def _apply_progressive_ban(
     redis, client_ip: str, config: RateLimitConfig
 ) -> int:
   """
-  Apply progressive ban based on violation count.
+  Apply progressive ban based on violation count using atomic Lua script.
+  
+  Consolidates violation increment, expiry setting, and ban application into a single
+  atomic operation. This eliminates race conditions on violation count and ensures
+  consistent ban duration calculation.
+  
   Returns ban expiration timestamp.
   """
   violation_key = f"rl:violations:{config.identifier}:{client_ip}"
   ban_key = f"rl:ban:{config.identifier}:{client_ip}"
   
-  # Get current violation count
-  violation_count = await redis.incr(violation_key)
-  await redis.expire(violation_key, 86400)  # Reset violations after 24 hours
-  
-  # Determine ban duration based on violation count
-  ban_index = min(violation_count - 1, len(config.progressive_ban_durations) - 1)
-  ban_duration = config.progressive_ban_durations[ban_index]
-  
-  # Set ban expiration
   now = int(time.time())
-  ban_expiry = now + ban_duration
-  await redis.setex(ban_key, ban_duration, ban_expiry)
+  
+  # Convert ban durations to comma-separated string for Lua
+  ban_durations_str = ",".join(str(d) for d in config.progressive_ban_durations)
+  
+  # Use atomic Lua script to increment violation, calculate ban, and apply it
+  script_start_time = time.time()
+  try:
+    result = await redis.eval(
+        APPLY_PROGRESSIVE_BAN_LUA,
+        2,  # Number of keys
+        violation_key,
+        ban_key,
+        now,  # ARGV[1]
+        ban_durations_str,  # ARGV[2]
+        86400,  # ARGV[3]: violation_ttl (24 hours)
+    )
+    
+    # Track Lua script execution
+    script_duration = time.time() - script_start_time
+    lua_script_executions_total.labels(script_name="progressive_ban", result="success").inc()
+    lua_script_duration_seconds.labels(script_name="progressive_ban").observe(script_duration)
+    
+    violation_count = result[0]
+    ban_expiry = result[1]
+    # ban_duration = result[2]  # Available if needed for logging
+    
+  except Exception as e:
+    # Track Lua script error
+    script_duration = time.time() - script_start_time
+    lua_script_executions_total.labels(script_name="progressive_ban", result="error").inc()
+    lua_script_duration_seconds.labels(script_name="progressive_ban").observe(script_duration)
+    
+    logger.error(f"Redis Lua Error in progressive ban: {e}", exc_info=True)
+    # Fallback: apply a default 1-minute ban
+    ban_expiry = now + 60
+    await redis.setex(ban_key, 60, ban_expiry)
+    violation_count = 1
   
   # Record metrics
   rate_limit_bans_total.labels(endpoint_type=config.identifier).inc()

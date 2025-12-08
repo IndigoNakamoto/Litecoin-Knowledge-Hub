@@ -198,9 +198,12 @@ async def test_check_progressive_ban_expired_ban():
 async def test_apply_progressive_ban_first_violation():
     """Test applying progressive ban for first violation."""
     redis = AsyncMock()
-    redis.incr = AsyncMock(return_value=1)  # First violation
-    redis.expire = AsyncMock()
-    redis.setex = AsyncMock()
+    now = int(time.time())
+    expected_ban_expiry = now + 60  # First violation = 60 seconds
+    
+    # Mock redis.eval() for APPLY_PROGRESSIVE_BAN_LUA
+    # Returns: [violation_count, ban_expiry, ban_duration]
+    redis.eval = AsyncMock(return_value=[1, expected_ban_expiry, 60])
     
     config = RateLimitConfig(
         requests_per_minute=60,
@@ -210,23 +213,24 @@ async def test_apply_progressive_ban_first_violation():
         progressive_ban_durations=[60, 300, 900, 3600]
     )
     
-    now = int(time.time())
     with patch('backend.rate_limiter.time.time', return_value=now):
         ban_expiry = await _apply_progressive_ban(redis, "192.168.1.1", config)
     
     # First violation should be 60 seconds
-    assert ban_expiry == now + 60
-    redis.incr.assert_called_once()
-    redis.setex.assert_called_once()
+    assert ban_expiry == expected_ban_expiry
+    redis.eval.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_apply_progressive_ban_second_violation():
     """Test applying progressive ban for second violation."""
     redis = AsyncMock()
-    redis.incr = AsyncMock(return_value=2)  # Second violation
-    redis.expire = AsyncMock()
-    redis.setex = AsyncMock()
+    now = int(time.time())
+    expected_ban_expiry = now + 300  # Second violation = 300 seconds
+    
+    # Mock redis.eval() for APPLY_PROGRESSIVE_BAN_LUA
+    # Returns: [violation_count, ban_expiry, ban_duration]
+    redis.eval = AsyncMock(return_value=[2, expected_ban_expiry, 300])
     
     config = RateLimitConfig(
         requests_per_minute=60,
@@ -236,12 +240,12 @@ async def test_apply_progressive_ban_second_violation():
         progressive_ban_durations=[60, 300, 900, 3600]
     )
     
-    now = int(time.time())
     with patch('backend.rate_limiter.time.time', return_value=now):
         ban_expiry = await _apply_progressive_ban(redis, "192.168.1.1", config)
     
     # Second violation should be 300 seconds (5 minutes)
-    assert ban_expiry == now + 300
+    assert ban_expiry == expected_ban_expiry
+    redis.eval.assert_called_once()
 
 
 @pytest.mark.asyncio
