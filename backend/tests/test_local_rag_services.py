@@ -243,9 +243,10 @@ class TestInfinityEmbeddings:
             mock_client_instance.__aexit__ = AsyncMock(return_value=None)
             mock_client.return_value = mock_client_instance
             
-            result = await embeddings.embed_query("test query")
+            dense, sparse = await embeddings.embed_query("test query")
             
-            assert len(result) == 1024
+            assert len(dense) == 1024
+            assert sparse is None  # No sparse embedding in mock response
             mock_client_instance.post.assert_called_once()
     
     @pytest.mark.asyncio
@@ -270,10 +271,11 @@ class TestInfinityEmbeddings:
             mock_client_instance.__aexit__ = AsyncMock(return_value=None)
             mock_client.return_value = mock_client_instance
             
-            result = await embeddings.embed_documents(["doc1", "doc2"])
+            dense, sparse = await embeddings.embed_documents(["doc1", "doc2"])
             
-            assert len(result) == 2
-            assert len(result[0]) == 1024
+            assert len(dense) == 2
+            assert len(dense[0]) == 1024
+            assert len(sparse) == 2  # Sparse list same length as dense
     
     @pytest.mark.asyncio
     async def test_embed_empty_list(self, embeddings):
