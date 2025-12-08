@@ -5,9 +5,10 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { normalizeMarkdown } from "@/lib/markdownUtils";
 
 interface MessageProps {
   role: "user" | "assistant";
@@ -27,6 +28,9 @@ interface MessageProps {
 const Message: React.FC<MessageProps> = ({ role, content, sources, messageId, retryInfo, onRetry }) => {
   const isUser = role === "user";
   const messageRef = React.useRef<HTMLDivElement>(null);
+  
+  // Normalize markdown to fix LLM output issues (missing newlines before headings)
+  const normalizedContent = useMemo(() => normalizeMarkdown(content), [content]);
   
   // Countdown timer for retry
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
@@ -189,7 +193,7 @@ const Message: React.FC<MessageProps> = ({ role, content, sources, messageId, re
               img: ({ src, alt }) => <img src={src} alt={alt} className="rounded-lg my-4 max-w-full" />,
             }}
           >
-            {content}
+            {normalizedContent}
           </ReactMarkdown>
         </div>
       </div>
@@ -258,7 +262,7 @@ const Message: React.FC<MessageProps> = ({ role, content, sources, messageId, re
               img: ({ src, alt }) => <img src={src} alt={alt} className="rounded-lg my-4 max-w-full" />,
             }}
           >
-            {content}
+            {normalizedContent}
           </ReactMarkdown>
         </div>
         {sources && sources.length > 0 && (

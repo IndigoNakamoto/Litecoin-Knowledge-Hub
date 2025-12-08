@@ -4,9 +4,10 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import React from "react";
+import React, { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { normalizeMarkdown } from "@/lib/markdownUtils";
 
 interface StreamingMessageProps {
   content: string;
@@ -21,6 +22,8 @@ const StreamingMessage: React.FC<StreamingMessageProps> = ({
   sources,
   isStreamActive
 }) => {
+  // Normalize markdown to fix LLM output issues (missing newlines before headings)
+  const normalizedContent = useMemo(() => normalizeMarkdown(content), [content]);
 
   const getStatusColor = () => {
     switch (status) {
@@ -108,7 +111,7 @@ const StreamingMessage: React.FC<StreamingMessageProps> = ({
               img: ({ src, alt }) => <img src={src} alt={alt} className="rounded-lg my-4 max-w-full" />,
             }}
           >
-            {content}
+            {normalizedContent}
           </ReactMarkdown>
         </div>
       </div>
