@@ -4,6 +4,31 @@ All notable changes and completed milestones for the Litecoin Knowledge Hub proj
 
 ## Log of Completed Milestones
 
+* **FAQ-Based Indexing & FAISS Performance Optimizations (12/08/2025)**
+  * Implemented FAQ-Based Indexing using Parent Document Pattern for improved retrieval
+    - Generates 3 synthetic questions per document chunk using LLM (Gemini or local Ollama)
+    - Indexes questions for search, returns parent chunks for LLM context
+    - Bridges vocabulary gap between user queries and document content
+    - 83% of search hits now match synthetic questions, improving relevance
+  * Added Intent Detection & Routing Layer for query classification
+    - Pre-RAG classification handles greetings, thanks, FAQ matches before hitting RAG
+    - Uses rapidfuzz for fuzzy matching against FAQ questions
+    - Reduces unnecessary LLM calls for simple queries
+  * Major FAISS performance optimizations:
+    - Publishing articles no longer triggers full index rebuild (~15-25s vs ~14 min)
+    - Added `reload_from_disk()` method for fast refresh without rebuild
+    - Delete operations only affect MongoDB, rebuild on explicit request
+  * Added Docker volume persistence for FAISS index (`faiss_index_data`)
+    - Index survives container restarts without rebuilding
+    - First startup builds from MongoDB, subsequent starts load from disk (~1s)
+  * Added retry logic with exponential backoff for embedding requests
+  * Fixed gRPC/asyncio compatibility with Python 3.11 (`grpcio>=1.60.0`, `GRPC_POLL_STRATEGY=epoll1`)
+  * New files: `faq_generator.py`, `intent_classifier.py`, `reindex_with_faq.py`
+  * See [DEC7_FEATURE_ADVANCED_RAG_TECHNIQUES.md](./docs/features/DEC7_FEATURE_ADVANCED_RAG_TECHNIQUES.md) for complete details
+* **Markdown Heading Normalization Fix (12/08/2025)**
+  * Added markdown normalization utility to fix LLM output rendering issues
+  * Fixes headings that lack proper newlines (e.g., "text.## Heading" → "text.\n\n## Heading")
+  * Applied to Message and StreamingMessage components for consistent rendering
 * **Test Suite Improvements - 121 Passing Tests (12/08/2025)**
   * Fixed all 6 failing tests, bringing test suite to 121 passed, 36 skipped
   * Updated InfinityEmbeddings tests for new `(dense, sparse)` tuple return signature
