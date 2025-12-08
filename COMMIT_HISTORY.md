@@ -1,11 +1,78 @@
 # Commit History by Date
 
-**Total Commits:** 331
-**Total Days Worked:** 40
+**Total Commits:** 384
+**Total Days Worked:** 47
 
 ---
 
-## 2025-11-28 (7 commits)
+## 2025-12-07 (7 commits)
+
+- feat: Implement High-Performance Local RAG with Cloud Spillover
+- feat(monitoring): Add Discord alerts for rate limits and Local RAG Grafana panels
+- docs: Add monitoring enhancements to CHANGELOG
+- feat(backend): add atomic Lua scripts for Redis concurrency safety
+- fix(tests): update InfinityEmbeddings tests for new tuple return signature
+- fix(tests): update tests to properly mock Lua script eval() calls
+- docs: update test documentation with accurate counts (121 passed, 36 skipped)
+
+## 2025-12-06 (9 commits)
+
+- Add documentation: development cycles, security reviews, deployment guides, and specs
+- Add MongoDB backup script and update configuration for Atlas migration
+- Update admin settings, cost throttling, and add rebuild script
+- Merge branch 'main' of https://github.com/IndigoNakamoto/Litecoin-Knowledge-Hub
+- fix: Add missing lib files and fix .gitignore patterns
+- Add article service for frontend API interactions
+- docs: Update local RAG feature spec with unified 1024-dim architecture
+- docs: Add response quality optimization guide to local RAG feature spec
+- docs: Add Docker vs host networking notes for migration scripts
+
+## 2025-12-04 (1 commit)
+
+- docs: Update DEPLOYMENT.md to reflect actual 9-service production stack
+
+## 2025-12-02 (1 commit)
+
+- feat: implement warning design for input box when message exceeds character limit
+
+## 2025-12-01 (13 commits)
+
+- feat: Production-grade improvements to abuse prevention system
+- fix: Update rate limiter to handle 3-value Lua script return format
+- Optimize token counting with local Gemini tokenizer
+- docs: Update LLM cost estimates (/million without cache, /million with cache)
+- docs: Update CHANGELOG with recent milestones from commit history
+- Fix UnboundLocalError in cost throttling by removing misplaced import statements
+- Fix MongoDB connection string URL encoding for special characters
+- Disable semantic cache for queries with chat history
+- Add rebuild-backend.sh script for development
+- Replace favicon.ico with favicon.png and update references
+- Fix navigation scroll behavior for ChatWindow
+- Implement user message pinning and jitter-free streaming
+- Add rebuild-frontend.sh script for rebuilding frontend service
+
+## 2025-11-30 (5 commits)
+
+- refactor: rename Navigation component and centralize menu spacing config
+- Implement atomic Lua scripts for cost throttling optimization
+- fix: improve navigation z-index and mobile menu layout
+- feat: Implement atomic rate limiter optimization to eliminate race conditions
+- feat: implement Docker database security hardening
+
+## 2025-11-29 (10 commits)
+
+- Fix test failures: improve Redis mocking and async handling
+- fix(backend): Disable HTTPS redirect middleware when behind Cloudflare
+- fix(frontend): Add Cloudflare Insights to Content Security Policy
+- docs: Add CORS and HTTPS redirect fix documentation
+- chore: Add commit history generator script
+- feat: implement semantic cache for RAG pipeline
+- docs: Add feature document for categorized suggested questions
+- docs: update cloud deployment readiness and playbook
+- docs: update to Private Cloud strategy with dual Mac Mini cluster
+- docs: add multi-region distributed private cloud option
+
+## 2025-11-28 (14 commits)
 
 - feat(admin): Add question logs feature with filtering and real-time updates
 - refactor(admin): Improve admin dashboard components and styling
@@ -14,6 +81,13 @@
 - docs: Add commit history documentation
 - refactor: remove rate limiting from health/metrics endpoints and exclude admin from global limits
 - feat: improve chat UI layout and input box styling
+- chore: update commit history and improve frontend code quality
+- fix(cors): Fix CORS configuration for admin frontend
+- security: Add comprehensive red team assessment and HTTPS enforcement
+- fix(frontend): Use Host header for HTTPS redirect location
+- security: Fix CRIT-NEW-2 rate limiting IP spoofing vulnerability
+- security: Fix CRIT-NEW-1 - Bind monitoring ports to localhost only
+- security: Fix CRIT-NEW-3 - Require Grafana admin password
 
 ## 2025-11-27 (18 commits)
 
@@ -455,102 +529,3 @@
 - feat(ingestion): Implement multi-source data ingestion framework
 - docs(project): Synchronize documentation with ingestion framework
 - docs(project): Update time spent estimate
-
----
-
-<!--
-Function to generate COMMIT_HISTORY.md from git log:
-
-```python
-#!/usr/bin/env python3
-"""
-Generate COMMIT_HISTORY.md from git log.
-Run from project root: python3 generate_commit_history.py
-"""
-
-import subprocess
-from collections import defaultdict
-from datetime import datetime
-
-def generate_commit_history():
-    """Generate commit history markdown file from git log."""
-    
-    # Get git log with date and subject
-    cmd = ['git', 'log', '--format=%ad|%s', '--date=short', '--reverse']
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    
-    # Parse commits and group by date
-    commits_by_date = defaultdict(list)
-    for line in result.stdout.strip().split('\n'):
-        if '|' in line:
-            date_str, subject = line.split('|', 1)
-            commits_by_date[date_str].append(subject)
-    
-    # Calculate statistics
-    total_commits = sum(len(commits) for commits in commits_by_date.values())
-    total_days = len(commits_by_date)
-    
-    # Generate markdown
-    output = ["# Commit History by Date", ""]
-    output.append(f"**Total Commits:** {total_commits}")
-    output.append(f"**Total Days Worked:** {total_days}")
-    output.append("")
-    output.append("---")
-    output.append("")
-    
-    # Sort dates in reverse chronological order (newest first)
-    sorted_dates = sorted(commits_by_date.keys(), reverse=True)
-    
-    for date_str in sorted_dates:
-        commits = commits_by_date[date_str]
-        count = len(commits)
-        output.append(f"## {date_str} ({count} commit{'s' if count != 1 else ''})")
-        output.append("")
-        
-        # Add each commit message
-        for commit in commits:
-            output.append(f"- {commit}")
-        
-        output.append("")
-    
-    return '\n'.join(output)
-
-if __name__ == '__main__':
-    content = generate_commit_history()
-    with open('COMMIT_HISTORY.md', 'w') as f:
-        f.write(content)
-    print("Generated COMMIT_HISTORY.md")
-```
-
-Alternative one-liner shell script version:
-
-```bash
-#!/bin/bash
-# Generate COMMIT_HISTORY.md from git log
-
-{
-    echo "# Commit History by Date"
-    echo ""
-    TOTAL_COMMITS=$(git log --oneline | wc -l | tr -d ' ')
-    TOTAL_DAYS=$(git log --format=%ad --date=short | sort -u | wc -l | tr -d ' ')
-    echo "**Total Commits:** $TOTAL_COMMITS"
-    echo "**Total Days Worked:** $TOTAL_DAYS"
-    echo ""
-    echo "---"
-    echo ""
-    
-    git log --format="%ad|%s" --date=short --reverse | \
-    awk -F'|' '{dates[$1] = dates[$1] "\n- " $2} END {
-        n = asorti(dates, sorted_dates, "@ind_num_desc")
-        for (i = 1; i <= n; i++) {
-            date = sorted_dates[i]
-            count = gsub(/\n- /, "", dates[date])
-            print "## " date " (" count " commits)"
-            print ""
-            print substr(dates[date], 2)
-            print ""
-        }
-    }'
-} > COMMIT_HISTORY.md
-```
--->
