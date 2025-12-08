@@ -4,6 +4,21 @@ All notable changes and completed milestones for the Litecoin Knowledge Hub proj
 
 ## Log of Completed Milestones
 
+* **Test Suite Improvements - 121 Passing Tests (12/08/2025)**
+  * Fixed all 6 failing tests, bringing test suite to 121 passed, 36 skipped
+  * Updated InfinityEmbeddings tests for new `(dense, sparse)` tuple return signature
+  * Fixed abuse prevention tests to properly mock `redis.eval()` for Lua scripts:
+    - `test_per_identifier_challenge_limit`: Mock GENERATE_CHALLENGE_LUA
+    - `test_cost_throttling`: Mock COST_THROTTLE_LUA
+    - `test_global_spend_limits_use_updated_settings`: Mock CHECK_AND_RESERVE_SPEND_LUA
+  * Added skip conditions for integration tests incompatible with Infinity embeddings mode
+  * Updated README.md and docs/TESTING.md with accurate test counts and documentation
+  * Documented all 36 skipped tests with clear explanations:
+    - Local RAG Integration (21): Services not on localhost in Docker
+    - Rate Limiter Advanced (9): Optional fakeredis dependency
+    - Advanced Retrieval (3): Feature not yet implemented
+    - RAG Pipeline (2): Require Google embeddings
+    - Admin Endpoints (1): Event loop test setup issue
 * **Atomic Lua Scripts for Redis Concurrency Safety (12/08/2025)**
   * Added 5 new Lua scripts to eliminate race conditions in Redis operations:
     - `VALIDATE_CONSUME_CHALLENGE_LUA`: Atomic challenge validation and consumption

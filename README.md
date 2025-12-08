@@ -335,23 +335,48 @@ This runs production builds with the full stack (including monitoring) using loc
 
 ## **Testing**
 
-The Litecoin Knowledge Hub has a comprehensive test suite with **62/62 passing tests** covering all critical functionality including the RAG pipeline, conversational memory, rate limiting, spend limits, webhook authentication, and more.
+The Litecoin Knowledge Hub has a comprehensive test suite with **121 passing tests** covering all critical functionality including the RAG pipeline, conversational memory, rate limiting, spend limits, webhook authentication, abuse prevention, and local RAG services.
 
 ### Quick Start
 
-Run the full test suite with a single command:
+Run the full test suite inside the running Docker container:
 
 ```bash
-# From project root
-docker compose -f docker-compose.dev.yml run --rm \
-  -v "$(pwd)/backend/tests:/app/tests" \
-  -v "$(pwd)/backend:/app/backend" \
-  backend pytest tests/ -vv
+# If production stack is running
+docker exec litecoin-backend python -m pytest /app/backend/tests -v
+
+# Or using docker-compose dev environment
+docker compose -f docker-compose.dev.yml run --rm backend pytest tests/ -vv
 ```
 
-**Expected Output**: `62 passed, 4 skipped, 29 warnings in ~33s`
+**Expected Output**: `121 passed, 36 skipped, 30 warnings in ~40s`
 
-For the complete testing guide including prerequisites, optional commands (coverage, fast tests, single file tests), and detailed notes, see [docs/TESTING.md](./docs/TESTING.md).
+### Test Coverage Summary
+
+| Category | Passed | Description |
+|----------|--------|-------------|
+| Abuse Prevention | 6 | Challenge-response, rate limiting, cost throttling |
+| Admin Endpoints | 10 | Auth, settings, stats APIs |
+| Admin Settings Integration | 11 | Dynamic Redis settings |
+| Conversational Memory | 7 | Context-aware retrieval |
+| Rate Limiter | 23 | Sliding window, progressive bans |
+| Spend Limits | 18 | Daily/hourly limits, alerts |
+| Security | 10 | HTTPS redirect, headers, CORS |
+| Webhook Auth | 10 | HMAC, replay prevention |
+| Local RAG Services | 22 | Router, rewriter, embeddings |
+| Other | 4 | Delete fix, streaming |
+
+### Skipped Tests (36)
+
+Tests are skipped when optional dependencies or services aren't available:
+
+- **Local RAG Integration (21)**: Require Ollama/Infinity/Redis Stack on localhost (services run in Docker network)
+- **Rate Limiter Advanced (9)**: Require `fakeredis` package (optional)
+- **Advanced Retrieval (3)**: Feature not yet implemented
+- **RAG Pipeline (2)**: Require Google embeddings (incompatible with Infinity mode)
+- **Admin Endpoints (1)**: Event loop test setup issue
+
+For the complete testing guide, see [docs/TESTING.md](./docs/TESTING.md).
 
 ## **Deployment**
 
