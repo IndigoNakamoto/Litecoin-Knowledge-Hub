@@ -248,3 +248,121 @@ async def send_rate_limit_alert(
         logger.error(f"Failed to send Discord rate limit alert: {e}", exc_info=True)
         return False
 
+
+async def send_cost_throttle_alert(
+    stable_identifier: str,
+    fingerprint: str,
+    estimated_cost: float,
+    threshold: float,
+    window_seconds: int,
+    throttle_seconds: int,
+    reason: str = "window_burst",
+) -> bool:
+    """
+    Send a Discord alert when a user hits cost throttling.
+    
+    Args:
+        stable_identifier: The stable user identifier (will be masked)
+        fingerprint: The full fingerprint (will be masked)
+        estimated_cost: Estimated cost in USD for the request
+        threshold: The cost threshold that was exceeded
+        window_seconds: The time window in seconds
+        throttle_seconds: The throttle duration in seconds
+        reason: "window_burst" or "daily_limit"
+    
+    Returns:
+        True if alert was sent successfully, False otherwise
+    """
+    if not DISCORD_WEBHOOK_URL:
+        # Discord webhook not configured, skip silently
+        return False
+    
+    try:
+        # Mask identifiers for privacy
+        masked_stable_id = _mask_identifier(stable_identifier)
+        masked_fingerprint = _mask_identifier(fingerprint)
+        
+        # Format reason for display
+        if reason == "window_burst":
+            reason_display = "High Cost Window Burst"
+            description = f"A user has exceeded the high cost threshold within the {window_seconds}s window."
+        elif reason == "daily_limit":
+            reason_display = "Daily Cost Limit"
+            description = f"A user has exceeded their daily cost limit per identifier."
+        else:
+            reason_display = reason.replace("_", " ").title()
+            description = f"A user has triggered cost throttling: {reason_display}."
+        
+        title = f"🚨 Cost Throttle Triggered - {reason_display}"
+        color = 0xFF0000  # Red
+        
+        embed = {
+            "title": title,
+            "description": description,
+            "color": color,
+            "fields": [
+                {
+                    "name": "Stable Identifier",
+                    "value": f"`{masked_stable_id}`",
+                    "inline": True
+                },
+                {
+                    "name": "Fingerprint",
+                    "value": f"`{masked_fingerprint}`",
+                    "inline": True
+                },
+                {
+                    "name": "Reason",
+                    "value": reason_display,
+                    "inline": True
+                },
+                {
+                    "name": "Estimated Cost",
+                    "value": f"${estimated_cost:.6f}",
+                    "inline": True
+                },
+                {
+                    "name": "Threshold",
+                    "value": f"${threshold:.6f}",
+                    "inline": True
+                },
+                {
+                    "name": "Window Duration",
+                    "value": f"{window_seconds}s",
+                    "inline": True
+                },
+                {
+                    "name": "Throttle Duration",
+                    "value": f"{throttle_seconds}s",
+                    "inline": True
+                },
+                {
+                    "name": "Status",
+                    "value": "🔴 Throttled",
+                    "inline": True
+                },
+            ],
+            "footer": {
+                "text": "Litecoin Knowledge Hub - Cost Throttling"
+            },
+            "timestamp": None
+        }
+        
+        payload = {
+            "embeds": [embed]
+        }
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(DISCORD_WEBHOOK_URL, json=payload)
+            response.raise_for_status()
+        
+        logger.info(f"Discord cost throttle alert sent: {masked_stable_id} triggered {reason}")
+        return True
+        
+    except httpx.HTTPError as e:
+        logger.error(f"Failed to send Discord cost throttle alert (HTTP error): {e}", exc_info=True)
+        return False
+    except Exception as e:
+        logger.error(f"Failed to send Discord cost throttle alert: {e}", exc_info=True)
+        return False
+

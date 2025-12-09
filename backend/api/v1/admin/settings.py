@@ -47,6 +47,8 @@ class AbusePreventionSettings(BaseModel):
     daily_spend_limit_usd: Optional[float] = Field(None, ge=0.0001, description="Global daily LLM spend limit in USD")
     hourly_spend_limit_usd: Optional[float] = Field(None, ge=0.0001, description="Global hourly LLM spend limit in USD")
     enable_rate_limit_discord_alerts: Optional[bool] = Field(None, description="Enable Discord alerts when users hit rate limits")
+    enable_spend_limit_discord_alerts: Optional[bool] = Field(None, description="Enable Discord alerts for global spend limit blocks")
+    enable_cost_throttle_discord_alerts: Optional[bool] = Field(None, description="Enable Discord alerts for individual cost throttling")
 
 
 def verify_admin_token(authorization: str = None) -> bool:
@@ -137,6 +139,8 @@ def get_settings_from_env() -> Dict[str, Any]:
         "daily_spend_limit_usd": float(os.getenv("DAILY_SPEND_LIMIT_USD", "5.00")),
         "hourly_spend_limit_usd": float(os.getenv("HOURLY_SPEND_LIMIT_USD", "1.00")),
         "enable_rate_limit_discord_alerts": os.getenv("ENABLE_RATE_LIMIT_DISCORD_ALERTS", "false").lower() == "true",
+        "enable_spend_limit_discord_alerts": os.getenv("ENABLE_SPEND_LIMIT_DISCORD_ALERTS", "false").lower() == "true",
+        "enable_cost_throttle_discord_alerts": os.getenv("ENABLE_COST_THROTTLE_DISCORD_ALERTS", "false").lower() == "true",
     }
 
 

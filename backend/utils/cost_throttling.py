@@ -9,11 +9,13 @@ within the window, requests are throttled.
 import os
 import time
 import logging
+import asyncio
 from typing import Optional, Tuple
 from datetime import datetime
 
 from backend.redis_client import get_redis_client
 from backend.utils.lua_scripts import COST_THROTTLE_LUA, RECORD_COST_LUA
+from backend.monitoring.discord_alerts import send_cost_throttle_alert
 
 logger = logging.getLogger(__name__)
 
@@ -263,6 +265,28 @@ async def check_cost_based_throttling(
             if METRICS_ENABLED:
                 cost_throttle_triggers_total.labels(reason="daily_limit").inc()
                 # Throttle marker is set by Lua script, active users count updated via background task
+            
+            # Send Discord alert if enabled
+            try:
+                enable_alerts = await get_setting_from_redis_or_env(
+                    redis, "enable_cost_throttle_discord_alerts", "ENABLE_COST_THROTTLE_DISCORD_ALERTS", False, bool
+                )
+                if enable_alerts:
+                    # Fire and forget - don't await to avoid slowing down the response
+                    asyncio.create_task(
+                        send_cost_throttle_alert(
+                            stable_identifier=stable_identifier,
+                            fingerprint=fingerprint,
+                            estimated_cost=estimated_cost,
+                            threshold=daily_cost_limit_usd,
+                            window_seconds=high_cost_window_seconds,
+                            throttle_seconds=throttle_duration,
+                            reason="daily_limit"
+                        )
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to send cost throttle Discord alert: {e}")
+            
             return True, f"Daily usage limit reached. Please try again tomorrow."
         elif status_code == 3:
             # Window threshold exceeded
@@ -275,6 +299,28 @@ async def check_cost_based_throttling(
             if METRICS_ENABLED:
                 cost_throttle_triggers_total.labels(reason="window_burst").inc()
                 # Throttle marker is set by Lua script, active users count updated via background task
+            
+            # Send Discord alert if enabled
+            try:
+                enable_alerts = await get_setting_from_redis_or_env(
+                    redis, "enable_cost_throttle_discord_alerts", "ENABLE_COST_THROTTLE_DISCORD_ALERTS", False, bool
+                )
+                if enable_alerts:
+                    # Fire and forget - don't await to avoid slowing down the response
+                    asyncio.create_task(
+                        send_cost_throttle_alert(
+                            stable_identifier=stable_identifier,
+                            fingerprint=fingerprint,
+                            estimated_cost=estimated_cost,
+                            threshold=high_cost_threshold_usd,
+                            window_seconds=high_cost_window_seconds,
+                            throttle_seconds=throttle_duration,
+                            reason="window_burst"
+                        )
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to send cost throttle Discord alert: {e}")
+            
             return True, f"High usage detected. Please complete security verification and try again in {throttle_duration} seconds."
         else:
             # Unknown status code - fail open

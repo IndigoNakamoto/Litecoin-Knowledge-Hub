@@ -157,77 +157,83 @@ async def update_metrics_periodically():
                 # Check thresholds and send Discord alerts
                 redis_client = await get_redis_client()
                 
-                # Check daily limit
-                daily_cost = usage_info["daily"]["cost_usd"]
-                daily_percentage = usage_info["daily"]["percentage_used"]
+                # Check if Discord alerts are enabled
+                enable_alerts = await get_setting_from_redis_or_env(
+                    redis_client, "enable_spend_limit_discord_alerts", "ENABLE_SPEND_LIMIT_DISCORD_ALERTS", False, bool
+                )
                 
-                # 80% warning threshold
-                if daily_percentage >= 80:
-                    alert_key_80 = "llm:alert:daily:80"
-                    alert_sent = await redis_client.get(alert_key_80)
-                    if not alert_sent:
-                        # Send warning alert
-                        await send_spend_limit_alert(
-                            "daily",
-                            daily_cost,
-                            daily_limit,
-                            daily_percentage,
-                            is_exceeded=False
-                        )
-                        # Mark alert as sent (expire after 1 hour)
-                        await redis_client.setex(alert_key_80, 3600, "1")
-                
-                # 100% critical threshold
-                if daily_percentage >= 100:
-                    alert_key_100 = "llm:alert:daily:100"
-                    alert_sent = await redis_client.get(alert_key_100)
-                    if not alert_sent:
-                        # Send critical alert
-                        await send_spend_limit_alert(
-                            "daily",
-                            daily_cost,
-                            daily_limit,
-                            daily_percentage,
-                            is_exceeded=True
-                        )
-                        # Mark alert as sent (expire after 1 hour)
-                        await redis_client.setex(alert_key_100, 3600, "1")
-                
-                # Check hourly limit
-                hourly_cost = usage_info["hourly"]["cost_usd"]
-                hourly_percentage = usage_info["hourly"]["percentage_used"]
-                
-                # 80% warning threshold
-                if hourly_percentage >= 80:
-                    alert_key_80 = "llm:alert:hourly:80"
-                    alert_sent = await redis_client.get(alert_key_80)
-                    if not alert_sent:
-                        # Send warning alert
-                        await send_spend_limit_alert(
-                            "hourly",
-                            hourly_cost,
-                            hourly_limit,
-                            hourly_percentage,
-                            is_exceeded=False
-                        )
-                        # Mark alert as sent (expire after 1 hour)
-                        await redis_client.setex(alert_key_80, 3600, "1")
-                
-                # 100% critical threshold
-                if hourly_percentage >= 100:
-                    alert_key_100 = "llm:alert:hourly:100"
-                    alert_sent = await redis_client.get(alert_key_100)
-                    if not alert_sent:
-                        # Send critical alert
-                        await send_spend_limit_alert(
-                            "hourly",
-                            hourly_cost,
-                            hourly_limit,
-                            hourly_percentage,
-                            is_exceeded=True
-                        )
-                        # Mark alert as sent (expire after 1 hour)
-                        await redis_client.setex(alert_key_100, 3600, "1")
+                if enable_alerts:
+                    # Check daily limit
+                    daily_cost = usage_info["daily"]["cost_usd"]
+                    daily_percentage = usage_info["daily"]["percentage_used"]
+                    
+                    # 80% warning threshold
+                    if daily_percentage >= 80:
+                        alert_key_80 = "llm:alert:daily:80"
+                        alert_sent = await redis_client.get(alert_key_80)
+                        if not alert_sent:
+                            # Send warning alert
+                            await send_spend_limit_alert(
+                                "daily",
+                                daily_cost,
+                                daily_limit,
+                                daily_percentage,
+                                is_exceeded=False
+                            )
+                            # Mark alert as sent (expire after 1 hour)
+                            await redis_client.setex(alert_key_80, 3600, "1")
+                    
+                    # 100% critical threshold
+                    if daily_percentage >= 100:
+                        alert_key_100 = "llm:alert:daily:100"
+                        alert_sent = await redis_client.get(alert_key_100)
+                        if not alert_sent:
+                            # Send critical alert
+                            await send_spend_limit_alert(
+                                "daily",
+                                daily_cost,
+                                daily_limit,
+                                daily_percentage,
+                                is_exceeded=True
+                            )
+                            # Mark alert as sent (expire after 1 hour)
+                            await redis_client.setex(alert_key_100, 3600, "1")
+                    
+                    # Check hourly limit
+                    hourly_cost = usage_info["hourly"]["cost_usd"]
+                    hourly_percentage = usage_info["hourly"]["percentage_used"]
+                    
+                    # 80% warning threshold
+                    if hourly_percentage >= 80:
+                        alert_key_80 = "llm:alert:hourly:80"
+                        alert_sent = await redis_client.get(alert_key_80)
+                        if not alert_sent:
+                            # Send warning alert
+                            await send_spend_limit_alert(
+                                "hourly",
+                                hourly_cost,
+                                hourly_limit,
+                                hourly_percentage,
+                                is_exceeded=False
+                            )
+                            # Mark alert as sent (expire after 1 hour)
+                            await redis_client.setex(alert_key_80, 3600, "1")
+                    
+                    # 100% critical threshold
+                    if hourly_percentage >= 100:
+                        alert_key_100 = "llm:alert:hourly:100"
+                        alert_sent = await redis_client.get(alert_key_100)
+                        if not alert_sent:
+                            # Send critical alert
+                            await send_spend_limit_alert(
+                                "hourly",
+                                hourly_cost,
+                                hourly_limit,
+                                hourly_percentage,
+                                is_exceeded=True
+                            )
+                            # Mark alert as sent (expire after 1 hour)
+                            await redis_client.setex(alert_key_100, 3600, "1")
                 
             except Exception as e:
                 logger.error(f"Error updating spend limit metrics: {e}", exc_info=True)

@@ -14,6 +14,8 @@ export interface AbusePreventionSettings {
   daily_spend_limit_usd?: number;
   hourly_spend_limit_usd?: number;
   enable_rate_limit_discord_alerts?: boolean;
+  enable_spend_limit_discord_alerts?: boolean;
+  enable_cost_throttle_discord_alerts?: boolean;
 }
 
 export interface SettingsResponse {

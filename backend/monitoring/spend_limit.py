@@ -7,11 +7,13 @@ spend limits in Redis, with atomic operations for thread safety across multiple 
 
 import os
 import logging
+import asyncio
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, Tuple
 from backend.redis_client import get_redis_client
 from backend.utils.settings_reader import get_setting_from_redis_or_env
 from backend.utils.lua_scripts import CHECK_AND_RESERVE_SPEND_LUA, ADJUST_SPEND_LUA
+from backend.monitoring.discord_alerts import send_spend_limit_alert
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +213,27 @@ async def check_spend_limit(
                 f"Limit: ${daily_spend_limit_usd:.2f}"
             )
             logger.warning(f"Spend limit check failed (daily): {error_msg}")
+            
+            # Send Discord alert if enabled
+            try:
+                enable_alerts = await get_setting_from_redis_or_env(
+                    redis_client, "enable_spend_limit_discord_alerts", "ENABLE_SPEND_LIMIT_DISCORD_ALERTS", False, bool
+                )
+                if enable_alerts:
+                    daily_percentage = (daily_cost / daily_spend_limit_usd * 100) if daily_spend_limit_usd > 0 else 0
+                    # Fire and forget - don't await to avoid slowing down the response
+                    asyncio.create_task(
+                        send_spend_limit_alert(
+                            limit_type="daily",
+                            current_cost=daily_cost,
+                            limit=daily_spend_limit_usd,
+                            percentage=daily_percentage,
+                            is_exceeded=True
+                        )
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to send spend limit Discord alert: {e}")
+            
             return False, error_msg, usage_info
         
         if status_code == 2:
@@ -222,6 +245,27 @@ async def check_spend_limit(
                 f"Limit: ${hourly_spend_limit_usd:.2f}"
             )
             logger.warning(f"Spend limit check failed (hourly): {error_msg}")
+            
+            # Send Discord alert if enabled
+            try:
+                enable_alerts = await get_setting_from_redis_or_env(
+                    redis_client, "enable_spend_limit_discord_alerts", "ENABLE_SPEND_LIMIT_DISCORD_ALERTS", False, bool
+                )
+                if enable_alerts:
+                    hourly_percentage = (hourly_cost / hourly_spend_limit_usd * 100) if hourly_spend_limit_usd > 0 else 0
+                    # Fire and forget - don't await to avoid slowing down the response
+                    asyncio.create_task(
+                        send_spend_limit_alert(
+                            limit_type="hourly",
+                            current_cost=hourly_cost,
+                            limit=hourly_spend_limit_usd,
+                            percentage=hourly_percentage,
+                            is_exceeded=True
+                        )
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to send spend limit Discord alert: {e}")
+            
             return False, error_msg, usage_info
         
         # status_code == 0: Request is allowed and cost was reserved atomically

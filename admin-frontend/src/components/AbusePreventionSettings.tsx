@@ -237,6 +237,23 @@ export function AbusePreventionSettings() {
                   )}
                 </Label>
               </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="enable_spend_limit_discord_alerts"
+                  checked={settings.enable_spend_limit_discord_alerts ?? false}
+                  onChange={(e) => updateSetting("enable_spend_limit_discord_alerts", e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <Label htmlFor="enable_spend_limit_discord_alerts">
+                  Enable Spend Limit Discord Alerts
+                  {sources.enable_spend_limit_discord_alerts && (
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      ({sources.enable_spend_limit_discord_alerts})
+                    </span>
+                  )}
+                </Label>
+              </div>
             </CardContent>
           </Card>
 
@@ -319,6 +336,23 @@ export function AbusePreventionSettings() {
                   onChange={(e) => updateSetting("daily_cost_limit_usd", parseFloat(e.target.value) || undefined)}
                   min="0.0001"
                 />
+              </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="enable_cost_throttle_discord_alerts"
+                  checked={settings.enable_cost_throttle_discord_alerts ?? false}
+                  onChange={(e) => updateSetting("enable_cost_throttle_discord_alerts", e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <Label htmlFor="enable_cost_throttle_discord_alerts">
+                  Enable Cost Throttle Discord Alerts
+                  {sources.enable_cost_throttle_discord_alerts && (
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      ({sources.enable_cost_throttle_discord_alerts})
+                    </span>
+                  )}
+                </Label>
               </div>
             </CardContent>
           </Card>
