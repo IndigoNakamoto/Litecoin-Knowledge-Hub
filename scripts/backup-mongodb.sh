@@ -1,8 +1,9 @@
 #!/bin/bash
 
 # MongoDB Backup Script
-# This script backs up MongoDB databases (litecoin_rag_db and payload_cms)
-# Supports both local Docker MongoDB and cloud MongoDB Atlas
+# This script backs up MongoDB databases (litecoin_rag_db and payload_cms).
+# It is designed to use **local Docker MongoDB as the primary source of truth**,
+# but can also talk to a remote/cloud MongoDB (e.g., Atlas) if MONGO_URI points there.
 #
 # Usage:
 #   ./backup-mongodb.sh [--output-dir DIR] [--databases DB1,DB2]

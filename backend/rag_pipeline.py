@@ -316,7 +316,7 @@ class RAGPipeline:
         else:
             self.semantic_cache = SemanticCache(
                 embedding_model=self.vector_store_manager.embeddings,  # Reuse existing embedding model
-                threshold=float(os.getenv("SEMANTIC_CACHE_THRESHOLD", "0.92")),
+                threshold=float(os.getenv("SEMANTIC_CACHE_THRESHOLD", "0.96")),
                 max_size=int(os.getenv("SEMANTIC_CACHE_MAX_SIZE", "2000")),
                 ttl_seconds=int(os.getenv("SEMANTIC_CACHE_TTL_SECONDS", str(3600 * 72)))  # 72 hours
             )
