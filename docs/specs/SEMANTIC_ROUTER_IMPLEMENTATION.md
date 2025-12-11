@@ -507,3 +507,5 @@ def test_fail_safe(mock_embedding_model):
 - **Chat Endpoint:** `backend/main.py:935` (`chat_stream_endpoint`)
 - **Embedding Model:** `backend/data_ingestion/vector_store_manager.py`
 
+
+

@@ -43,6 +43,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         
+        # Content Security Policy for API responses
+        # Restrictive policy suitable for JSON APIs - prevents any content execution
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'none'; "
+            "frame-ancestors 'none'; "
+            "form-action 'none'"
+        )
+        
         # Only add HSTS in production
         if self.is_production:
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"

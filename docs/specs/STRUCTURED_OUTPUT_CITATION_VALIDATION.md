@@ -647,3 +647,5 @@ def test_citation_validation_hallucination():
 - **Chat Endpoint:** `backend/main.py:935`
 - **Gemini Structured Output:** https://ai.google.dev/gemini-api/docs/structured-output
 
+
+

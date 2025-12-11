@@ -157,3 +157,5 @@ This document provides an overview of the Phase 2 core feature implementations. 
 - **Current RAG Pipeline:** `backend/rag_pipeline.py`
 - **Chat Endpoint:** `backend/main.py:935`
 
+
+
