@@ -4,6 +4,21 @@ All notable changes and completed milestones for the Litecoin Knowledge Hub proj
 
 ## Log of Completed Milestones
 
+* **Critical Security Patches: React2Shell & Backend Dependencies (12/11/2025)**
+  * Patched critical React2Shell / React RSC RCE vulnerabilities (CVE-2025-55182, CVE-2025-66478) across all frontend applications
+  * Updated Next.js and React versions to fixed releases:
+    - `frontend`: `next` 15.3.3 → 15.5.8
+    - `admin-frontend`: `next` 16.0.3 → 16.0.9, `react` 19.2.0 → 19.2.1
+    - `payload_cms`: `next` 15.3.0 → 15.5.8, `react` 19.1.0 → 19.2.1
+  * Upgraded Python backend dependencies to remediate 15 of 16 known CVEs:
+    - `langchain-core` 0.3.65 → 0.3.80+
+    - `langchain-community` 0.3.25 → 0.3.27+
+    - `starlette` 0.46.2 → 0.49.1+
+    - `urllib3` 2.4.0 → 2.6.0+
+    - `aiohttp` 3.12.12 → 3.12.14+
+    - `pip` 21.2.4 → 25.3, `setuptools` 58.1.0 → 80.9.0
+  * Added strict `Content-Security-Policy` header in backend middleware for defense-in-depth on API responses
+  * See [RED_TEAM_ASSESSMENT_DEC_2025.md](./docs/security/RED_TEAM_ASSESSMENT_DEC_2025.md) for full audit details
 * **FAQ-Based Indexing & FAISS Performance Optimizations (12/08/2025)**
   * Implemented FAQ-Based Indexing using Parent Document Pattern for improved retrieval
     - Generates 3 synthetic questions per document chunk using LLM (Gemini or local Ollama)
