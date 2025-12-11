@@ -30,6 +30,11 @@ USE_REDIS_CACHE = os.getenv("USE_REDIS_CACHE", "false").lower() == "true"
 USE_INTENT_CLASSIFICATION = os.getenv("USE_INTENT_CLASSIFICATION", "true").lower() == "true"
 USE_FAQ_INDEXING = os.getenv("USE_FAQ_INDEXING", "true").lower() == "true"
 
+# --- User-facing error messages (shared across modules) ---
+GENERIC_USER_ERROR_MESSAGE = (
+    "I encountered an error while processing your query. Please try again or rephrase your question."
+)
+
 # Lazy-load local RAG services only when enabled
 _inference_router = None
 _infinity_embeddings = None
@@ -316,7 +321,7 @@ class RAGPipeline:
         else:
             self.semantic_cache = SemanticCache(
                 embedding_model=self.vector_store_manager.embeddings,  # Reuse existing embedding model
-                threshold=float(os.getenv("SEMANTIC_CACHE_THRESHOLD", "0.96")),
+                threshold=float(os.getenv("SEMANTIC_CACHE_THRESHOLD", "0.92")),
                 max_size=int(os.getenv("SEMANTIC_CACHE_MAX_SIZE", "2000")),
                 ttl_seconds=int(os.getenv("SEMANTIC_CACHE_TTL_SECONDS", str(3600 * 72)))  # 72 hours
             )
@@ -724,24 +729,33 @@ class RAGPipeline:
                             cached_result = await suggested_cache.get(matched_faq)
                             if cached_result:
                                 answer, sources = cached_result
-                                logger.info(f"FAQ match cache HIT: '{query_text[:30]}...' -> '{matched_faq[:30]}...'")
-                                if MONITORING_ENABLED:
-                                    rag_cache_hits_total.labels(cache_type="intent_faq").inc()
-                                    rag_query_duration_seconds.labels(
-                                        query_type="async",
-                                        cache_hit="true"
-                                    ).observe(time.time() - start_time)
-                                metadata = {
-                                    "input_tokens": 0,
-                                    "output_tokens": 0,
-                                    "cost_usd": 0.0,
-                                    "duration_seconds": time.time() - start_time,
-                                    "cache_hit": True,
-                                    "cache_type": "intent_faq_match",
-                                    "intent": "faq_match",
-                                    "matched_faq": matched_faq,
-                                }
-                                return answer, sources, metadata
+                                # Skip entries that only contain the generic error message
+                                if answer.strip() == GENERIC_USER_ERROR_MESSAGE:
+                                    logger.warning(
+                                        "FAQ cache entry contains generic error message; "
+                                        f"treating as cache miss for matched FAQ: '{matched_faq[:50]}...'"
+                                    )
+                                else:
+                                    logger.info(
+                                        f"FAQ match cache HIT: '{query_text[:30]}...' -> '{matched_faq[:30]}...'"
+                                    )
+                                    if MONITORING_ENABLED:
+                                        rag_cache_hits_total.labels(cache_type="intent_faq").inc()
+                                        rag_query_duration_seconds.labels(
+                                            query_type="async",
+                                            cache_hit="true"
+                                        ).observe(time.time() - start_time)
+                                    metadata = {
+                                        "input_tokens": 0,
+                                        "output_tokens": 0,
+                                        "cost_usd": 0.0,
+                                        "duration_seconds": time.time() - start_time,
+                                        "cache_hit": True,
+                                        "cache_type": "intent_faq_match",
+                                        "intent": "faq_match",
+                                        "matched_faq": matched_faq,
+                                    }
+                                    return answer, sources, metadata
                         except Exception as e:
                             logger.warning(f"FAQ cache lookup failed: {e}")
                     # If cache miss, fall through to normal RAG
@@ -1240,7 +1254,7 @@ class RAGPipeline:
                 "cache_hit": False,
                 "cache_type": None,
             }
-            return "I encountered an error while processing your query. Please try again or rephrase your question.", [], metadata
+            return GENERIC_USER_ERROR_MESSAGE, [], metadata
 
     async def astream_query(self, query_text: str, chat_history: List[Tuple[str, str]]):
         """
@@ -1319,40 +1333,52 @@ class RAGPipeline:
                                 cached_result = await suggested_cache.get(matched_faq)
                                 if cached_result:
                                     answer, sources = cached_result
-                                    logger.info(f"FAQ match cache HIT (stream): '{query_text[:30]}...' -> '{matched_faq[:30]}...'")
-                                    if MONITORING_ENABLED:
-                                        rag_cache_hits_total.labels(cache_type="intent_faq").inc()
-                                        rag_query_duration_seconds.labels(
-                                            query_type="stream",
-                                            cache_hit="true"
-                                        ).observe(time.time() - start_time)
-                                    
-                                    # Send sources first
-                                    yield {"type": "sources", "sources": sources}
-                                    
-                                    # Stream cached answer
-                                    for i, char in enumerate(answer):
-                                        yield {"type": "chunk", "content": char}
-                                        if i % 10 == 0:
-                                            await asyncio.sleep(0.001)
-                                    
-                                    metadata = {
-                                        "input_tokens": 0,
-                                        "output_tokens": 0,
-                                        "cost_usd": 0.0,
-                                        "duration_seconds": time.time() - start_time,
-                                        "cache_hit": True,
-                                        "cache_type": "intent_faq_match",
-                                        "intent": "faq_match",
-                                        "matched_faq": matched_faq,
-                                    }
-                                    yield {"type": "metadata", "metadata": metadata}
-                                    yield {"type": "complete", "from_cache": True}
-                                    return
+                                    # Skip entries that only contain the generic error message
+                                    if answer.strip() == GENERIC_USER_ERROR_MESSAGE:
+                                        logger.warning(
+                                            "FAQ cache entry contains generic error message (stream); "
+                                            f"treating as cache miss for matched FAQ: '{matched_faq[:50]}...'"
+                                        )
+                                    else:
+                                        logger.info(
+                                            "FAQ match cache HIT (stream): "
+                                            f"'{query_text[:30]}...' -> '{matched_faq[:30]}...'"
+                                        )
+                                        if MONITORING_ENABLED:
+                                            rag_cache_hits_total.labels(cache_type="intent_faq").inc()
+                                            rag_query_duration_seconds.labels(
+                                                query_type="stream",
+                                                cache_hit="true"
+                                            ).observe(time.time() - start_time)
+                                        
+                                        # Send sources first
+                                        yield {"type": "sources", "sources": sources}
+                                        
+                                        # Stream cached answer
+                                        for i, char in enumerate(answer):
+                                            yield {"type": "chunk", "content": char}
+                                            if i % 10 == 0:
+                                                await asyncio.sleep(0.001)
+                                        
+                                        metadata = {
+                                            "input_tokens": 0,
+                                            "output_tokens": 0,
+                                            "cost_usd": 0.0,
+                                            "duration_seconds": time.time() - start_time,
+                                            "cache_hit": True,
+                                            "cache_type": "intent_faq_match",
+                                            "intent": "faq_match",
+                                            "matched_faq": matched_faq,
+                                        }
+                                        yield {"type": "metadata", "metadata": metadata}
+                                        yield {"type": "complete", "from_cache": True}
+                                        return
                             except Exception as e:
                                 logger.warning(f"FAQ cache lookup failed (stream): {e}")
                         # If cache miss, fall through to normal RAG
-                        logger.debug(f"FAQ match but cache miss, proceeding with RAG (stream): {matched_faq[:50]}...")
+                        logger.debug(
+                            f"FAQ match but cache miss, proceeding with RAG (stream): {matched_faq[:50]}..."
+                        )
             
             # === 1. Try semantic cache first ===
             cached_result = self.semantic_cache.get(query_text, truncated_history) if self.semantic_cache else None

@@ -23,7 +23,7 @@ from contextlib import asynccontextmanager
 load_dotenv()
 
 # Import the RAG chain constructor and data models
-from backend.rag_pipeline import RAGPipeline, LLM_MODEL_NAME
+from backend.rag_pipeline import RAGPipeline, LLM_MODEL_NAME, GENERIC_USER_ERROR_MESSAGE
 from backend.data_models import ChatRequest, ChatMessage, UserQuestion, LLMRequestLog
 from backend.api.v1.sync.payload import router as payload_sync_router
 from backend.api.v1.admin.usage import router as admin_router
@@ -648,6 +648,17 @@ async def refresh_suggested_question_cache():
                 # Generate response via RAG pipeline (empty chat history for suggested questions)
                 logger.info(f"Generating response for question: {question_text[:50]}...")
                 answer, sources, metadata = await rag_pipeline_instance.aquery(question_text, [])
+
+                # If the pipeline returned the generic user-facing error message,
+                # treat this as a refresh error and DO NOT cache the response.
+                if answer.strip() == GENERIC_USER_ERROR_MESSAGE:
+                    error_count += 1
+                    logger.warning(
+                        "RAG pipeline returned generic error message during suggested-question refresh; "
+                        f"skipping cache for question: {question_text[:50]}..."
+                    )
+                    suggested_question_cache_refresh_errors_total.inc()
+                    continue
                 
                 # Store in Suggested Question Cache
                 await suggested_question_cache.set(question_text, answer, sources)
@@ -1173,68 +1184,79 @@ async def chat_stream_endpoint(request: ChatRequest, background_tasks: Backgroun
                 suggested_question_cache_lookup_duration_seconds.observe(lookup_duration)
                 
                 if cached_result:
-                    # Cache hit - stream cached response
-                    logger.debug(f"Suggested Question Cache hit for: {request.query[:50]}...")
-                    suggested_question_cache_hits_total.labels(cache_type="suggested_question").inc()
                     answer, sources = cached_result
-                    full_answer = answer
-                    
-                    # Filter published sources
-                    published_sources = [
-                        doc for doc in sources
-                        if doc.metadata.get('status') == 'published'
-                    ]
-                    sources_count = len(published_sources)
-                    cache_hit = True
-                    cache_type = "suggested_question"
-                    
-                    # Send sources first
-                    sources_json = jsonable_encoder([
-                        SourceDocument(page_content=doc.page_content, metadata=doc.metadata)
-                        for doc in published_sources
-                    ])
-                    payload = {
-                        "status": "sources",
-                        "sources": sources_json,
-                        "isComplete": False
-                    }
-                    yield f"data: {json.dumps(payload)}\n\n"
-                    
-                    # Stream cached response character by character for consistent UX
-                    for i, char in enumerate(answer):
+
+                    # If the cached answer is just the generic error message, treat it as a cache miss.
+                    # This avoids serving stale "I encountered an error..." responses that were cached
+                    # when the RAG pipeline was temporarily unavailable (e.g., during startup).
+                    if answer.strip() == GENERIC_USER_ERROR_MESSAGE:
+                        logger.warning(
+                            "Suggested Question Cache entry contains generic error message; "
+                            f"treating as cache miss for query: '{request.query[:50]}...'"
+                        )
+                        suggested_question_cache_misses_total.labels(cache_type="suggested_question").inc()
+                    else:
+                        # Cache hit - stream cached response
+                        logger.debug(f"Suggested Question Cache hit for: {request.query[:50]}...")
+                        suggested_question_cache_hits_total.labels(cache_type="suggested_question").inc()
+                        full_answer = answer
+                        
+                        # Filter published sources
+                        published_sources = [
+                            doc for doc in sources
+                            if doc.metadata.get('status') == 'published'
+                        ]
+                        sources_count = len(published_sources)
+                        cache_hit = True
+                        cache_type = "suggested_question"
+                        
+                        # Send sources first
+                        sources_json = jsonable_encoder([
+                            SourceDocument(page_content=doc.page_content, metadata=doc.metadata)
+                            for doc in published_sources
+                        ])
                         payload = {
-                            "status": "streaming",
-                            "chunk": char,
+                            "status": "sources",
+                            "sources": sources_json,
                             "isComplete": False
                         }
                         yield f"data: {json.dumps(payload)}\n\n"
-                        # Small delay to control streaming speed
-                        if i % 10 == 0:  # Yield control every 10 characters
-                            await asyncio.sleep(0.001)
-                    
-                    # Signal completion with cache flag
-                    payload = {
-                        "status": "complete",
-                        "chunk": "",
-                        "isComplete": True,
-                        "fromCache": "suggested_question"
-                    }
-                    yield f"data: {json.dumps(payload)}\n\n"
-                    
-                    # Set metadata for cache hit
-                    metadata = {
-                        "input_tokens": 0,
-                        "output_tokens": 0,
-                        "cost_usd": 0.0,
-                        "duration_seconds": time.time() - start_time,
-                        "cache_hit": True,
-                        "cache_type": "suggested_question",
-                    }
-                    return
-                else:
-                    # Cache miss - fall through to QueryCache → RAG pipeline
-                    suggested_question_cache_misses_total.labels(cache_type="suggested_question").inc()
-                    logger.debug(f"Suggested Question Cache miss for: {request.query[:50]}...")
+                        
+                        # Stream cached response character by character for consistent UX
+                        for i, char in enumerate(answer):
+                            payload = {
+                                "status": "streaming",
+                                "chunk": char,
+                                "isComplete": False
+                            }
+                            yield f"data: {json.dumps(payload)}\n\n"
+                            # Small delay to control streaming speed
+                            if i % 10 == 0:  # Yield control every 10 characters
+                                await asyncio.sleep(0.001)
+                        
+                        # Signal completion with cache flag
+                        payload = {
+                            "status": "complete",
+                            "chunk": "",
+                            "isComplete": True,
+                            "fromCache": "suggested_question"
+                        }
+                        yield f"data: {json.dumps(payload)}\n\n"
+                        
+                        # Set metadata for cache hit
+                        metadata = {
+                            "input_tokens": 0,
+                            "output_tokens": 0,
+                            "cost_usd": 0.0,
+                            "duration_seconds": time.time() - start_time,
+                            "cache_hit": True,
+                            "cache_type": "suggested_question",
+                        }
+                        return
+
+                # Cache miss - fall through to QueryCache → RAG pipeline
+                suggested_question_cache_misses_total.labels(cache_type="suggested_question").inc()
+                logger.debug(f"Suggested Question Cache miss for: {request.query[:50]}...")
 
             # Get streaming response from RAG pipeline
             # This will check QueryCache internally, then run RAG pipeline if needed
