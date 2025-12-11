@@ -21,6 +21,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     - Strict-Transport-Security: max-age=31536000; includeSubDomains (production only)
     - Referrer-Policy: strict-origin-when-cross-origin
     - Permissions-Policy: geolocation=(), microphone=(), camera=()
+    - Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'
     """
     
     def __init__(self, app, exclude_paths: list[str] = None):
@@ -43,9 +44,16 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         
+        # Relaxed CSP for API functionality and Swagger UI
+        # - default-src 'self': Allow loading resources from same origin
+        # - frame-ancestors 'none': Prevent clickjacking (same as X-Frame-Options: DENY)
+        # - script-src 'self' 'unsafe-inline': Allow inline scripts (needed for Swagger UI)
+        # - style-src 'self' 'unsafe-inline': Allow inline styles (needed for Swagger UI)
+        # - Removed sandbox: Allow JS execution
+        response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+
         # Only add HSTS in production
         if self.is_production:
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         
         return response
-
