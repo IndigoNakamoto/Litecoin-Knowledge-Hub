@@ -138,6 +138,12 @@ try:
         rag_retrieval_duration_seconds,
         rag_documents_retrieved_total,
         llm_spend_limit_rejections_total,
+        rag_query_rewrite_duration_seconds,
+        rag_embedding_generation_duration_seconds,
+        rag_vector_search_duration_seconds,
+        rag_bm25_search_duration_seconds,
+        rag_sparse_rerank_duration_seconds,
+        rag_llm_generation_duration_seconds,
     )
     from backend.monitoring.llm_observability import track_llm_metrics, estimate_gemini_cost
     from backend.monitoring.spend_limit import check_spend_limit, record_spend
@@ -164,6 +170,8 @@ MAX_CHAT_HISTORY_PAIRS = int(os.getenv("MAX_CHAT_HISTORY_PAIRS", "2"))
 # Retriever k value (number of documents to retrieve)
 # Increased from 8 to 12 for better context coverage (recommended in feature doc)
 RETRIEVER_K = int(os.getenv("RETRIEVER_K", "12"))
+# Limit for sparse re-ranking (only re-rank top N candidates to save time)
+SPARSE_RERANK_LIMIT = int(os.getenv("SPARSE_RERANK_LIMIT", "10"))
 NO_KB_MATCH_RESPONSE = (
     "I couldn't find any relevant content in our knowledge base yet. "
 )
@@ -816,14 +824,83 @@ class RAGPipeline:
                 if ai_msg:
                     converted_chat_history.append(AIMessage(content=ai_msg))
 
+            # === LOCAL RAG: Redis Stack vector cache check (BEFORE query rewriting) ===
+            # Check cache with original query first to avoid unnecessary LLM calls for cached queries
+            query_vector = None
+            query_sparse = None
+            original_query_vector = None
+            original_query_sparse = None
+            
+            if USE_REDIS_CACHE or USE_INFINITY_EMBEDDINGS:
+                infinity = _get_infinity_embeddings()
+                if infinity:
+                    embed_start = time.time()
+                    try:
+                        # Generate embedding for original query first
+                        original_query_vector, original_query_sparse = await infinity.embed_query(query_text)
+                        query_vector = original_query_vector
+                        query_sparse = original_query_sparse
+                        if MONITORING_ENABLED:
+                            rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
+                        if query_sparse:
+                            logger.info(f"✅ Query sparse embedding received: {len(query_sparse)} terms (sample: {list(query_sparse.items())[:3]})")
+                        else:
+                            logger.debug(f"Query sparse embedding: None (model may not support sparse)")
+                    except Exception as e:
+                        if MONITORING_ENABLED:
+                            rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
+                        logger.warning(f"Infinity embedding failed: {e}", exc_info=True)
+            
+            # Check Redis cache with original query embedding (before rewriting)
+            if USE_REDIS_CACHE and original_query_vector:
+                redis_cache = _get_redis_vector_cache()
+                if redis_cache:
+                    try:
+                        redis_result = await redis_cache.get(original_query_vector)
+                        if redis_result:
+                            answer, sources_data = redis_result
+                            # Reconstruct Document objects from cached data
+                            cached_sources = []
+                            for src in sources_data:
+                                if isinstance(src, dict):
+                                    cached_sources.append(Document(
+                                        page_content=src.get("page_content", ""),
+                                        metadata=src.get("metadata", {})
+                                    ))
+                                elif isinstance(src, Document):
+                                    cached_sources.append(src)
+                            
+                            logger.info(f"Redis vector cache HIT (before rewrite) for: {query_text[:50]}...")
+                            if MONITORING_ENABLED:
+                                rag_cache_hits_total.labels(cache_type="redis_vector").inc()
+                                rag_query_duration_seconds.labels(
+                                    query_type="async",
+                                    cache_hit="true"
+                                ).observe(time.time() - start_time)
+                            metadata = {
+                                "input_tokens": 0,
+                                "output_tokens": 0,
+                                "cost_usd": 0.0,
+                                "duration_seconds": time.time() - start_time,
+                                "cache_hit": True,
+                                "cache_type": "redis_vector",
+                                "rewritten_query": None,
+                            }
+                            return answer, cached_sources, metadata
+                    except Exception as e:
+                        logger.warning(f"Redis cache lookup failed: {e}")
+            
             # === LOCAL RAG: Router-based query rewriting ===
-            # Use local Ollama for rewriting when enabled, with Gemini fallback
+            # Only rewrite if cache missed (saves LLM call for cached queries)
             rewritten_query = query_text
             if USE_LOCAL_REWRITER:
                 router = _get_inference_router()
                 if router:
+                    rewrite_start = time.time()
                     try:
                         rewritten_query = await router.rewrite(query_text, truncated_history)
+                        if MONITORING_ENABLED:
+                            rag_query_rewrite_duration_seconds.observe(time.time() - rewrite_start)
                         if rewritten_query == "NO_SEARCH_NEEDED":
                             # Non-search query (greeting, thanks, etc.)
                             metadata = {
@@ -838,26 +915,32 @@ class RAGPipeline:
                             return "I understand. Is there anything else you'd like to know about Litecoin?", [], metadata
                         logger.debug(f"Query rewritten: '{query_text}' -> '{rewritten_query}'")
                     except Exception as e:
+                        if MONITORING_ENABLED:
+                            rag_query_rewrite_duration_seconds.observe(time.time() - rewrite_start)
                         logger.warning(f"Router rewrite failed, using original query: {e}")
                         rewritten_query = query_text
             
-            # === LOCAL RAG: Redis Stack vector cache check ===
-            # Check semantic cache using rewritten query embedding
-            query_vector = None
-            query_sparse = None
-            if USE_REDIS_CACHE or USE_INFINITY_EMBEDDINGS:
+            # If query was rewritten, generate embedding for rewritten query
+            if rewritten_query != query_text and (USE_REDIS_CACHE or USE_INFINITY_EMBEDDINGS):
                 infinity = _get_infinity_embeddings()
                 if infinity:
+                    embed_start = time.time()
                     try:
                         query_vector, query_sparse = await infinity.embed_query(rewritten_query)
+                        if MONITORING_ENABLED:
+                            rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
                         if query_sparse:
-                            logger.info(f"✅ Query sparse embedding received: {len(query_sparse)} terms (sample: {list(query_sparse.items())[:3]})")
-                        else:
-                            logger.debug(f"Query sparse embedding: None (model may not support sparse)")
+                            logger.info(f"✅ Rewritten query sparse embedding received: {len(query_sparse)} terms")
                     except Exception as e:
-                        logger.warning(f"Infinity embedding failed: {e}", exc_info=True)
+                        if MONITORING_ENABLED:
+                            rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
+                        logger.warning(f"Infinity embedding for rewritten query failed: {e}", exc_info=True)
+                        # Fallback to original query embedding
+                        query_vector = original_query_vector
+                        query_sparse = original_query_sparse
             
-            if USE_REDIS_CACHE and query_vector:
+            # Check Redis cache again with rewritten query embedding (if query was rewritten)
+            if USE_REDIS_CACHE and query_vector and rewritten_query != query_text:
                 redis_cache = _get_redis_vector_cache()
                 if redis_cache:
                     try:
@@ -875,7 +958,7 @@ class RAGPipeline:
                                 elif isinstance(src, Document):
                                     cached_sources.append(src)
                             
-                            logger.info(f"Redis vector cache HIT for: {rewritten_query[:50]}...")
+                            logger.info(f"Redis vector cache HIT (after rewrite) for: {rewritten_query[:50]}...")
                             if MONITORING_ENABLED:
                                 rag_cache_hits_total.labels(cache_type="redis_vector").inc()
                                 rag_query_duration_seconds.labels(
@@ -889,29 +972,67 @@ class RAGPipeline:
                                 "duration_seconds": time.time() - start_time,
                                 "cache_hit": True,
                                 "cache_type": "redis_vector",
-                                "rewritten_query": rewritten_query if rewritten_query != query_text else None,
+                                "rewritten_query": rewritten_query,
                             }
                             return answer, cached_sources, metadata
                     except Exception as e:
-                        logger.warning(f"Redis cache lookup failed: {e}")
+                        logger.warning(f"Redis cache lookup for rewritten query failed: {e}")
 
             # === UNIFIED HYBRID + HISTORY-AWARE RETRIEVAL ===
             # First, do a quick retrieval check to see if we have published sources
             retrieval_start = time.time()
             # Use rewritten query for retrieval when local rewriter is enabled
             retrieval_query = rewritten_query if USE_LOCAL_REWRITER else query_text
+            # Initialize context_docs to ensure it's always defined
+            context_docs = []
+            retrieval_failed = False
             
             # When using Infinity embeddings with 1024-dim index, use HYBRID retrieval
             # Combines: 1) Infinity vector search (semantic) + 2) BM25 keyword search
             if USE_INFINITY_EMBEDDINGS and query_vector is not None:
+                vector_docs = []
+                bm25_docs = []
                 try:
-                    # 1. Vector search with Infinity embeddings - retrieve more for better quality filtering
-                    # Use similarity_search_with_score to get similarity scores for filtering
-                    vector_results = self.vector_store_manager.vector_store.similarity_search_with_score_by_vector(
-                        query_vector, 
-                        k=RETRIEVER_K * 2  # Retrieve more candidates for better filtering
-                    )
-                    # Filter by similarity threshold (cosine similarity >= 0.3 for BGE-M3)
+                    # Helper functions for parallel execution
+                    def run_vector_search():
+                        """Run vector search synchronously."""
+                        return self.vector_store_manager.vector_store.similarity_search_with_score_by_vector(
+                            query_vector, 
+                            k=RETRIEVER_K * 2  # Retrieve more candidates for better filtering
+                        )
+                    
+                    def run_bm25_search():
+                        """Run BM25 search synchronously."""
+                        if hasattr(self, 'bm25_retriever') and self.bm25_retriever:
+                            # Temporarily increase k for BM25 to get better coverage
+                            original_k = self.bm25_retriever.k
+                            self.bm25_retriever.k = RETRIEVER_K * 2
+                            try:
+                                return self.bm25_retriever.invoke(retrieval_query)
+                            finally:
+                                self.bm25_retriever.k = original_k  # Restore original
+                        return []
+                    
+                    # 1. & 2. Run vector and BM25 searches in parallel
+                    search_start = time.time()
+                    vector_task = asyncio.to_thread(run_vector_search)
+                    bm25_task = asyncio.to_thread(run_bm25_search) if hasattr(self, 'bm25_retriever') and self.bm25_retriever else None
+                    
+                    if bm25_task:
+                        vector_results, bm25_docs = await asyncio.gather(vector_task, bm25_task)
+                        search_duration = time.time() - search_start
+                        if MONITORING_ENABLED:
+                            # Both searches ran in parallel, so duration is the same for both
+                            rag_vector_search_duration_seconds.observe(search_duration)
+                            rag_bm25_search_duration_seconds.observe(search_duration)
+                    else:
+                        vector_results = await vector_task
+                        bm25_docs = []
+                        search_duration = time.time() - search_start
+                        if MONITORING_ENABLED:
+                            rag_vector_search_duration_seconds.observe(search_duration)
+                    
+                    # Filter vector results by similarity threshold (cosine similarity >= 0.3 for BGE-M3)
                     MIN_SIMILARITY_THRESHOLD = float(os.getenv("MIN_VECTOR_SIMILARITY", "0.3"))
                     vector_docs = [doc for doc, score in vector_results if score >= MIN_SIMILARITY_THRESHOLD]
                     
@@ -923,93 +1044,142 @@ class RAGPipeline:
                     if vector_results:
                         logger.debug(f"   Top similarity score: {vector_results[0][1]:.3f}, Bottom: {vector_results[-1][1]:.3f}")
                     
-                    # 2. BM25 keyword search (important for exact matches like "Charlie Lee")
-                    # Increase k for BM25 to get more keyword matches
-                    bm25_docs = []
-                    if hasattr(self, 'bm25_retriever') and self.bm25_retriever:
-                        try:
-                            # Temporarily increase k for BM25 to get better coverage
+                    if bm25_docs:
+                        logger.debug(f"BM25 keyword search returned {len(bm25_docs)} documents")
+                    elif hasattr(self, 'bm25_retriever') and self.bm25_retriever:
+                        logger.debug("BM25 keyword search returned 0 documents")
+                except Exception as bm25_error:
+                    logger.warning(f"Parallel search failed: {bm25_error}")
+                    # Fallback to sequential execution
+                    try:
+                        vector_results = self.vector_store_manager.vector_store.similarity_search_with_score_by_vector(
+                            query_vector, 
+                            k=RETRIEVER_K * 2
+                        )
+                        MIN_SIMILARITY_THRESHOLD = float(os.getenv("MIN_VECTOR_SIMILARITY", "0.3"))
+                        vector_docs = [doc for doc, score in vector_results if score >= MIN_SIMILARITY_THRESHOLD]
+                        if len(vector_docs) < RETRIEVER_K:
+                            vector_docs = [doc for doc, _ in vector_results[:RETRIEVER_K]]
+                        bm25_docs = []
+                        if hasattr(self, 'bm25_retriever') and self.bm25_retriever:
                             original_k = self.bm25_retriever.k
                             self.bm25_retriever.k = RETRIEVER_K * 2
                             bm25_docs = self.bm25_retriever.invoke(retrieval_query)
-                            self.bm25_retriever.k = original_k  # Restore original
-                            logger.debug(f"BM25 keyword search returned {len(bm25_docs)} documents")
-                        except Exception as bm25_error:
-                            logger.warning(f"BM25 search failed: {bm25_error}")
-                    
-                    # 3. Merge and deduplicate results with better priority logic
-                    seen_contents = set()
-                    candidate_docs = []
-                    candidate_scores = {}  # Track which source (BM25 vs vector) for priority
-                    
-                    # Prioritize BM25 results (better for exact keyword matches)
-                    for doc in bm25_docs:
-                        content_key = doc.page_content[:200]  # Use first 200 chars as key
-                        if content_key not in seen_contents:
-                            seen_contents.add(content_key)
-                            candidate_docs.append(doc)
-                            candidate_scores[id(doc)] = 'bm25'
-                    
-                    # Add vector results, avoiding duplicates
-                    for doc in vector_docs:
-                        content_key = doc.page_content[:200]
-                        if content_key not in seen_contents:
-                            seen_contents.add(content_key)
-                            candidate_docs.append(doc)
-                            candidate_scores[id(doc)] = 'vector'
-                    
-                    logger.debug(f"Hybrid merge: {len(bm25_docs)} BM25 + {len(vector_docs)} vector → {len(candidate_docs)} unique candidates")
-                    
-                    # 4. Re-rank using sparse embeddings if available (BGE-M3)
-                    if query_sparse and infinity and len(candidate_docs) > 0:
-                        try:
-                            logger.info(f"🔄 Sparse re-ranking: {len(candidate_docs)} candidates, query has {len(query_sparse)} sparse terms")
-                            # Generate sparse embeddings for candidate documents
-                            doc_texts = [doc.page_content[:8000] for doc in candidate_docs]  # Truncate for TF-IDF
-                            _, doc_sparse_list = await infinity.embed_documents(doc_texts)
-                            
-                            # Compute sparse similarity scores
-                            doc_scores = []
-                            sparse_count = sum(1 for s in doc_sparse_list if s is not None)
-                            logger.info(f"   Generated {sparse_count}/{len(doc_sparse_list)} document sparse embeddings")
-                            
-                            for i, (doc, doc_sparse) in enumerate(zip(candidate_docs, doc_sparse_list)):
-                                if doc_sparse:
-                                    sparse_sim = infinity.sparse_similarity(query_sparse, doc_sparse)
-                                    doc_scores.append((sparse_sim, i, doc))
-                                else:
-                                    doc_scores.append((0.0, i, doc))
-                            
-                            # Sort by sparse similarity (highest first)
-                            doc_scores.sort(reverse=True, key=lambda x: x[0])
-                            context_docs = [doc for _, _, doc in doc_scores[:RETRIEVER_K]]
-                            
-                            logger.info(f"✅ Hybrid retrieval (Infinity + BM25 + Sparse) returned {len(context_docs)} documents")
-                            if doc_scores:
-                                logger.info(f"   Top sparse similarity: {doc_scores[0][0]:.3f}")
-                        except Exception as sparse_error:
-                            logger.warning(f"⚠️ Sparse re-ranking failed, using basic hybrid: {sparse_error}", exc_info=True)
-                            # Fallback to basic hybrid
-                            context_docs = candidate_docs[:RETRIEVER_K]
-                    else:
+                            self.bm25_retriever.k = original_k
+                    except Exception as fallback_error:
+                        logger.error(f"Fallback search also failed: {fallback_error}")
+                        vector_docs = []
+                        bm25_docs = []
+                
+                # 3. Merge and deduplicate results with better priority logic
+                # This is outside the try block so exceptions here don't lose the retrieved documents
+                seen_contents = set()
+                candidate_docs = []
+                candidate_scores = {}  # Track which source (BM25 vs vector) for priority
+                
+                # Prioritize BM25 results (better for exact keyword matches)
+                for doc in bm25_docs:
+                    content_key = doc.page_content[:200]  # Use first 200 chars as key
+                    if content_key not in seen_contents:
+                        seen_contents.add(content_key)
+                        candidate_docs.append(doc)
+                        candidate_scores[id(doc)] = 'bm25'
+                
+                # Add vector results, avoiding duplicates
+                for doc in vector_docs:
+                    content_key = doc.page_content[:200]
+                    if content_key not in seen_contents:
+                        seen_contents.add(content_key)
+                        candidate_docs.append(doc)
+                        candidate_scores[id(doc)] = 'vector'
+                
+                logger.debug(f"Hybrid merge: {len(bm25_docs)} BM25 + {len(vector_docs)} vector → {len(candidate_docs)} unique candidates")
+                
+                # 4. Re-rank using sparse embeddings if available (BGE-M3)
+                # This is outside the main try block so exceptions here don't trigger full fallback
+                if query_sparse and infinity and len(candidate_docs) > 0:
+                    try:
+                        rerank_start = time.time()
+                        # Limit candidates for sparse re-ranking to save time (only embed top N)
+                        candidates_for_rerank = candidate_docs[:SPARSE_RERANK_LIMIT]
+                        logger.info(f"🔄 Sparse re-ranking: {len(candidates_for_rerank)}/{len(candidate_docs)} candidates (limited to top {SPARSE_RERANK_LIMIT}), query has {len(query_sparse)} sparse terms")
+                        # Generate sparse embeddings for candidate documents
+                        doc_texts = [doc.page_content[:8000] for doc in candidates_for_rerank]  # Truncate for TF-IDF
+                        _, doc_sparse_list = await infinity.embed_documents(doc_texts)
+                        
+                        # Compute sparse similarity scores
+                        doc_scores = []
+                        sparse_count = sum(1 for s in doc_sparse_list if s is not None)
+                        logger.info(f"   Generated {sparse_count}/{len(doc_sparse_list)} document sparse embeddings")
+                        
+                        for i, (doc, doc_sparse) in enumerate(zip(candidates_for_rerank, doc_sparse_list)):
+                            if doc_sparse:
+                                sparse_sim = infinity.sparse_similarity(query_sparse, doc_sparse)
+                                doc_scores.append((sparse_sim, i, doc))
+                            else:
+                                doc_scores.append((0.0, i, doc))
+                        
+                        # Sort by sparse similarity (highest first)
+                        doc_scores.sort(reverse=True, key=lambda x: x[0])
+                        # Take top RETRIEVER_K from re-ranked results, then add remaining candidates if needed
+                        reranked_docs = [doc for _, _, doc in doc_scores]
+                        # If we have fewer reranked docs than RETRIEVER_K, add remaining candidates
+                        if len(reranked_docs) < RETRIEVER_K and len(candidate_docs) > len(candidates_for_rerank):
+                            remaining_docs = [doc for doc in candidate_docs[SPARSE_RERANK_LIMIT:] if doc not in reranked_docs]
+                            reranked_docs.extend(remaining_docs[:RETRIEVER_K - len(reranked_docs)])
+                        context_docs = reranked_docs[:RETRIEVER_K]
+                        
+                        if MONITORING_ENABLED:
+                            rag_sparse_rerank_duration_seconds.observe(time.time() - rerank_start)
+                        
+                        logger.info(f"✅ Hybrid retrieval (Infinity + BM25 + Sparse) returned {len(context_docs)} documents")
+                        if doc_scores:
+                            logger.info(f"   Top sparse similarity: {doc_scores[0][0]:.3f}")
+                    except Exception as sparse_error:
+                        if MONITORING_ENABLED and 'rerank_start' in locals():
+                            rag_sparse_rerank_duration_seconds.observe(time.time() - rerank_start)
+                        logger.warning(f"⚠️ Sparse re-ranking failed, using basic hybrid: {sparse_error}", exc_info=True)
+                        # Fallback to basic hybrid - use the candidate_docs we successfully retrieved
                         context_docs = candidate_docs[:RETRIEVER_K]
-                        if not query_sparse:
-                            logger.debug(f"Hybrid retrieval (Infinity + BM25) - no sparse embeddings available")
+                else:
+                    context_docs = candidate_docs[:RETRIEVER_K]
+                    if not query_sparse:
+                        logger.debug(f"Hybrid retrieval (Infinity + BM25) - no sparse embeddings available")
+                    else:
+                        logger.debug(f"Hybrid retrieval (Infinity + BM25) returned {len(context_docs)} unique documents")
+                
+                # Only fall back to history-aware retriever if we got no results at all
+                if not context_docs:
+                    try:
+                        logger.warning("No documents retrieved from hybrid search, falling back to history-aware retriever")
+                        retrieval_failed = True
+                        if USE_LOCAL_REWRITER and rewritten_query != query_text:
+                            logger.debug(f"Using hybrid retriever directly with rewritten query (skip history-aware): {rewritten_query[:50]}...")
+                            context_docs = await self.hybrid_retriever.ainvoke(retrieval_query)
                         else:
-                            logger.debug(f"Hybrid retrieval (Infinity + BM25) returned {len(context_docs)} unique documents")
-                    
-                except Exception as e:
-                    logger.warning(f"Infinity hybrid search failed, falling back to history-aware retriever: {e}")
-                    context_docs = await self.history_aware_retriever.ainvoke({
-                        "input": retrieval_query,
-                        "chat_history": converted_chat_history
-                    })
+                            context_docs = await self.history_aware_retriever.ainvoke({
+                                "input": retrieval_query,
+                                "chat_history": converted_chat_history
+                            })
+                    except Exception as fallback_error:
+                        logger.error(f"Fallback retrieval also failed: {fallback_error}", exc_info=True)
+                        context_docs = []
             else:
                 # Legacy path: use history-aware hybrid retriever
-                context_docs = await self.history_aware_retriever.ainvoke({
-                    "input": retrieval_query,
-                    "chat_history": converted_chat_history
-                })
+                # If query was already rewritten by local router, skip history-aware retriever (avoid redundant LLM call)
+                try:
+                    if USE_LOCAL_REWRITER and rewritten_query != query_text:
+                        logger.debug(f"Using hybrid retriever directly with rewritten query (skip history-aware): {rewritten_query[:50]}...")
+                        context_docs = await self.hybrid_retriever.ainvoke(retrieval_query)
+                    else:
+                        context_docs = await self.history_aware_retriever.ainvoke({
+                            "input": retrieval_query,
+                            "chat_history": converted_chat_history
+                        })
+                except Exception as e:
+                    logger.error(f"Legacy retrieval failed: {e}", exc_info=True)
+                    retrieval_failed = True
+                    context_docs = []
             retrieval_duration = time.time() - retrieval_start
 
             # === PARENT DOCUMENT PATTERN: Resolve synthetic questions ===
@@ -1045,6 +1215,8 @@ class RAGPipeline:
                         query_type="async",
                         cache_hit="false"
                     ).observe(total_duration)
+                # Use generic error message if retrieval failed, otherwise use standard no-match message
+                response_message = GENERIC_USER_ERROR_MESSAGE if retrieval_failed else NO_KB_MATCH_RESPONSE
                 metadata = {
                     "input_tokens": 0,
                     "output_tokens": 0,
@@ -1053,7 +1225,7 @@ class RAGPipeline:
                     "cache_hit": False,
                     "cache_type": None,
                 }
-                return NO_KB_MATCH_RESPONSE, [], metadata
+                return response_message, [], metadata
 
             # Format context for token estimation (needed for spend limit check and metrics)
             context_text = format_docs(context_docs)
@@ -1132,6 +1304,10 @@ class RAGPipeline:
                 llm_result = result.get("answer", answer)
             
             llm_duration = time.time() - llm_start
+            if MONITORING_ENABLED:
+                rag_llm_generation_duration_seconds.observe(llm_duration)
+            if MONITORING_ENABLED:
+                rag_llm_generation_duration_seconds.observe(llm_duration)
 
             # Filter published sources from chain result
             published_sources = [
@@ -1465,57 +1641,41 @@ class RAGPipeline:
                 if ai_msg:
                     converted_chat_history.append(AIMessage(content=ai_msg))
 
-            # === LOCAL RAG: Router-based query rewriting (streaming) ===
-            rewritten_query = query_text
-            if USE_LOCAL_REWRITER:
-                router = _get_inference_router()
-                if router:
-                    try:
-                        rewritten_query = await router.rewrite(query_text, truncated_history)
-                        if rewritten_query == "NO_SEARCH_NEEDED":
-                            yield {"type": "sources", "sources": []}
-                            response = "I understand. Is there anything else you'd like to know about Litecoin?"
-                            for char in response:
-                                yield {"type": "chunk", "content": char}
-                            metadata = {
-                                "input_tokens": 0,
-                                "output_tokens": 0,
-                                "cost_usd": 0.0,
-                                "duration_seconds": time.time() - start_time,
-                                "cache_hit": False,
-                                "cache_type": None,
-                                "rewritten_query": "NO_SEARCH_NEEDED",
-                            }
-                            yield {"type": "metadata", "metadata": metadata}
-                            yield {"type": "complete", "from_cache": False}
-                            return
-                        logger.debug(f"Stream query rewritten: '{query_text}' -> '{rewritten_query}'")
-                    except Exception as e:
-                        logger.warning(f"Router rewrite failed in stream, using original query: {e}")
-                        rewritten_query = query_text
-            
-            # === LOCAL RAG: Redis Stack vector cache check (streaming) ===
+            # === LOCAL RAG: Redis Stack vector cache check (BEFORE query rewriting, streaming) ===
+            # Check cache with original query first to avoid unnecessary LLM calls for cached queries
             query_vector = None
             query_sparse = None
+            original_query_vector = None
+            original_query_sparse = None
+            
             if USE_REDIS_CACHE or USE_INFINITY_EMBEDDINGS:
                 infinity = _get_infinity_embeddings()
                 if infinity:
+                    embed_start = time.time()
                     try:
-                        query_vector, query_sparse = await infinity.embed_query(rewritten_query)
+                        # Generate embedding for original query first
+                        original_query_vector, original_query_sparse = await infinity.embed_query(query_text)
+                        query_vector = original_query_vector
+                        query_sparse = original_query_sparse
+                        if MONITORING_ENABLED:
+                            rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
                         if query_sparse:
                             logger.info(f"✅ Query sparse embedding received (stream): {len(query_sparse)} terms (sample: {list(query_sparse.items())[:3]})")
                         else:
                             logger.debug(f"Query sparse embedding (stream): None (model may not support sparse)")
                     except Exception as e:
+                        if MONITORING_ENABLED:
+                            rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
                         logger.warning(f"Infinity embedding failed in stream: {e}", exc_info=True)
             
+            # Check Redis cache with original query embedding (before rewriting)
             # Skip semantic cache when chat history is present
             # Follow-up questions need fresh retrieval with context, not cached responses
-            if USE_REDIS_CACHE and query_vector and not chat_history:
+            if USE_REDIS_CACHE and original_query_vector and not chat_history:
                 redis_cache = _get_redis_vector_cache()
                 if redis_cache:
                     try:
-                        redis_result = await redis_cache.get(query_vector)
+                        redis_result = await redis_cache.get(original_query_vector)
                         if redis_result:
                             cached_answer, sources_data = redis_result
                             # Reconstruct Document objects
@@ -1529,7 +1689,7 @@ class RAGPipeline:
                                 elif isinstance(src, Document):
                                     cached_sources.append(src)
                             
-                            logger.info(f"Redis vector cache HIT (stream) for: {rewritten_query[:50]}...")
+                            logger.info(f"Redis vector cache HIT (before rewrite, stream) for: {query_text[:50]}...")
                             if MONITORING_ENABLED:
                                 rag_cache_hits_total.labels(cache_type="redis_vector").inc()
                                 rag_query_duration_seconds.labels(
@@ -1549,29 +1709,168 @@ class RAGPipeline:
                                 "duration_seconds": time.time() - start_time,
                                 "cache_hit": True,
                                 "cache_type": "redis_vector",
-                                "rewritten_query": rewritten_query if rewritten_query != query_text else None,
+                                "rewritten_query": None,
                             }
                             yield {"type": "metadata", "metadata": metadata}
                             yield {"type": "complete", "from_cache": True}
                             return
                     except Exception as e:
                         logger.warning(f"Redis cache lookup failed in stream: {e}")
+            
+            # === LOCAL RAG: Router-based query rewriting (streaming) ===
+            # Only rewrite if cache missed (saves LLM call for cached queries)
+            rewritten_query = query_text
+            if USE_LOCAL_REWRITER:
+                router = _get_inference_router()
+                if router:
+                    rewrite_start = time.time()
+                    try:
+                        rewritten_query = await router.rewrite(query_text, truncated_history)
+                        if MONITORING_ENABLED:
+                            rag_query_rewrite_duration_seconds.observe(time.time() - rewrite_start)
+                        if rewritten_query == "NO_SEARCH_NEEDED":
+                            yield {"type": "sources", "sources": []}
+                            response = "I understand. Is there anything else you'd like to know about Litecoin?"
+                            for char in response:
+                                yield {"type": "chunk", "content": char}
+                            metadata = {
+                                "input_tokens": 0,
+                                "output_tokens": 0,
+                                "cost_usd": 0.0,
+                                "duration_seconds": time.time() - start_time,
+                                "cache_hit": False,
+                                "cache_type": None,
+                                "rewritten_query": "NO_SEARCH_NEEDED",
+                            }
+                            yield {"type": "metadata", "metadata": metadata}
+                            yield {"type": "complete", "from_cache": False}
+                            return
+                        logger.debug(f"Stream query rewritten: '{query_text}' -> '{rewritten_query}'")
+                    except Exception as e:
+                        if MONITORING_ENABLED:
+                            rag_query_rewrite_duration_seconds.observe(time.time() - rewrite_start)
+                        logger.warning(f"Router rewrite failed in stream, using original query: {e}")
+                        rewritten_query = query_text
+            
+            # If query was rewritten, generate embedding for rewritten query
+            if rewritten_query != query_text and (USE_REDIS_CACHE or USE_INFINITY_EMBEDDINGS):
+                infinity = _get_infinity_embeddings()
+                if infinity:
+                    embed_start = time.time()
+                    try:
+                        query_vector, query_sparse = await infinity.embed_query(rewritten_query)
+                        if MONITORING_ENABLED:
+                            rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
+                        if query_sparse:
+                            logger.info(f"✅ Rewritten query sparse embedding received (stream): {len(query_sparse)} terms")
+                    except Exception as e:
+                        if MONITORING_ENABLED:
+                            rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
+                        logger.warning(f"Infinity embedding for rewritten query failed in stream: {e}", exc_info=True)
+                        # Fallback to original query embedding
+                        query_vector = original_query_vector
+                        query_sparse = original_query_sparse
+            
+            # Check Redis cache again with rewritten query embedding (if query was rewritten)
+            if USE_REDIS_CACHE and query_vector and rewritten_query != query_text and not chat_history:
+                redis_cache = _get_redis_vector_cache()
+                if redis_cache:
+                    try:
+                        redis_result = await redis_cache.get(query_vector)
+                        if redis_result:
+                            cached_answer, sources_data = redis_result
+                            # Reconstruct Document objects
+                            cached_sources = []
+                            for src in sources_data:
+                                if isinstance(src, dict):
+                                    cached_sources.append(Document(
+                                        page_content=src.get("page_content", ""),
+                                        metadata=src.get("metadata", {})
+                                    ))
+                                elif isinstance(src, Document):
+                                    cached_sources.append(src)
+                            
+                            logger.info(f"Redis vector cache HIT (after rewrite, stream) for: {rewritten_query[:50]}...")
+                            if MONITORING_ENABLED:
+                                rag_cache_hits_total.labels(cache_type="redis_vector").inc()
+                                rag_query_duration_seconds.labels(
+                                    query_type="stream",
+                                    cache_hit="true"
+                                ).observe(time.time() - start_time)
+                            
+                            yield {"type": "sources", "sources": cached_sources}
+                            for i, char in enumerate(cached_answer):
+                                yield {"type": "chunk", "content": char}
+                                if i % 10 == 0:
+                                    await asyncio.sleep(0.001)
+                            metadata = {
+                                "input_tokens": 0,
+                                "output_tokens": 0,
+                                "cost_usd": 0.0,
+                                "duration_seconds": time.time() - start_time,
+                                "cache_hit": True,
+                                "cache_type": "redis_vector",
+                                "rewritten_query": rewritten_query,
+                            }
+                            yield {"type": "metadata", "metadata": metadata}
+                            yield {"type": "complete", "from_cache": True}
+                            return
+                    except Exception as e:
+                        logger.warning(f"Redis cache lookup for rewritten query failed in stream: {e}")
 
             # === UNIFIED HYBRID + HISTORY-AWARE RETRIEVAL ===
             retrieval_start = time.time()
             retrieval_query = rewritten_query if USE_LOCAL_REWRITER else query_text
+            # Initialize context_docs to ensure it's always defined
+            context_docs = []
+            retrieval_failed = False
             
             # When using Infinity embeddings with 1024-dim index, use HYBRID retrieval
             # Combines: 1) Infinity vector search (semantic) + 2) BM25 keyword search
             if USE_INFINITY_EMBEDDINGS and query_vector is not None:
+                vector_docs = []
+                bm25_docs = []
                 try:
-                    # 1. Vector search with Infinity embeddings - retrieve more for better quality filtering
-                    # Use similarity_search_with_score to get similarity scores for filtering
-                    vector_results = self.vector_store_manager.vector_store.similarity_search_with_score_by_vector(
-                        query_vector, 
-                        k=RETRIEVER_K * 2  # Retrieve more candidates for better filtering
-                    )
-                    # Filter by similarity threshold (cosine similarity >= 0.3 for BGE-M3)
+                    # Helper functions for parallel execution
+                    def run_vector_search():
+                        """Run vector search synchronously."""
+                        return self.vector_store_manager.vector_store.similarity_search_with_score_by_vector(
+                            query_vector, 
+                            k=RETRIEVER_K * 2  # Retrieve more candidates for better filtering
+                        )
+                    
+                    def run_bm25_search():
+                        """Run BM25 search synchronously."""
+                        if hasattr(self, 'bm25_retriever') and self.bm25_retriever:
+                            # Temporarily increase k for BM25 to get better coverage
+                            original_k = self.bm25_retriever.k
+                            self.bm25_retriever.k = RETRIEVER_K * 2
+                            try:
+                                return self.bm25_retriever.invoke(retrieval_query)
+                            finally:
+                                self.bm25_retriever.k = original_k  # Restore original
+                        return []
+                    
+                    # 1. & 2. Run vector and BM25 searches in parallel
+                    search_start = time.time()
+                    vector_task = asyncio.to_thread(run_vector_search)
+                    bm25_task = asyncio.to_thread(run_bm25_search) if hasattr(self, 'bm25_retriever') and self.bm25_retriever else None
+                    
+                    if bm25_task:
+                        vector_results, bm25_docs = await asyncio.gather(vector_task, bm25_task)
+                        search_duration = time.time() - search_start
+                        if MONITORING_ENABLED:
+                            # Both searches ran in parallel, so duration is the same for both
+                            rag_vector_search_duration_seconds.observe(search_duration)
+                            rag_bm25_search_duration_seconds.observe(search_duration)
+                    else:
+                        vector_results = await vector_task
+                        bm25_docs = []
+                        search_duration = time.time() - search_start
+                        if MONITORING_ENABLED:
+                            rag_vector_search_duration_seconds.observe(search_duration)
+                    
+                    # Filter vector results by similarity threshold (cosine similarity >= 0.3 for BGE-M3)
                     MIN_SIMILARITY_THRESHOLD = float(os.getenv("MIN_VECTOR_SIMILARITY", "0.3"))
                     vector_docs = [doc for doc, score in vector_results if score >= MIN_SIMILARITY_THRESHOLD]
                     
@@ -1583,93 +1882,142 @@ class RAGPipeline:
                     if vector_results:
                         logger.debug(f"   Top similarity score: {vector_results[0][1]:.3f}, Bottom: {vector_results[-1][1]:.3f}")
                     
-                    # 2. BM25 keyword search (important for exact matches like "Charlie Lee")
-                    # Increase k for BM25 to get more keyword matches
-                    bm25_docs = []
-                    if hasattr(self, 'bm25_retriever') and self.bm25_retriever:
-                        try:
-                            # Temporarily increase k for BM25 to get better coverage
+                    if bm25_docs:
+                        logger.debug(f"BM25 keyword search (stream) returned {len(bm25_docs)} documents")
+                    elif hasattr(self, 'bm25_retriever') and self.bm25_retriever:
+                        logger.debug("BM25 keyword search (stream) returned 0 documents")
+                except Exception as bm25_error:
+                    logger.warning(f"Parallel search failed in stream: {bm25_error}")
+                    # Fallback to sequential execution
+                    try:
+                        vector_results = self.vector_store_manager.vector_store.similarity_search_with_score_by_vector(
+                            query_vector, 
+                            k=RETRIEVER_K * 2
+                        )
+                        MIN_SIMILARITY_THRESHOLD = float(os.getenv("MIN_VECTOR_SIMILARITY", "0.3"))
+                        vector_docs = [doc for doc, score in vector_results if score >= MIN_SIMILARITY_THRESHOLD]
+                        if len(vector_docs) < RETRIEVER_K:
+                            vector_docs = [doc for doc, _ in vector_results[:RETRIEVER_K]]
+                        bm25_docs = []
+                        if hasattr(self, 'bm25_retriever') and self.bm25_retriever:
                             original_k = self.bm25_retriever.k
                             self.bm25_retriever.k = RETRIEVER_K * 2
                             bm25_docs = self.bm25_retriever.invoke(retrieval_query)
-                            self.bm25_retriever.k = original_k  # Restore original
-                            logger.debug(f"BM25 keyword search (stream) returned {len(bm25_docs)} documents")
-                        except Exception as bm25_error:
-                            logger.warning(f"BM25 search failed in stream: {bm25_error}")
-                    
-                    # 3. Merge and deduplicate results with better priority logic
-                    seen_contents = set()
-                    candidate_docs = []
-                    candidate_scores = {}  # Track which source (BM25 vs vector) for priority
-                    
-                    # Prioritize BM25 results (better for exact keyword matches)
-                    for doc in bm25_docs:
-                        content_key = doc.page_content[:200]  # Use first 200 chars as key
-                        if content_key not in seen_contents:
-                            seen_contents.add(content_key)
-                            candidate_docs.append(doc)
-                            candidate_scores[id(doc)] = 'bm25'
-                    
-                    # Add vector results, avoiding duplicates
-                    for doc in vector_docs:
-                        content_key = doc.page_content[:200]
-                        if content_key not in seen_contents:
-                            seen_contents.add(content_key)
-                            candidate_docs.append(doc)
-                            candidate_scores[id(doc)] = 'vector'
-                    
-                    logger.debug(f"Hybrid merge (stream): {len(bm25_docs)} BM25 + {len(vector_docs)} vector → {len(candidate_docs)} unique candidates")
-                    
-                    # 4. Re-rank using sparse embeddings if available (BGE-M3)
-                    if query_sparse and infinity and len(candidate_docs) > 0:
-                        try:
-                            logger.info(f"🔄 Sparse re-ranking (stream): {len(candidate_docs)} candidates, query has {len(query_sparse)} sparse terms")
-                            # Generate sparse embeddings for candidate documents
-                            doc_texts = [doc.page_content[:8000] for doc in candidate_docs]  # Truncate for TF-IDF
-                            _, doc_sparse_list = await infinity.embed_documents(doc_texts)
-                            
-                            # Compute sparse similarity scores
-                            doc_scores = []
-                            sparse_count = sum(1 for s in doc_sparse_list if s is not None)
-                            logger.info(f"   Generated {sparse_count}/{len(doc_sparse_list)} document sparse embeddings (stream)")
-                            
-                            for i, (doc, doc_sparse) in enumerate(zip(candidate_docs, doc_sparse_list)):
-                                if doc_sparse:
-                                    sparse_sim = infinity.sparse_similarity(query_sparse, doc_sparse)
-                                    doc_scores.append((sparse_sim, i, doc))
-                                else:
-                                    doc_scores.append((0.0, i, doc))
-                            
-                            # Sort by sparse similarity (highest first)
-                            doc_scores.sort(reverse=True, key=lambda x: x[0])
-                            context_docs = [doc for _, _, doc in doc_scores[:RETRIEVER_K]]
-                            
-                            logger.info(f"✅ Hybrid retrieval (stream: Infinity + BM25 + Sparse) returned {len(context_docs)} documents")
-                            if doc_scores:
-                                logger.info(f"   Top sparse similarity (stream): {doc_scores[0][0]:.3f}")
-                        except Exception as sparse_error:
-                            logger.warning(f"⚠️ Sparse re-ranking failed in stream, using basic hybrid: {sparse_error}", exc_info=True)
-                            # Fallback to basic hybrid
-                            context_docs = candidate_docs[:RETRIEVER_K]
-                    else:
+                            self.bm25_retriever.k = original_k
+                    except Exception as fallback_error:
+                        logger.error(f"Fallback search also failed in stream: {fallback_error}")
+                        vector_docs = []
+                        bm25_docs = []
+                
+                # 3. Merge and deduplicate results with better priority logic
+                # This is outside the try block so exceptions here don't lose the retrieved documents
+                seen_contents = set()
+                candidate_docs = []
+                candidate_scores = {}  # Track which source (BM25 vs vector) for priority
+                
+                # Prioritize BM25 results (better for exact keyword matches)
+                for doc in bm25_docs:
+                    content_key = doc.page_content[:200]  # Use first 200 chars as key
+                    if content_key not in seen_contents:
+                        seen_contents.add(content_key)
+                        candidate_docs.append(doc)
+                        candidate_scores[id(doc)] = 'bm25'
+                
+                # Add vector results, avoiding duplicates
+                for doc in vector_docs:
+                    content_key = doc.page_content[:200]
+                    if content_key not in seen_contents:
+                        seen_contents.add(content_key)
+                        candidate_docs.append(doc)
+                        candidate_scores[id(doc)] = 'vector'
+                
+                logger.debug(f"Hybrid merge (stream): {len(bm25_docs)} BM25 + {len(vector_docs)} vector → {len(candidate_docs)} unique candidates")
+                
+                # 4. Re-rank using sparse embeddings if available (BGE-M3)
+                # This is outside the main try block so exceptions here don't trigger full fallback
+                if query_sparse and infinity and len(candidate_docs) > 0:
+                    try:
+                        rerank_start = time.time()
+                        # Limit candidates for sparse re-ranking to save time (only embed top N)
+                        candidates_for_rerank = candidate_docs[:SPARSE_RERANK_LIMIT]
+                        logger.info(f"🔄 Sparse re-ranking (stream): {len(candidates_for_rerank)}/{len(candidate_docs)} candidates (limited to top {SPARSE_RERANK_LIMIT}), query has {len(query_sparse)} sparse terms")
+                        # Generate sparse embeddings for candidate documents
+                        doc_texts = [doc.page_content[:8000] for doc in candidates_for_rerank]  # Truncate for TF-IDF
+                        _, doc_sparse_list = await infinity.embed_documents(doc_texts)
+                        
+                        # Compute sparse similarity scores
+                        doc_scores = []
+                        sparse_count = sum(1 for s in doc_sparse_list if s is not None)
+                        logger.info(f"   Generated {sparse_count}/{len(doc_sparse_list)} document sparse embeddings (stream)")
+                        
+                        for i, (doc, doc_sparse) in enumerate(zip(candidates_for_rerank, doc_sparse_list)):
+                            if doc_sparse:
+                                sparse_sim = infinity.sparse_similarity(query_sparse, doc_sparse)
+                                doc_scores.append((sparse_sim, i, doc))
+                            else:
+                                doc_scores.append((0.0, i, doc))
+                        
+                        # Sort by sparse similarity (highest first)
+                        doc_scores.sort(reverse=True, key=lambda x: x[0])
+                        # Take top RETRIEVER_K from re-ranked results, then add remaining candidates if needed
+                        reranked_docs = [doc for _, _, doc in doc_scores]
+                        # If we have fewer reranked docs than RETRIEVER_K, add remaining candidates
+                        if len(reranked_docs) < RETRIEVER_K and len(candidate_docs) > len(candidates_for_rerank):
+                            remaining_docs = [doc for doc in candidate_docs[SPARSE_RERANK_LIMIT:] if doc not in reranked_docs]
+                            reranked_docs.extend(remaining_docs[:RETRIEVER_K - len(reranked_docs)])
+                        context_docs = reranked_docs[:RETRIEVER_K]
+                        
+                        if MONITORING_ENABLED:
+                            rag_sparse_rerank_duration_seconds.observe(time.time() - rerank_start)
+                        
+                        logger.info(f"✅ Hybrid retrieval (stream: Infinity + BM25 + Sparse) returned {len(context_docs)} documents")
+                        if doc_scores:
+                            logger.info(f"   Top sparse similarity (stream): {doc_scores[0][0]:.3f}")
+                    except Exception as sparse_error:
+                        if MONITORING_ENABLED and 'rerank_start' in locals():
+                            rag_sparse_rerank_duration_seconds.observe(time.time() - rerank_start)
+                        logger.warning(f"⚠️ Sparse re-ranking failed in stream, using basic hybrid: {sparse_error}", exc_info=True)
+                        # Fallback to basic hybrid - use the candidate_docs we successfully retrieved
                         context_docs = candidate_docs[:RETRIEVER_K]
-                        if not query_sparse:
-                            logger.debug(f"Hybrid retrieval (stream: Infinity + BM25) - no sparse embeddings available")
-                        else:
-                            logger.debug(f"Hybrid retrieval (stream) returned {len(context_docs)} unique documents")
+                else:
+                    context_docs = candidate_docs[:RETRIEVER_K]
+                    if not query_sparse:
+                        logger.debug(f"Hybrid retrieval (stream: Infinity + BM25) - no sparse embeddings available")
+                    else:
+                        logger.debug(f"Hybrid retrieval (stream) returned {len(context_docs)} unique documents")
                     
-                except Exception as e:
-                    logger.warning(f"Infinity hybrid search failed in stream, falling back: {e}")
-                    context_docs = await self.history_aware_retriever.ainvoke({
-                        "input": retrieval_query,
-                        "chat_history": converted_chat_history
-                    })
+                # Only fall back to history-aware retriever if we got no results at all
+                if not context_docs:
+                    try:
+                        logger.warning("No documents retrieved from hybrid search, falling back to history-aware retriever")
+                        retrieval_failed = True
+                        if USE_LOCAL_REWRITER and rewritten_query != query_text:
+                            logger.debug(f"Using hybrid retriever directly with rewritten query (skip history-aware, stream): {rewritten_query[:50]}...")
+                            context_docs = await self.hybrid_retriever.ainvoke(retrieval_query)
+                        else:
+                            context_docs = await self.history_aware_retriever.ainvoke({
+                                "input": retrieval_query,
+                                "chat_history": converted_chat_history
+                            })
+                    except Exception as fallback_error:
+                        logger.error(f"Fallback retrieval also failed in stream: {fallback_error}", exc_info=True)
+                        context_docs = []
             else:
                 # Legacy path: use history-aware hybrid retriever
-                context_docs = await self.history_aware_retriever.ainvoke({
-                    "input": retrieval_query,
-                    "chat_history": converted_chat_history
-                })
+                # If query was already rewritten by local router, skip history-aware retriever (avoid redundant LLM call)
+                try:
+                    if USE_LOCAL_REWRITER and rewritten_query != query_text:
+                        logger.debug(f"Using hybrid retriever directly with rewritten query (skip history-aware, stream): {rewritten_query[:50]}...")
+                        context_docs = await self.hybrid_retriever.ainvoke(retrieval_query)
+                    else:
+                        context_docs = await self.history_aware_retriever.ainvoke({
+                            "input": retrieval_query,
+                            "chat_history": converted_chat_history
+                        })
+                except Exception as e:
+                    logger.error(f"Legacy retrieval failed in stream: {e}", exc_info=True)
+                    retrieval_failed = True
+                    context_docs = []
             retrieval_duration = time.time() - retrieval_start
             
             # === PARENT DOCUMENT PATTERN: Resolve synthetic questions ===
@@ -1710,7 +2058,9 @@ class RAGPipeline:
                     ).observe(total_duration)
                 # Inform client that no sources were available
                 yield {"type": "sources", "sources": []}
-                yield {"type": "chunk", "content": NO_KB_MATCH_RESPONSE}
+                # Use generic error message if retrieval failed, otherwise use standard no-match message
+                response_message = GENERIC_USER_ERROR_MESSAGE if retrieval_failed else NO_KB_MATCH_RESPONSE
+                yield {"type": "chunk", "content": response_message}
                 metadata = {
                     "input_tokens": 0,
                     "output_tokens": 0,

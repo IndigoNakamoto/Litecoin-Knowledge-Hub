@@ -186,7 +186,10 @@
       "id": 3,
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -264,7 +267,9 @@
       "id": 4,
       "options": {
         "legend": {
-          "calcs": ["mean"],
+          "calcs": [
+            "mean"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -297,6 +302,102 @@
       "fieldConfig": {
         "defaults": {
           "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "id": 31,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(rag_query_rewrite_duration_seconds_bucket[5m]))",
+          "legendFormat": "Query Rewrite P95",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(rag_embedding_generation_duration_seconds_bucket[5m]))",
+          "legendFormat": "Embedding Generation P95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(rag_vector_search_duration_seconds_bucket[5m]))",
+          "legendFormat": "Vector Search P95",
+          "refId": "C"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(rag_bm25_search_duration_seconds_bucket[5m]))",
+          "legendFormat": "BM25 Search P95",
+          "refId": "D"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(rag_sparse_rerank_duration_seconds_bucket[5m]))",
+          "legendFormat": "Sparse Re-rank P95",
+          "refId": "E"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(rag_llm_generation_duration_seconds_bucket[5m]))",
+          "legendFormat": "LLM Generation P95",
+          "refId": "F"
+        }
+      ],
+      "title": "RAG Pipeline Detailed Timing Breakdown",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
             "mode": "thresholds"
           },
           "mappings": [],
@@ -315,8 +416,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 16
+        "x": 12,
+        "y": 40
       },
       "id": 5,
       "options": {
@@ -382,8 +483,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 16
+        "x": 0,
+        "y": 40
       },
       "id": 6,
       "options": {
@@ -451,12 +552,14 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 24
+        "y": 40
       },
       "id": 7,
       "options": {
         "legend": {
-          "calcs": ["sum"],
+          "calcs": [
+            "sum"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -519,12 +622,15 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 24
+        "y": 40
       },
       "id": 8,
       "options": {
         "legend": {
-          "calcs": ["sum", "last"],
+          "calcs": [
+            "sum",
+            "last"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -573,7 +679,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 32
+        "y": 48
       },
       "id": 9,
       "options": {
@@ -625,7 +731,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 32
+        "y": 48
       },
       "id": 11,
       "options": {
@@ -698,12 +804,15 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 40
+        "y": 56
       },
       "id": 10,
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -758,7 +867,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 48
+        "y": 64
       },
       "id": 12,
       "options": {
@@ -810,7 +919,7 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 48
+        "y": 64
       },
       "id": 13,
       "options": {
@@ -883,7 +992,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 48
+        "y": 64
       },
       "id": 14,
       "options": {
@@ -956,12 +1065,14 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 54
+        "y": 70
       },
       "id": 15,
       "options": {
         "legend": {
-          "calcs": ["mean"],
+          "calcs": [
+            "mean"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -1029,12 +1140,15 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 54
+        "y": 70
       },
       "id": 16,
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -1102,12 +1216,15 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 62
+        "y": 78
       },
       "id": 17,
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -1158,7 +1275,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 62
+        "y": 78
       },
       "id": 18,
       "options": {
@@ -1220,7 +1337,7 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 68
+        "y": 84
       },
       "id": 19,
       "options": {
@@ -1280,7 +1397,7 @@
         "h": 8,
         "w": 6,
         "x": 6,
-        "y": 68
+        "y": 84
       },
       "id": 20,
       "options": {
@@ -1330,7 +1447,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 68
+        "y": 84
       },
       "id": 21,
       "options": {
@@ -1397,7 +1514,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 68
+        "y": 84
       },
       "id": 22,
       "options": {
@@ -1470,12 +1587,14 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 76
+        "y": 92
       },
       "id": 23,
       "options": {
         "legend": {
-          "calcs": ["sum"],
+          "calcs": [
+            "sum"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -1551,12 +1670,15 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 76
+        "y": 92
       },
       "id": 24,
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -1613,7 +1735,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 84
+        "y": 100
       },
       "id": 25,
       "options": {
@@ -1684,12 +1806,15 @@
         "h": 6,
         "w": 6,
         "x": 6,
-        "y": 84
+        "y": 100
       },
       "id": 26,
       "options": {
         "legend": {
-          "calcs": ["mean", "p95"],
+          "calcs": [
+            "mean",
+            "p95"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -1744,7 +1869,7 @@
         "h": 6,
         "w": 6,
         "x": 12,
-        "y": 84
+        "y": 100
       },
       "id": 27,
       "options": {
@@ -1796,7 +1921,7 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 84
+        "y": 100
       },
       "id": 28,
       "options": {
@@ -1869,12 +1994,15 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 90
+        "y": 106
       },
       "id": 29,
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -1950,12 +2078,14 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 90
+        "y": 106
       },
       "id": 30,
       "options": {
         "legend": {
-          "calcs": ["sum"],
+          "calcs": [
+            "sum"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -1977,7 +2107,12 @@
   "refresh": "30s",
   "schemaVersion": 27,
   "style": "dark",
-  "tags": ["litecoin", "monitoring", "rag", "cache"],
+  "tags": [
+    "litecoin",
+    "monitoring",
+    "rag",
+    "cache"
+  ],
   "templating": {
     "list": []
   },
@@ -1991,4 +2126,3 @@
   "uid": "litecoin-knowledge-hub",
   "version": 1
 }
-

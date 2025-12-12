@@ -68,6 +68,43 @@ rag_documents_retrieved_total = Histogram(
     buckets=[1, 5, 10, 15, 20, 25, 30],
 )
 
+# Detailed RAG Pipeline Timing Metrics
+rag_query_rewrite_duration_seconds = Histogram(
+    "rag_query_rewrite_duration_seconds",
+    "Query rewriting duration in seconds",
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0],
+)
+
+rag_embedding_generation_duration_seconds = Histogram(
+    "rag_embedding_generation_duration_seconds",
+    "Query embedding generation duration in seconds",
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0],
+)
+
+rag_vector_search_duration_seconds = Histogram(
+    "rag_vector_search_duration_seconds",
+    "Vector search duration in seconds",
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0],
+)
+
+rag_bm25_search_duration_seconds = Histogram(
+    "rag_bm25_search_duration_seconds",
+    "BM25 search duration in seconds",
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0],
+)
+
+rag_sparse_rerank_duration_seconds = Histogram(
+    "rag_sparse_rerank_duration_seconds",
+    "Sparse re-ranking duration in seconds",
+    buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0],
+)
+
+rag_llm_generation_duration_seconds = Histogram(
+    "rag_llm_generation_duration_seconds",
+    "LLM answer generation duration in seconds",
+    buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0],
+)
+
 # Suggested Question Cache Metrics
 suggested_question_cache_hits_total = Counter(
     "suggested_question_cache_hits_total",
