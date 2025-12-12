@@ -381,7 +381,6 @@ const Navigation = () => {
             className={`ml-2 h-4 w-4${dropdownOpen[key] ? ' rotate-180' : ''}`}
             style={{
               transformOrigin: 'center',
-              transform: `translateX(-2px) ${dropdownOpen[key] ? 'rotate(180deg)' : ''}`,
             }}
             fill="none"
             viewBox="0 0 24 24"
