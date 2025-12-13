@@ -135,3 +135,6 @@ mongodb-migration-backup/
 
 # Private documentation
 NETWORK_SECURITY.md
+scripts/archive-encrypt-mongodb-backup.sh
+scripts/backup-and-stage-for-github.sh
+

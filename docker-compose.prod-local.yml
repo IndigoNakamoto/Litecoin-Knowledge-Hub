@@ -26,7 +26,8 @@ services:
     ports:
       - "27017:27017"
     volumes:
-      - mongodb_data:/data/db
+      - mongodb_dev_data:/data/db
+      # - mongodb_data:/data/db
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "if [ -n \"$$MONGO_ROOT_PASSWORD\" ]; then mongosh --quiet --username $$MONGO_ROOT_USERNAME --password $$MONGO_ROOT_PASSWORD --authenticationDatabase admin --eval \"db.adminCommand('ping')\"; else mongosh --quiet --eval \"db.adminCommand('ping')\"; fi"]
@@ -49,9 +50,8 @@ services:
       # Production-local-specific overrides
       # Note: GOOGLE_API_KEY is loaded from ./backend/.env via env_file above
       - NODE_ENV=production
-      # Set MONGO_URI if not provided in .env.prod-local.
-      # Default points at the local Docker MongoDB with the litecoin_rag_db database.
-      - MONGO_URI=${MONGO_URI:-mongodb://mongodb:27017/litecoin_rag_db}
+      # Set MONGO_URI if not provided in .env.prod-local (uses Docker service name)
+      - MONGO_URI=${MONGO_URI:-mongodb://mongodb:27017}
     depends_on:
       mongodb:
         condition: service_healthy
@@ -207,6 +207,6 @@ services:
 volumes:
   prometheus_data:
   grafana_data:
-  mongodb_data:
+  mongodb_dev_data:
   redis_data:
 

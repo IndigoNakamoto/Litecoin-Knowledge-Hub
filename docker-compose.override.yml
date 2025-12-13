@@ -1,23 +1,19 @@
 version: '3.8'
 
 # Docker Compose Override File for Security Hardening
-# This file injects secrets and authenticated connection strings.
-# Docker Compose automatically merges this with docker-compose.prod.yml.
-#
-# Default: use **local MongoDB** (mongodb service) with credentials from .env.secrets.
-# Optional: you can still point services at Atlas by overriding MONGO_URI / MONGO_DETAILS /
-#           DATABASE_URI in .env.docker.prod or your shell.
+# This file injects secrets and authenticated connection strings
+# Docker Compose automatically merges this with docker-compose.prod.yml
 #
 # Usage:
 #   docker compose -f docker-compose.prod.yml -f docker-compose.override.yml up -d
 
 services:
-  # Inject secrets into local MongoDB container
+  # Inject secrets into local MongoDB container (and enable auth)
   mongodb:
     env_file:
       - ./.env.secrets
     environment:
-      # Override with secrets from .env.secrets (unencoded values for the container)
+      # Mongo container expects unencoded values
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
 
@@ -40,8 +36,7 @@ services:
     env_file:
       - ./.env.secrets
     environment:
-      # MongoDB connection: by default point at the local mongodb service.
-      # These values override any Atlas URIs that might be present in .env.docker.prod.
+      # Force backend to use local MongoDB service (credentials are URL-encoded in run-prod.sh)
       - MONGO_DETAILS=mongodb://${MONGO_INITDB_ROOT_USERNAME_ENCODED:-admin}:${MONGO_INITDB_ROOT_PASSWORD_ENCODED}@mongodb:27017/litecoin_rag_db?authSource=admin
       - MONGO_URI=mongodb://${MONGO_INITDB_ROOT_USERNAME_ENCODED:-admin}:${MONGO_INITDB_ROOT_PASSWORD_ENCODED}@mongodb:27017/litecoin_rag_db?authSource=admin
       # Redis connection with password (if set, otherwise without password)
@@ -54,7 +49,6 @@ services:
     env_file:
       - ./.env.secrets
     environment:
-      # MongoDB connection for Payload CMS: default to local mongodb service.
-      # This overrides any Atlas DATABASE_URI in .env.docker.prod.
+      # Force Payload to use local MongoDB service
       - DATABASE_URI=mongodb://${MONGO_INITDB_ROOT_USERNAME_ENCODED:-admin}:${MONGO_INITDB_ROOT_PASSWORD_ENCODED}@mongodb:27017/payload_cms?authSource=admin
 

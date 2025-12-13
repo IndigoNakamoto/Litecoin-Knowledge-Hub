@@ -1,30 +1,17 @@
 version: '3.8'
 
 services:
-  # MongoDB service: LOCAL BY DEFAULT
-  # ------------------------------------------------------------
-  # This service runs MongoDB inside the Docker stack and is the
-  # primary source of truth for production deployments.
-  #
-  # For **cloud MongoDB (Atlas)**, you can:
-  #   - Set MONGO_URI_ATLAS / DATABASE_URI_ATLAS in .env.docker.prod, and
-  #   - Override MONGO_URI / MONGO_DETAILS / DATABASE_URI via env vars
-  #     if you want to temporarily point services at Atlas instead.
-  # ------------------------------------------------------------
+  # MongoDB service (local)
+  # Credentials are injected via docker-compose.override.yml from .env.secrets.
   mongodb:
     image: mongo:7.0
     container_name: litecoin-mongodb
-    environment:
-      # MongoDB requires both USERNAME and PASSWORD to be set together
-      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME:-admin}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD:-}
     # Only enable --auth if MONGO_INITDB_ROOT_PASSWORD is set
     # --bind_ip_all allows connections from other containers
-    # Use entrypoint override to conditionally set/unset init DB vars
     entrypoint: >
       sh -c "
       if [ -n \"$$MONGO_INITDB_ROOT_PASSWORD\" ]; then
-        export MONGO_INITDB_ROOT_USERNAME=\"$$MONGO_INITDB_ROOT_USERNAME\";
+        export MONGO_INITDB_ROOT_USERNAME=\"$${MONGO_INITDB_ROOT_USERNAME:-admin}\";
         export MONGO_INITDB_ROOT_PASSWORD=\"$$MONGO_INITDB_ROOT_PASSWORD\";
       else
         unset MONGO_INITDB_ROOT_USERNAME;
