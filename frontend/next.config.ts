@@ -7,6 +7,22 @@ const nextConfig: NextConfig = {
   // Base path for litecoin.com/chat integration
   // All routes and assets will be prefixed with /chat
   basePath: '/chat',
+
+  async redirects() {
+    return [
+      // When this app is hosted at the root of a domain (e.g. chat.lite.space),
+      // redirect "/" to the app's basePath entrypoint.
+      //
+      // `basePath: false` is critical here; otherwise this would only match
+      // "/chat/" (because basePath is applied to matchers by default).
+      {
+        source: '/',
+        destination: '/chat',
+        permanent: false,
+        basePath: false,
+      },
+    ];
+  },
   
   async rewrites() {
     // Use environment variable for backend URL, fallback to localhost for development
