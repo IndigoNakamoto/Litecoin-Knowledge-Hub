@@ -49,7 +49,9 @@ const LATEX_SYMBOLS: Record<string, string> = {
  * 
  * Fixes common LLM output issues:
  * - Missing newlines before headings (e.g., "text.## Heading")
- * - Missing newlines before numbered/bulleted lists (e.g., "text:1. Item")
+ * - NOTE: We intentionally do NOT auto-insert newlines for lists. That heuristic can
+ *   misinterpret normal text like "(L2)" or "X - Y" as markdown list syntax and
+ *   produce malformed list rendering in the UI.
  * - LaTeX math notation not supported by ReactMarkdown (e.g., "$\rightarrow$")
  */
 export function normalizeMarkdown(content: string): string {
@@ -75,16 +77,6 @@ export function normalizeMarkdown(content: string): string {
   // Match: any non-whitespace, non-newline, non-# char followed by 1-6 # chars + space
   // The [^\s\n#] excludes # to avoid breaking multi-hash headings like ##
   result = result.replace(/([^\s\n#])(#{1,6}\s)/g, '$1\n\n$2');
-  
-  // Add newlines before numbered lists that don't have them
-  // Match: any non-whitespace, non-newline char followed by a number and period/paren
-  // e.g., "text:1. Item" or "text:1) Item"
-  result = result.replace(/([^\s\n])(\d+[.)]\s)/g, '$1\n\n$2');
-  
-  // Add newlines before bullet points that don't have them
-  // Match: any non-whitespace, non-newline char followed by * or - and space
-  // But not when it's part of bold (**) or code
-  result = result.replace(/([^\s\n*-])([*-]\s)(?![*-])/g, '$1\n\n$2');
   
   // Clean up any excessive newlines (more than 2 consecutive)
   result = result.replace(/\n{3,}/g, '\n\n');
