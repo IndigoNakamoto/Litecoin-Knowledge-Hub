@@ -4,6 +4,10 @@ const nextConfig: NextConfig = {
   // Enable standalone output for Docker deployment
   output: process.env.NODE_ENV === 'production' ? 'standalone' : undefined,
   
+  // Base path for litecoin.com/chat integration
+  // All routes and assets will be prefixed with /chat
+  basePath: '/chat',
+  
   async rewrites() {
     // Use environment variable for backend URL, fallback to localhost for development
     // Handle empty strings as missing (empty string from Docker build args)

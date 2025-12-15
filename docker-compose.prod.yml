@@ -233,6 +233,25 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Guest tunnel for litecoin.com/chat integration
+  # This tunnel connects to a tunnel created by the litecoin.com site manager
+  # that exposes the frontend at chat.litecoin.com (internal, users never see this)
+  # A Worker at litecoin.com routes /chat* to this tunnel endpoint
+  chat_tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: litecoin-chat-tunnel
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_CHAT_TUNNEL_TOKEN}
+    env_file:
+      - ./.env.docker.prod
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_CHAT_TUNNEL_TOKEN}
+    depends_on:
+      frontend:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - litecoin-integration
+
   redis:
     image: redis:7-alpine
     container_name: litecoin-redis

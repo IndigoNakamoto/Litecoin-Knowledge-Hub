@@ -25,12 +25,16 @@ const corsOrigins = [
   frontendUrl,
   'https://cms.lite.space',
   'https://chat.lite.space',
+  'https://litecoin.com',
+  'https://www.litecoin.com',
 ]
 
 const csrfOrigins = [
   frontendUrl,
   'https://cms.lite.space',
   'https://chat.lite.space',
+  'https://litecoin.com',
+  'https://www.litecoin.com',
 ]
 
 // Only include localhost URLs in development mode

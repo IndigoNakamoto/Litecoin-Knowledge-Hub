@@ -458,7 +458,7 @@ app.json_encoders = {
 # CORS configuration - supports both development and production
 # Default origins include localhost for development and production domains
 # Admin frontend runs locally, so add localhost ports via CORS_ORIGINS or ADMIN_FRONTEND_URL when needed
-default_origins = "http://localhost:3000,https://chat.lite.space,https://www.chat.lite.space,http://localhost:3003,http://127.0.0.1:3003,https://admin.lite.space,https://www.admin.lite.space"
+default_origins = "http://localhost:3000,https://chat.lite.space,https://www.chat.lite.space,http://localhost:3003,http://127.0.0.1:3003,https://admin.lite.space,https://www.admin.lite.space,https://litecoin.com,https://www.litecoin.com"
 cors_origins_env = os.getenv("CORS_ORIGINS", "").strip()
 # If CORS_ORIGINS is empty or not set, use defaults
 if not cors_origins_env:
