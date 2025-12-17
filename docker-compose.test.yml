@@ -82,6 +82,8 @@ services:
       # Use host.docker.internal to reach host ports from inside container
       - PAYLOAD_URL=http://host.docker.internal:3001
       - PAYLOAD_PUBLIC_SERVER_URL=http://host.docker.internal:3001
+      # Disable challenge-response fingerprinting for easier CLI testing
+      - ENABLE_CHALLENGE_RESPONSE=false
     depends_on:
       mongodb_test:
         condition: service_healthy
