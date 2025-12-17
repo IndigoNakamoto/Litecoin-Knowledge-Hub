@@ -69,19 +69,19 @@ services:
     ports:
       - "8001:8000"  # Different port to avoid conflicts with production
     env_file:
-      - ./.env.test
       - ./backend/.env
     environment:
       - NODE_ENV=test
       - ENVIRONMENT=test
       # Use local test MongoDB for vector store (litecoin_rag_db)
-      - MONGO_URI=${TEST_MONGO_URI:-mongodb://mongodb_test:27017/litecoin_rag_db}
-      - MONGO_DETAILS=${TEST_MONGO_URI:-mongodb://mongodb_test:27017/litecoin_rag_db}
+      - MONGO_URI=mongodb://mongodb_test:27017/litecoin_rag_db
+      - MONGO_DETAILS=mongodb://mongodb_test:27017/litecoin_rag_db
       # Use local test Redis
-      - REDIS_URL=${TEST_REDIS_URL:-redis://redis_test:6379/0}
-      # Payload CMS URL (internal Docker network)
-      - PAYLOAD_URL=http://payload_cms:3000
-      - PAYLOAD_PUBLIC_SERVER_URL=http://payload_cms:3000
+      - REDIS_URL=redis://redis_test:6379/0
+      # Connect to PRODUCTION Payload CMS (already running at localhost:3001)
+      # Use host.docker.internal to reach host ports from inside container
+      - PAYLOAD_URL=http://host.docker.internal:3001
+      - PAYLOAD_PUBLIC_SERVER_URL=http://host.docker.internal:3001
     depends_on:
       mongodb_test:
         condition: service_healthy
@@ -98,44 +98,20 @@ services:
       retries: 3
       start_period: 40s
 
-  payload_cms:
-    build:
-      context: ./payload_cms
-      dockerfile: Dockerfile
-    container_name: litecoin-payload-cms-test
-    ports:
-      - "3002:3000"  # Different port to avoid conflicts with production
-    env_file:
-      - ./.env.test
-      - ./payload_cms/.env
-    environment:
-      - NODE_ENV=production
-      # Connect to PRODUCTION MongoDB for payload_cms database
-      # This shares the same article database as production
-      - DATABASE_URI=${PROD_DATABASE_URI}
-    depends_on:
-      backend:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+  # NOTE: No payload_cms service here - use your already-running production one at localhost:3001
+  # This avoids needing PROD_DATABASE_URI configuration
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_BACKEND_URL=${TEST_BACKEND_URL:-http://localhost:8001}
-        - NEXT_PUBLIC_PAYLOAD_URL=${TEST_PAYLOAD_URL:-http://localhost:3002}
+        # Test backend on port 8001, but use production Payload CMS on port 3001
+        - NEXT_PUBLIC_BACKEND_URL=http://localhost:8001
+        - NEXT_PUBLIC_PAYLOAD_URL=http://localhost:3001
     container_name: litecoin-frontend-test
     ports:
       - "3004:3000"  # Different port to avoid conflicts with production
-    env_file:
-      - ./.env.test
     environment:
       - NODE_ENV=production
     depends_on:

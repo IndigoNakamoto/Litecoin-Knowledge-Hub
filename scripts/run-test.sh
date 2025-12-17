@@ -2,10 +2,13 @@
 # =============================================================================
 # Test Environment Helper Script
 # =============================================================================
-# Starts the test environment which:
-#   - Shares Payload CMS database with production (real articles)
-#   - Uses separate MongoDB for backend vector store
-#   - Uses separate Redis for caching
+# Starts a test backend environment which:
+#   - Uses your already-running production Payload CMS (localhost:3001)
+#   - Uses separate MongoDB for backend vector store (isolated)
+#   - Uses separate Redis for caching (isolated)
+#
+# PREREQUISITE: Production must be running first!
+#   ./scripts/run-prod.sh -d
 #
 # Usage:
 #   ./scripts/run-test.sh           # Start in foreground (see logs)
@@ -13,11 +16,13 @@
 #   ./scripts/run-test.sh down      # Stop test environment
 #
 # Port Mapping:
-#   Backend:     http://localhost:8001  (vs production 8000)
-#   Payload CMS: http://localhost:3002  (vs production 3001)
-#   Frontend:    http://localhost:3004  (vs production 3000)
-#   MongoDB:     localhost:27018        (vs production 27017)
-#   Redis:       localhost:6380         (vs production 6379)
+#   Test Backend:  http://localhost:8001  (vs production 8000)
+#   Test Frontend: http://localhost:3004  (vs production 3000)
+#   Test MongoDB:  localhost:27018        (isolated from production)
+#   Test Redis:    localhost:6380         (isolated from production)
+#
+# Uses Production:
+#   Payload CMS:   http://localhost:3001  (production - shared)
 
 set -e
 
@@ -54,42 +59,19 @@ if [ "$1" == "down" ]; then
 fi
 
 # =============================================================================
-# Check .env.test exists
+# Check that production Payload CMS is running
 # =============================================================================
-ENV_TEST_FILE="$PROJECT_ROOT/.env.test"
-if [ ! -f "$ENV_TEST_FILE" ]; then
-    echo "⚠️  Warning: .env.test file not found!"
+echo "🔍 Checking if production Payload CMS is running..."
+if ! curl -s -o /dev/null -w "%{http_code}" http://localhost:3001 | grep -q "200\|301\|302"; then
+    echo "❌ Error: Production Payload CMS not running at localhost:3001"
     echo ""
-    echo "Please create .env.test from the example template:"
-    echo "  cp .env.test.example .env.test"
-    echo ""
-    echo "Then configure PROD_DATABASE_URI to point to your production MongoDB"
-    echo "for the payload_cms database."
+    echo "The test environment uses your production Payload CMS for articles."
+    echo "Please start production first:"
+    echo "  ./scripts/run-prod.sh -d"
     echo ""
     exit 1
 fi
-
-# =============================================================================
-# Validate PROD_DATABASE_URI is configured
-# =============================================================================
-if ! grep -q "^PROD_DATABASE_URI=" "$ENV_TEST_FILE" 2>/dev/null; then
-    echo "❌ Error: PROD_DATABASE_URI not found in .env.test"
-    echo ""
-    echo "Please add PROD_DATABASE_URI to .env.test pointing to your production MongoDB."
-    echo "Example: PROD_DATABASE_URI=mongodb://user:pass@host:27017/payload_cms?authSource=admin"
-    exit 1
-fi
-
-# Check if it's still the placeholder value
-if grep -q "PROD_DATABASE_URI=mongodb://your-prod" "$ENV_TEST_FILE" 2>/dev/null; then
-    echo "❌ Error: PROD_DATABASE_URI not configured in .env.test"
-    echo ""
-    echo "Please update PROD_DATABASE_URI in .env.test with your actual production MongoDB URI."
-    echo "Example: PROD_DATABASE_URI=mongodb://user:pass@host:27017/payload_cms?authSource=admin"
-    exit 1
-fi
-
-echo "✅ Found .env.test with PROD_DATABASE_URI configured"
+echo "✅ Production Payload CMS is running at localhost:3001"
 
 # =============================================================================
 # Check for existing test containers
@@ -114,18 +96,20 @@ fi
 echo ""
 echo "🧪 Starting test environment..."
 echo ""
-echo "📋 Service URLs:"
-echo "   Backend API:  http://localhost:8001"
-echo "   Payload CMS:  http://localhost:3002"
-echo "   Frontend:     http://localhost:3004"
+echo "📋 Test Service URLs:"
+echo "   Test Backend:  http://localhost:8001"
+echo "   Test Frontend: http://localhost:3004"
+echo ""
+echo "📋 Production Services (shared):"
+echo "   Payload CMS:   http://localhost:3001 (production)"
 echo ""
 echo "🗄️  Data Isolation:"
-echo "   MongoDB (test): localhost:27018 - Vector store only"
-echo "   Redis (test):   localhost:6380  - Cache only"
+echo "   Test MongoDB:  localhost:27018 - Vector store (isolated)"
+echo "   Test Redis:    localhost:6380  - Cache (isolated)"
 echo ""
 echo "⚠️  IMPORTANT:"
-echo "   Payload CMS is connected to PRODUCTION MongoDB!"
-echo "   Any article edits will affect PRODUCTION data."
+echo "   Edits in Payload CMS (localhost:3001) affect PRODUCTION data."
+echo "   The test backend will process webhooks with new chunking logic."
 echo ""
 
 # Start services with any additional arguments (e.g., -d for detached)
