@@ -19,7 +19,7 @@
 #   Test Backend:  http://localhost:8001  (vs production 8000)
 #   Test Frontend: http://localhost:3004  (vs production 3000)
 #   Test MongoDB:  localhost:27018        (isolated from production)
-#   Test Redis:    localhost:6380         (isolated from production)
+#   Test Redis:    localhost:6381         (isolated from production)
 #
 # Uses Production:
 #   Payload CMS:   http://localhost:3001  (production - shared)
@@ -105,7 +105,7 @@ echo "   Payload CMS:   http://localhost:3001 (production)"
 echo ""
 echo "🗄️  Data Isolation:"
 echo "   Test MongoDB:  localhost:27018 - Vector store (isolated)"
-echo "   Test Redis:    localhost:6380  - Cache (isolated)"
+echo "   Test Redis:    localhost:6381  - Cache (isolated)"
 echo ""
 echo "⚠️  IMPORTANT:"
 echo "   Edits in Payload CMS (localhost:3001) affect PRODUCTION data."

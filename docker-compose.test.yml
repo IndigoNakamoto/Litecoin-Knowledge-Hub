@@ -50,7 +50,7 @@ services:
         redis-server --save 60 1 --loglevel warning;
       fi"
     ports:
-      - "6380:6379"  # Different port to avoid conflicts with production
+      - "6381:6379"  # Different port (6380 is used by Redis Stack in local-rag profile)
     volumes:
       - redis_test_data:/data
     restart: unless-stopped
