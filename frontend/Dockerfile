@@ -51,9 +51,9 @@ EXPOSE 3000
 
 ENV PORT=3000
 
-# Health check
+# Health check - checks /chat endpoint and accepts 2xx/3xx status codes
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD node -e "const rawHost = process.env.HOST || process.env.HOSTNAME || '127.0.0.1'; const host = ['0.0.0.0', '::', '::0', '::ffff:0:0'].includes(rawHost) ? '127.0.0.1' : rawHost; require('http').get(`http://${host}:3000`, (r) => {process.exit(r.statusCode === 200 ? 0 : 1)}).on('error', () => process.exit(1))"
+    CMD node -e "const rawHost = process.env.HOST || process.env.HOSTNAME || '127.0.0.1'; const host = ['0.0.0.0', '::', '::0', '::ffff:0:0'].includes(rawHost) ? '127.0.0.1' : rawHost; require('http').get(\`http://\${host}:3000/chat\`, (r) => {process.exit(r.statusCode >= 200 && r.statusCode < 400 ? 0 : 1)}).on('error', () => process.exit(1))"
 
 CMD ["node", "server.js"]
 

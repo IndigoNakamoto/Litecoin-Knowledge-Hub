@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Docker Compose Override File for Security Hardening
 # This file injects secrets and authenticated connection strings
 # Docker Compose automatically merges this with docker-compose.prod.yml

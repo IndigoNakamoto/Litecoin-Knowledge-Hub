@@ -126,7 +126,7 @@ services:
         aliases:
           - litecoin-frontend
     healthcheck:
-      test: ["CMD", "node", "-e", "const rawHost = process.env.HOST || process.env.HOSTNAME || '127.0.0.1'; const host = ['0.0.0.0', '::', '::0', '::ffff:0:0'].includes(rawHost) ? '127.0.0.1' : rawHost; require('http').get(`http://${host}:3000`, (r) => {process.exit(r.statusCode === 200 ? 0 : 1)}).on('error', () => process.exit(1))"]
+      test: ["CMD", "node", "-e", "const rawHost = process.env.HOST || process.env.HOSTNAME || '127.0.0.1'; const host = ['0.0.0.0', '::', '::0', '::ffff:0:0'].includes(rawHost) ? '127.0.0.1' : rawHost; require('http').get(`http://$${host}:3000/chat`, (r) => {process.exit(r.statusCode >= 200 && r.statusCode < 400 ? 0 : 1)}).on('error', () => process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3

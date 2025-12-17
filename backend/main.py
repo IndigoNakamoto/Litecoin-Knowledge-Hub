@@ -478,6 +478,13 @@ if "http://localhost:3003" not in origins:
 if "http://127.0.0.1:3003" not in origins:
     origins.append("http://127.0.0.1:3003")
 
+# Always add litecoin.com origins for the chat tunnel integration
+# This ensures the embedded chat at litecoin.com/chat works regardless of CORS_ORIGINS setting
+if "https://litecoin.com" not in origins:
+    origins.append("https://litecoin.com")
+if "https://www.litecoin.com" not in origins:
+    origins.append("https://www.litecoin.com")
+
 # In development, allow all methods and headers for easier debugging
 # Note: Can't use ["*"] with allow_credentials=True, so we allow common localhost ports
 is_dev = os.getenv("ENVIRONMENT", "production").lower() == "development" or os.getenv("DEBUG", "false").lower() == "true"

@@ -7,6 +7,8 @@
 #   ./scripts/run-prod.sh -d                    # Start production services (detached)
 #   ./scripts/run-prod.sh -d --local-rag        # Start production + local RAG services
 #   ./scripts/run-prod.sh -d --local-rag --pull # Also pull Ollama model
+#   ./scripts/run-prod.sh -d --chat-tunnel      # Start production + chat tunnel
+#   ./scripts/run-prod.sh -d --local-rag --chat-tunnel # Start all services
 
 set -e
 
@@ -15,6 +17,7 @@ set -e
 # =============================================================================
 START_LOCAL_RAG=false
 PULL_OLLAMA_MODEL=false
+START_CHAT_TUNNEL=false
 DOCKER_ARGS=()
 
 for arg in "$@"; do
@@ -24,6 +27,9 @@ for arg in "$@"; do
             ;;
         --pull)
             PULL_OLLAMA_MODEL=true
+            ;;
+        --chat-tunnel)
+            START_CHAT_TUNNEL=true
             ;;
         *)
             DOCKER_ARGS+=("$arg")
@@ -294,6 +300,9 @@ echo "   Payload CMS: http://localhost:3001 (via Cloudflare)"
 echo "   Grafana: http://localhost:3002 (local only)"
 echo "   Admin Frontend: http://localhost:3003 (local only, not via Cloudflare)"
 echo "   Prometheus: http://localhost:9090 (local only)"
+if $START_CHAT_TUNNEL; then
+echo "   Chat Tunnel: Running (connects to litecoin.com/chat)"
+fi
 if $START_LOCAL_RAG; then
 echo "   ---"
 echo "   Embedding Server: http://localhost:7997 (local RAG)"
@@ -436,5 +445,32 @@ if $START_LOCAL_RAG; then
     echo "   USE_LOCAL_REWRITER=true"
     echo "   USE_INFINITY_EMBEDDINGS=true"
     echo "   USE_REDIS_CACHE=true"
+fi
+
+# =============================================================================
+# Start Chat Tunnel (if --chat-tunnel flag is set)
+# =============================================================================
+if $START_CHAT_TUNNEL; then
+    echo ""
+    echo "🌐 Starting Chat Tunnel service..."
+    echo ""
+    
+    # Verify CLOUDFLARE_CHAT_TUNNEL_TOKEN is set
+    if [ -z "${CLOUDFLARE_CHAT_TUNNEL_TOKEN:-}" ]; then
+        echo "❌ Error: CLOUDFLARE_CHAT_TUNNEL_TOKEN is not set in .env.docker.prod"
+        echo "   Please add: CLOUDFLARE_CHAT_TUNNEL_TOKEN=your-tunnel-token"
+        echo ""
+        echo "   This token is required for the chat tunnel to connect to Cloudflare."
+        exit 1
+    fi
+    
+    # Start chat_tunnel with litecoin-integration profile
+    echo "   Starting chat tunnel (profile: litecoin-integration)..."
+    $DOCKER_COMPOSE $COMPOSE_FILES --profile litecoin-integration up -d chat_tunnel
+    
+    echo "   ✓ Chat tunnel started"
+    echo ""
+    echo "💡 The chat tunnel connects the frontend to litecoin.com/chat"
+    echo "   It requires the frontend service to be healthy before starting."
 fi
 
