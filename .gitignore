@@ -82,8 +82,10 @@ __pypackages__/
 .env.docker.dev
 .env.docker.prod
 .env.secrets
-# Keep .env.example in git (it's a template)
+.env.test
+# Keep .env.example and .env.test.example in git (they're templates)
 !.env.example
+!.env.test.example
 
 # Node.js
 /node_modules/

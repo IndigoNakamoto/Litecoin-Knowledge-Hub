@@ -35,10 +35,18 @@ if not logger.handlers:
 # --- Custom Text Splitter for Markdown ---
 class MarkdownTextSplitter:
     """
-    A text splitter that processes Markdown content hierarchically.
-    It uses the parse_markdown_hierarchically function to create Document chunks
-    with prepended titles and section context. Each paragraph under a heading
-    becomes a single semantic chunk without further splitting.
+    A text splitter that processes Markdown content hierarchically with semantic aggregation.
+    
+    Uses parse_markdown_hierarchically to create Document chunks with prepended titles
+    and section context. Paragraphs under a heading are accumulated until reaching
+    TARGET_CHUNK_SIZE (~800 chars), then flushed at paragraph boundaries. This creates
+    larger, more contextual chunks that improve retrieval quality.
+    
+    Key features:
+    - Aggregates paragraphs under headers until size threshold
+    - Flushes on header boundaries to preserve semantic context
+    - Tracks code blocks to avoid splitting inside them
+    - Prepends hierarchical context (Title > Section > Subsection)
     """
     def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 100, **kwargs):
         """
@@ -178,21 +186,98 @@ class EmbeddingService:
             raise
 
 
+# --- Chunk Size Constants for Semantic Aggregation ---
+# These control how paragraphs are aggregated into larger semantic chunks
+TARGET_CHUNK_SIZE = 800   # Target size (chars) before flushing at paragraph boundary
+MAX_CHUNK_SIZE = 1200     # Hard limit to prevent oversized chunks
+
+
 def parse_markdown_hierarchically(content: str, initial_metadata: dict) -> List[Document]:
     """
     Parses Markdown content hierarchically, creating chunks with prepended titles.
+    
+    Uses semantic aggregation: accumulates paragraphs under headers until reaching
+    TARGET_CHUNK_SIZE, then flushes at paragraph boundaries. This creates larger,
+    more contextual chunks that improve retrieval quality and allow natural writing
+    with pronouns and transitions.
+    
     Handles YAML frontmatter for legacy files and extracts metadata from Payload documents.
-    Each paragraph under a heading becomes a single semantic chunk.
+    
+    Args:
+        content: The markdown content to parse
+        initial_metadata: Initial metadata dict (should include 'source' key)
+        
+    Returns:
+        List of Document chunks with prepended hierarchical context
     """
     chunks = []
     current_metadata = initial_metadata.copy()
     is_payload_doc = current_metadata.get('source') == 'payload'
 
-    current_h1 = current_metadata.get("doc_title", "")
-    current_h2 = ""
-    current_h3 = ""
-    current_h4 = ""
+    # Track headers hierarchically
+    headers = {
+        "h1": current_metadata.get("doc_title", ""),
+        "h2": "",
+        "h3": "",
+        "h4": ""
+    }
 
+    # Accumulator buffer for semantic aggregation
+    current_chunk_lines = []
+    current_chunk_size = 0
+
+    def flush_chunk():
+        """Flush the current buffer as a document chunk."""
+        nonlocal current_chunk_lines, current_chunk_size
+        if not current_chunk_lines:
+            return
+            
+        text = "\n".join(current_chunk_lines).strip()
+        if not text:
+            current_chunk_lines = []
+            current_chunk_size = 0
+            return
+
+        # Build the prepended context header
+        prepended_text_parts = []
+        if headers["h1"]:
+            prepended_text_parts.append(f"Title: {headers['h1']}")
+        if headers["h2"]:
+            prepended_text_parts.append(f"Section: {headers['h2']}")
+        if headers["h3"]:
+            prepended_text_parts.append(f"Subsection: {headers['h3']}")
+        if headers["h4"]:
+            prepended_text_parts.append(f"Sub-subsection: {headers['h4']}")
+        
+        prepended_header = "\n".join(prepended_text_parts)
+        final_page_content = f"{prepended_header}\n\n{text}" if prepended_header else text
+
+        # Build metadata
+        final_metadata = current_metadata.copy()
+        if headers["h1"]:
+            final_metadata['doc_title_hierarchical'] = headers["h1"]
+        if headers["h2"]:
+            final_metadata['section_title'] = headers["h2"]
+        if headers["h3"]:
+            final_metadata['subsection_title'] = headers["h3"]
+        if headers["h4"]:
+            final_metadata['subsubsection_title'] = headers["h4"]
+        final_metadata['chunk_type'] = 'section' if headers["h2"] or headers["h3"] or headers["h4"] else 'text'
+        final_metadata['content_length'] = len(text)
+        
+        # Clean up any date objects (convert date to datetime for MongoDB compatibility)
+        for key, value in list(final_metadata.items()):
+            if isinstance(value, datetime.date) and not isinstance(value, datetime.datetime):
+                logger.debug(f"Converting datetime.date to datetime.datetime for key '{key}'")
+                final_metadata[key] = datetime.datetime.combine(value, datetime.time.min)
+
+        chunks.append(Document(page_content=final_page_content, metadata=final_metadata))
+        
+        # Reset buffer
+        current_chunk_lines = []
+        current_chunk_size = 0
+
+    # Handle YAML frontmatter for non-Payload documents
     if not is_payload_doc:
         try:
             if content.startswith("---"):
@@ -202,143 +287,141 @@ def parse_markdown_hierarchically(content: str, initial_metadata: dict) -> List[
                     content_after_frontmatter = parts[2].lstrip()
                     parsed_frontmatter = yaml.safe_load(frontmatter_str)
                     if isinstance(parsed_frontmatter, dict):
+                        # Handle last_updated date parsing
                         if 'last_updated' in parsed_frontmatter:
                             last_updated_date = parsed_frontmatter['last_updated']
                             if isinstance(last_updated_date, str):
                                 try:
-                                    parsed_frontmatter['last_updated'] = datetime.datetime.fromisoformat(last_updated_date.replace('Z', '+00:00'))
+                                    parsed_frontmatter['last_updated'] = datetime.datetime.fromisoformat(
+                                        last_updated_date.replace('Z', '+00:00')
+                                    )
                                 except (ValueError, TypeError) as e:
-                                    logger.warning(f"Could not parse 'last_updated' date string '{last_updated_date}' for source: {initial_metadata.get('source', 'Unknown')}. Error: {e}. Keeping as string.")
+                                    logger.warning(
+                                        f"Could not parse 'last_updated' date string '{last_updated_date}' "
+                                        f"for source: {initial_metadata.get('source', 'Unknown')}. Error: {e}. Keeping as string."
+                                    )
                             elif isinstance(last_updated_date, datetime.date) and not isinstance(last_updated_date, datetime.datetime):
-                                parsed_frontmatter['last_updated'] = datetime.datetime.combine(last_updated_date, datetime.time.min)
+                                parsed_frontmatter['last_updated'] = datetime.datetime.combine(
+                                    last_updated_date, datetime.time.min
+                                )
 
                         current_metadata.update(parsed_frontmatter)
                         if "title" in parsed_frontmatter:
-                            current_h1 = parsed_frontmatter["title"]
+                            headers["h1"] = parsed_frontmatter["title"]
                         content = content_after_frontmatter
                     else:
-                        logger.warning(f"Parsed frontmatter is not a dictionary for source: {initial_metadata.get('source', 'Unknown')}. Skipping.")
+                        logger.warning(
+                            f"Parsed frontmatter is not a dictionary for source: "
+                            f"{initial_metadata.get('source', 'Unknown')}. Skipping."
+                        )
                 else:
-                    logger.debug(f"No valid YAML frontmatter block found for source: {initial_metadata.get('source', 'Unknown')}")
+                    logger.debug(
+                        f"No valid YAML frontmatter block found for source: "
+                        f"{initial_metadata.get('source', 'Unknown')}"
+                    )
         except yaml.YAMLError as e:
             logger.warning(f"Could not parse YAML frontmatter for {initial_metadata.get('source', 'Unknown')}: {e}")
         except Exception as e:
             logger.warning(f"Error processing frontmatter for {initial_metadata.get('source', 'Unknown')}: {e}")
 
     lines = content.splitlines()
-    current_paragraph_lines = []
-
-    def create_document_chunk(paragraph_lines_list, h1, h2, h3, h4, meta):
-        """
-        Creates ONE document chunk from a list of paragraph lines,
-        prepending the hierarchical headings.
-        This replaces the 'create_and_split_chunk' function.
-        """
-        if not paragraph_lines_list:
-            return []
-        
-        text = "\n".join(paragraph_lines_list).strip()
-        if not text:
-            return []
-
-        # 1. Create the prepended header
-        prepended_text_parts = []
-        if h1: prepended_text_parts.append(f"Title: {h1}")
-        if h2: prepended_text_parts.append(f"Section: {h2}")
-        if h3: prepended_text_parts.append(f"Subsection: {h3}")
-        if h4: prepended_text_parts.append(f"Sub-subsection: {h4}")
-        
-        prepended_header = "\n".join(prepended_text_parts)
-
-        # 2. Create the final page content
-        final_page_content = f"{prepended_header}\n\n{text}" if prepended_header else text
-
-        # 3. Create the final metadata
-        final_metadata = meta.copy()
-        if h1: final_metadata['doc_title_hierarchical'] = h1
-        if h2: final_metadata['section_title'] = h2
-        if h3: final_metadata['subsection_title'] = h3
-        if h4: final_metadata['subsubsection_title'] = h4
-        final_metadata['chunk_type'] = 'section' if h2 or h3 or h4 else 'text'
-        final_metadata['content_length'] = len(text)
-        
-        # 4. Clean up any bad date objects (from your original code)
-        for key, value in final_metadata.items():
-            if isinstance(value, datetime.date) and not isinstance(value, datetime.datetime):
-                logger.debug(f"Converting datetime.date to datetime.datetime for key '{key}' in source: {final_metadata.get('source', 'Unknown')}")
-                final_metadata[key] = datetime.datetime.combine(value, datetime.time.min)
-
-        # 5. Return a list containing just this ONE chunk
-        return [Document(page_content=final_page_content, metadata=final_metadata)]
+    in_code_block = False
 
     for line_number, line in enumerate(lines):
-        h1_match = re.match(r"^#\s+(.*)", line)
-        h2_match = re.match(r"^##\s+(.*)", line)
-        h3_match = re.match(r"^###\s+(.*)", line)
-        h4_match = re.match(r"^####\s+(.*)", line)
+        stripped = line.strip()
+        
+        # Track code blocks to avoid splitting inside them
+        if stripped.startswith("```"):
+            in_code_block = not in_code_block
+        
+        # Skip header detection inside code blocks
+        if not in_code_block:
+            h1_match = re.match(r"^#\s+(.*)", line)
+            h2_match = re.match(r"^##\s+(.*)", line)
+            h3_match = re.match(r"^###\s+(.*)", line)
+            h4_match = re.match(r"^####\s+(.*)", line)
 
-        if h1_match and not is_payload_doc:
-            if current_paragraph_lines:
-                chunks.extend(create_document_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata))
-                current_paragraph_lines = []
-            current_h1 = h1_match.group(1).strip()
-            current_h2, current_h3, current_h4 = "", "", ""
-        elif h1_match and is_payload_doc:
-            if current_paragraph_lines:
-                chunks.extend(create_document_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata))
-                current_paragraph_lines = []
-            current_h2 = h1_match.group(1).strip()
-            current_h3, current_h4 = "", ""
-        elif h2_match:
-            if current_paragraph_lines:
-                chunks.extend(create_document_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata))
-                current_paragraph_lines = []
-            current_h2 = h2_match.group(1).strip()
-            current_h3, current_h4 = "", ""
-        elif h3_match:
-            if current_paragraph_lines:
-                chunks.extend(create_document_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata))
-                current_paragraph_lines = []
-            current_h3 = h3_match.group(1).strip()
-            current_h4 = ""
-        elif h4_match:
-            if current_paragraph_lines:
-                chunks.extend(create_document_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata))
-                current_paragraph_lines = []
-            current_h4 = h4_match.group(1).strip()
-        elif line.strip() or (not line.strip() and current_paragraph_lines and line_number < len(lines) -1 and lines[line_number+1].strip()):
-            current_paragraph_lines.append(line)
-        elif current_paragraph_lines:
-            chunks.extend(create_document_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata))
-            current_paragraph_lines = []
+            # Header found: flush the previous buffer immediately (preserve semantic context)
+            if h1_match:
+                flush_chunk()
+                if is_payload_doc:
+                    # In Payload docs, H1 in content is treated as H2 (title comes from metadata)
+                    headers["h2"] = h1_match.group(1).strip()
+                    headers["h3"] = ""
+                    headers["h4"] = ""
+                else:
+                    headers["h1"] = h1_match.group(1).strip()
+                    headers["h2"] = ""
+                    headers["h3"] = ""
+                    headers["h4"] = ""
+                continue
+            elif h2_match:
+                flush_chunk()
+                headers["h2"] = h2_match.group(1).strip()
+                headers["h3"] = ""
+                headers["h4"] = ""
+                continue
+            elif h3_match:
+                flush_chunk()
+                headers["h3"] = h3_match.group(1).strip()
+                headers["h4"] = ""
+                continue
+            elif h4_match:
+                flush_chunk()
+                headers["h4"] = h4_match.group(1).strip()
+                continue
+        
+        # It's content (text, code, lists, etc.) - add to buffer
+        current_chunk_lines.append(line)
+        current_chunk_size += len(line)
+        
+        # Check if we should flush based on size
+        if current_chunk_size >= MAX_CHUNK_SIZE:
+            # Hard limit reached - flush immediately regardless of boundary
+            flush_chunk()
+        elif current_chunk_size >= TARGET_CHUNK_SIZE and not in_code_block:
+            # Target size reached - check if we're at a paragraph boundary
+            # A paragraph boundary is: blank line, or next line is blank/header
+            is_paragraph_boundary = (
+                not stripped or  # Current line is blank
+                (line_number < len(lines) - 1 and (
+                    not lines[line_number + 1].strip() or  # Next line is blank
+                    lines[line_number + 1].strip().startswith("#")  # Next line is a header
+                ))
+            )
+            if is_paragraph_boundary:
+                flush_chunk()
 
-    if current_paragraph_lines:
-        chunks.extend(create_document_chunk(current_paragraph_lines, current_h1, current_h2, current_h3, current_h4, current_metadata))
+    # Final flush at end of file
+    flush_chunk()
     
+    # Handle edge case: no chunks created but content exists
     if not chunks and content.strip():
         page_content = content.strip()
         prepended_text_parts = []
-        if current_h1: prepended_text_parts.append(f"Title: {current_h1}")
+        if headers["h1"]:
+            prepended_text_parts.append(f"Title: {headers['h1']}")
         prepended_header = "\n".join(prepended_text_parts)
         final_page_content = f"{prepended_header}\n\n{page_content}" if prepended_header else page_content
         
         final_metadata = current_metadata.copy()
-        if current_h1: final_metadata['doc_title_hierarchical'] = current_h1
+        if headers["h1"]:
+            final_metadata['doc_title_hierarchical'] = headers["h1"]
         final_metadata['content_length'] = len(page_content)
         final_metadata['chunk_type'] = 'title_summary'
         
-        # Clean up any bad date objects
-        for key, value in final_metadata.items():
+        # Clean up date objects
+        for key, value in list(final_metadata.items()):
             if isinstance(value, datetime.date) and not isinstance(value, datetime.datetime):
-                logger.debug(f"Converting datetime.date to datetime.datetime for key '{key}' in source: {final_metadata.get('source', 'Unknown')}")
+                logger.debug(f"Converting datetime.date to datetime.datetime for key '{key}'")
                 final_metadata[key] = datetime.datetime.combine(value, datetime.time.min)
         
-        # Create a single chunk if no headings were found
         chunks.append(Document(page_content=final_page_content, metadata=final_metadata))
 
     elif not chunks and not content.strip():
         logger.info(f"No content to chunk for source: {initial_metadata.get('source', 'Unknown')}")
 
+    # Add chunk indices
     for i, chunk in enumerate(chunks):
         chunk.metadata['chunk_index'] = i
         chunk.metadata['is_title_chunk'] = (i == 0 and chunk.metadata.get('chunk_type') == 'title_summary')

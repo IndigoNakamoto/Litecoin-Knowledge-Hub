@@ -1,0 +1,156 @@
+version: '3.8'
+
+# Test Environment Configuration
+# Shares Payload CMS database with production
+# Uses separate MongoDB and Redis for backend testing
+#
+# Usage:
+#   ./scripts/run-test.sh -d                    # Start test services (detached)
+#   docker compose -f docker-compose.test.yml down  # Stop test services
+
+services:
+  # Local MongoDB for backend vector store (separate from production)
+  mongodb_test:
+    image: mongo:7.0
+    container_name: litecoin-mongodb-test
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USERNAME:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:-}
+    entrypoint: >
+      sh -c "
+      if [ -n \"$$MONGO_ROOT_PASSWORD\" ]; then
+        export MONGO_INITDB_ROOT_USERNAME=\"$${MONGO_ROOT_USERNAME:-admin}\";
+        export MONGO_INITDB_ROOT_PASSWORD=\"$$MONGO_ROOT_PASSWORD\";
+      else
+        unset MONGO_INITDB_ROOT_USERNAME;
+        unset MONGO_INITDB_ROOT_PASSWORD;
+      fi;
+      exec docker-entrypoint.sh mongod --bind_ip_all $${MONGO_ROOT_PASSWORD:+--auth}
+      "
+    ports:
+      - "27018:27017"  # Different port to avoid conflicts with production
+    volumes:
+      - mongodb_test_data:/data/db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "if [ -n \"$$MONGO_ROOT_PASSWORD\" ]; then mongosh --quiet --username $$MONGO_ROOT_USERNAME --password $$MONGO_ROOT_PASSWORD --authenticationDatabase admin --eval \"db.adminCommand('ping')\"; else mongosh --quiet --eval \"db.adminCommand('ping')\"; fi"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # Local Redis for backend (separate from production)
+  redis_test:
+    image: redis:7-alpine
+    container_name: litecoin-redis-test
+    command: >
+      sh -c "if [ -n \"$$REDIS_PASSWORD\" ]; then
+        redis-server --requirepass $$REDIS_PASSWORD --save 60 1 --loglevel warning;
+      else
+        redis-server --save 60 1 --loglevel warning;
+      fi"
+    ports:
+      - "6380:6379"  # Different port to avoid conflicts with production
+    volumes:
+      - redis_test_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: litecoin-backend-test
+    ports:
+      - "8001:8000"  # Different port to avoid conflicts with production
+    env_file:
+      - ./.env.test
+      - ./backend/.env
+    environment:
+      - NODE_ENV=test
+      - ENVIRONMENT=test
+      # Use local test MongoDB for vector store (litecoin_rag_db)
+      - MONGO_URI=${TEST_MONGO_URI:-mongodb://mongodb_test:27017/litecoin_rag_db}
+      - MONGO_DETAILS=${TEST_MONGO_URI:-mongodb://mongodb_test:27017/litecoin_rag_db}
+      # Use local test Redis
+      - REDIS_URL=${TEST_REDIS_URL:-redis://redis_test:6379/0}
+      # Payload CMS URL (internal Docker network)
+      - PAYLOAD_URL=http://payload_cms:3000
+      - PAYLOAD_PUBLIC_SERVER_URL=http://payload_cms:3000
+    depends_on:
+      mongodb_test:
+        condition: service_healthy
+      redis_test:
+        condition: service_healthy
+    volumes:
+      - ./backend/monitoring/data:/app/backend/monitoring/data
+      - faiss_index_test_data:/app/backend/faiss_index_1024  # Separate FAISS index
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  payload_cms:
+    build:
+      context: ./payload_cms
+      dockerfile: Dockerfile
+    container_name: litecoin-payload-cms-test
+    ports:
+      - "3002:3000"  # Different port to avoid conflicts with production
+    env_file:
+      - ./.env.test
+      - ./payload_cms/.env
+    environment:
+      - NODE_ENV=production
+      # Connect to PRODUCTION MongoDB for payload_cms database
+      # This shares the same article database as production
+      - DATABASE_URI=${PROD_DATABASE_URI}
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_BACKEND_URL=${TEST_BACKEND_URL:-http://localhost:8001}
+        - NEXT_PUBLIC_PAYLOAD_URL=${TEST_PAYLOAD_URL:-http://localhost:3002}
+    container_name: litecoin-frontend-test
+    ports:
+      - "3004:3000"  # Different port to avoid conflicts with production
+    env_file:
+      - ./.env.test
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "const rawHost = process.env.HOST || process.env.HOSTNAME || '127.0.0.1'; const host = ['0.0.0.0', '::', '::0', '::ffff:0:0'].includes(rawHost) ? '127.0.0.1' : rawHost; require('http').get(`http://${host}:3000`, (r) => {process.exit(r.statusCode === 200 ? 0 : 1)}).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  mongodb_test_data:
+  redis_test_data:
+  faiss_index_test_data:
+
