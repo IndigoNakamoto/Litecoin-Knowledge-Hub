@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import ChatWindow, { ChatWindowRef } from "@/components/ChatWindow";
 import Message from "@/components/Message";
 import StreamingMessage from "@/components/StreamingMessage";
@@ -56,11 +56,47 @@ export default function Home() {
   // Fingerprint state is kept for background refresh, but we fetch fresh before each request
   const [_fingerprint, setFingerprint] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const streamReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
+  const activeStreamIdRef = useRef(0);
   const chatWindowRef = useRef<ChatWindowRef>(null);
   const lastUserMessageIdRef = useRef<string | null>(null);
   const { setScrollPosition, setPinnedMessageId, resetPinningContext, pinnedMessageId } = useScrollContext();
   
   
+  const clearConversation = useCallback(() => {
+    // Invalidate any in-flight stream loop so it stops updating state.
+    activeStreamIdRef.current += 1;
+
+    // Best-effort: cancel any active stream reader.
+    try {
+      streamReaderRef.current?.cancel();
+    } catch (e) {
+      console.debug("Failed to cancel stream reader (safe to ignore):", e);
+    } finally {
+      streamReaderRef.current = null;
+    }
+
+    // Best-effort: close any lingering EventSource (legacy).
+    try {
+      eventSourceRef.current?.close();
+    } catch (e) {
+      console.debug("Failed to close EventSource (safe to ignore):", e);
+    } finally {
+      eventSourceRef.current = null;
+    }
+
+    // Reset UI state back to the "Get started with Litecoin" landing experience.
+    setIsLoading(false);
+    setStreamingMessage(null);
+    setMessages([]);
+    setUsageWarning(null);
+    lastUserMessageIdRef.current = null;
+
+    resetPinningContext();
+    setScrollPosition(0);
+    setPinnedMessageId(null);
+  }, [resetPinningContext, setPinnedMessageId, setScrollPosition]);
+
   // Helper function to extract base fingerprint hash from fingerprint string
   const extractBaseFingerprint = (fp: string | null): string | null => {
     if (!fp) return null;
@@ -398,6 +434,12 @@ export default function Home() {
       isStreamActive: true
     };
     setStreamingMessage(initialStreamingMessage);
+
+    // Track this stream so we can safely cancel/ignore it if user clears the conversation
+    // or starts a newer stream before this one completes.
+    activeStreamIdRef.current += 1;
+    const streamId = activeStreamIdRef.current;
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
     try {
       // Close any existing connection
@@ -799,12 +841,16 @@ export default function Home() {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const reader = response.body?.getReader();
+      reader = response.body?.getReader() || null;
       const decoder = new TextDecoder();
 
       if (!reader) {
         throw new Error("Response body is not readable");
       }
+      // Important: TypeScript won't narrow a captured mutable variable (`reader`) inside closures.
+      // Bind a non-null constant and use it throughout the streaming code.
+      const streamReader = reader;
+      streamReaderRef.current = streamReader;
 
       let accumulatedContent = "";
       let sources: { metadata?: { title?: string; source?: string } }[] = [];
@@ -827,6 +873,11 @@ export default function Home() {
 
       // Helper function to process a single SSE data object
       const processData = async (data: SSEData) => {
+        if (streamId !== activeStreamIdRef.current) {
+          // Conversation was cleared (or a newer stream started) — stop processing.
+          shouldBreak = true;
+          return;
+        }
         if (data.status === 'usage_status') {
           // Handle usage status from stream
           if (data.usage_status && data.usage_status.warning_level) {
@@ -917,7 +968,11 @@ export default function Home() {
       const processStream = async () => {
         try {
           while (true) {
-            const { done, value } = await reader.read();
+            if (streamId !== activeStreamIdRef.current) {
+              shouldBreak = true;
+              break;
+            }
+            const { done, value } = await streamReader.read();
             if (done) {
               // Process any remaining buffer content
               if (buffer.trim()) {
@@ -969,13 +1024,16 @@ export default function Home() {
             if (shouldBreak) break;
           }
         } catch (error) {
-          console.error('Stream processing error:', error);
-          setStreamingMessage(prev => prev ? {
-            ...prev,
-            content: "Sorry, something went wrong. Please try again.",
-            status: 'error',
-            isStreamActive: false
-          } : null);
+          // If the conversation was cleared (or a newer stream started), swallow any errors from canceling/abandoning.
+          if (streamId === activeStreamIdRef.current) {
+            console.error('Stream processing error:', error);
+            setStreamingMessage(prev => prev ? {
+              ...prev,
+              content: "Sorry, something went wrong. Please try again.",
+              status: 'error',
+              isStreamActive: false
+            } : null);
+          }
         }
       };
 
@@ -983,14 +1041,23 @@ export default function Home() {
 
     } catch (error) {
       console.error("Error sending message:", error);
-      setStreamingMessage({
-        role: "ai",
-        content: "Sorry, something went wrong. Please try again.",
-        status: 'error',
-        isStreamActive: false
-      });
+      if (streamId === activeStreamIdRef.current) {
+        setStreamingMessage({
+          role: "ai",
+          content: "Sorry, something went wrong. Please try again.",
+          status: 'error',
+          isStreamActive: false
+        });
+      }
     } finally {
-      setIsLoading(false);
+      // Only clear the reader ref if it still points at this stream's reader.
+      if (reader && streamReaderRef.current && streamReaderRef.current === reader) {
+        streamReaderRef.current = null;
+      }
+      // Avoid old streams flipping loading state after a newer stream starts (or after clearing).
+      if (streamId === activeStreamIdRef.current) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -1085,7 +1152,12 @@ export default function Home() {
             {!streamingMessage && isLoading && <MessageLoader />}
           </ChatWindow>
         )}
-        <InputBox onSendMessage={handleSendMessage} isLoading={isLoading} />
+        <InputBox
+          onSendMessage={handleSendMessage}
+          isLoading={isLoading}
+          showConversationActions={messages.length > 0 || !!streamingMessage || isLoading}
+          onClearConversation={clearConversation}
+        />
       </div>
       
     </div>

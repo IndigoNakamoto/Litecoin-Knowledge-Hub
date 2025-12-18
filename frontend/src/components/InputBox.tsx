@@ -4,11 +4,18 @@ import { Send, Sparkles, AlertCircle } from "lucide-react";
 interface InputBoxProps {
   onSendMessage: (message: string) => void;
   isLoading: boolean;
+  showConversationActions?: boolean;
+  onClearConversation?: () => void;
 }
 
 const MAX_QUERY_LENGTH = 400;
 
-const InputBox: React.FC<InputBoxProps> = ({ onSendMessage, isLoading }) => {
+const InputBox: React.FC<InputBoxProps> = ({
+  onSendMessage,
+  isLoading,
+  showConversationActions = false,
+  onClearConversation,
+}) => {
   const [input, setInput] = useState("");
   const [isFocused, setIsFocused] = useState(false);
   const [showWarning, setShowWarning] = useState(false);
@@ -72,6 +79,18 @@ const InputBox: React.FC<InputBoxProps> = ({ onSendMessage, isLoading }) => {
       className="sticky bottom-0 inset-x-0 z-10 mt-4"
     >
       <div className="mx-auto max-w-4xl px-4 py-4">
+        {showConversationActions && onClearConversation && (
+          <div className="mb-2 flex items-center justify-between px-2">
+            <div className="flex-1" />
+            <button
+              type="button"
+              onClick={onClearConversation}
+              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Clear conversation
+            </button>
+          </div>
+        )}
         <div 
           ref={containerRef}
           className={`relative flex items-end gap-3 bg-white/85 rounded-2xl border text-foreground shadow-lg shadow-black/20 transition-all ${
