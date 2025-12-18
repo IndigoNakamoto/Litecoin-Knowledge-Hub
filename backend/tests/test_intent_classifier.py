@@ -76,6 +76,11 @@ class TestIntentClassifier:
         intent, matched, response = classifier.classify("Hello, I want to know about Litecoin mining")
         # Long queries should not be classified as greetings
         assert intent != Intent.GREETING
+
+    def test_supply_not_greeting(self, classifier):
+        """Regression: 'supply' contains 'sup' but should not be classified as a greeting."""
+        intent, matched, response = classifier.classify("Supply")
+        assert intent != Intent.GREETING
     
     # === Thanks Tests ===
     

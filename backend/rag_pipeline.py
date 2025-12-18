@@ -1,6 +1,7 @@
 import os
 import asyncio
 import time
+import re
 import logging
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnablePassthrough
@@ -34,6 +35,54 @@ USE_FAQ_INDEXING = os.getenv("USE_FAQ_INDEXING", "true").lower() == "true"
 GENERIC_USER_ERROR_MESSAGE = (
     "I encountered an error while processing your query. Please try again or rephrase your question."
 )
+
+# --- Conversation / history heuristics ---
+# We only want to use chat history when the user's query is genuinely ambiguous
+# (pronouns, follow-ups, etc.). Otherwise, treating queries as "global search"
+# avoids accidental topic anchoring after browsing other content.
+_AMBIGUOUS_TOKENS = {
+    "it", "this", "that", "these", "those",
+    "they", "them", "their", "its",
+    "he", "she", "him", "her",
+    "there", "here",
+    "former", "latter",
+}
+
+_FOLLOWUP_PREFIXES = (
+    "and ",
+    "also ",
+    "what about",
+    "how about",
+    "tell me more",
+    "more about",
+    "can you expand",
+    "go deeper",
+    "why is that",
+)
+
+def _should_use_history(query_text: str) -> bool:
+    """
+    Decide whether to use conversational history for this query.
+    
+    If the query is standalone, we intentionally *ignore* prior chat history so
+    retrieval isn't unintentionally scoped to the previous topic.
+    """
+    if not query_text:
+        return False
+    q = query_text.lower().strip()
+    tokens = re.findall(r"[a-z0-9']+", q)
+    if not tokens:
+        return False
+
+    # Pronouns / deictic references usually need history.
+    if any(t in _AMBIGUOUS_TOKENS for t in tokens):
+        return True
+
+    # Short follow-ups are often dependent on prior context.
+    if len(tokens) <= 6 and any(q.startswith(p) for p in _FOLLOWUP_PREFIXES):
+        return True
+
+    return False
 
 # Lazy-load local RAG services only when enabled
 _inference_router = None
@@ -189,7 +238,7 @@ QA_WITH_HISTORY_PROMPT = ChatPromptTemplate.from_messages(
     [
         MessagesPlaceholder(variable_name="chat_history"),
         ("human", "{input}"),
-        ("human", "Given the above conversation, generate a standalone question that resolves any pronouns or ambiguous references in the user's input. Focus on the main subject of the conversation. If the input is already a complete standalone question, return it as is. Do not add extra information or make assumptions beyond resolving the context."),
+        ("human", "Given the above conversation, generate a standalone question that resolves pronouns or ambiguous references in the user's input. Use chat history ONLY to resolve ambiguity. If the user's input is already a complete standalone question or introduces a new topic, return it as-is and do not blend in prior topics. Do not add extra information or make assumptions beyond resolving ambiguity."),
     ]
 )
 
@@ -702,9 +751,12 @@ class RAGPipeline:
         # Truncate chat history to prevent token overflow
         truncated_history = self._truncate_chat_history(sanitized_history)
         
+        # Use conversation history only when the query needs it (pronouns/follow-ups).
+        effective_history = truncated_history if _should_use_history(query_text) else []
+        
         # === 0. Intent Classification (skip if follow-up question) ===
         # Greetings, thanks, and FAQ matches are handled without LLM calls
-        if USE_INTENT_CLASSIFICATION and not truncated_history:
+        if USE_INTENT_CLASSIFICATION and not effective_history:
             intent_classifier = _get_intent_classifier()
             if intent_classifier:
                 from backend.services.intent_classifier import Intent
@@ -770,7 +822,7 @@ class RAGPipeline:
                     logger.debug(f"FAQ match but cache miss, proceeding with RAG: {matched_faq[:50]}...")
         
         # === 1. Try semantic cache first (broader recall) ===
-        cached_result = self.semantic_cache.get(query_text, truncated_history) if self.semantic_cache else None
+        cached_result = self.semantic_cache.get(query_text, effective_history) if self.semantic_cache else None
         if cached_result:
             answer, published_sources = cached_result
             logger.info(f"Semantic cache HIT for: {query_text[:50]}...")
@@ -791,7 +843,7 @@ class RAGPipeline:
             return answer, published_sources, metadata
         
         # === 2. Fallback to exact cache ===
-        cached_result = query_cache.get(query_text, truncated_history)
+        cached_result = query_cache.get(query_text, effective_history)
         if cached_result:
             logger.debug(f"Cache hit for query: '{query_text}'")
             if MONITORING_ENABLED:
@@ -819,7 +871,7 @@ class RAGPipeline:
         try:
             # Convert chat_history to Langchain's BaseMessage format
             converted_chat_history: List[BaseMessage] = []
-            for human_msg, ai_msg in truncated_history:
+            for human_msg, ai_msg in effective_history:
                 converted_chat_history.append(HumanMessage(content=human_msg))
                 if ai_msg:
                     converted_chat_history.append(AIMessage(content=ai_msg))
@@ -898,7 +950,7 @@ class RAGPipeline:
                 if router:
                     rewrite_start = time.time()
                     try:
-                        rewritten_query = await router.rewrite(query_text, truncated_history)
+                        rewritten_query = await router.rewrite(query_text, effective_history)
                         if MONITORING_ENABLED:
                             rag_query_rewrite_duration_seconds.observe(time.time() - rewrite_start)
                         if rewritten_query == "NO_SEARCH_NEEDED":
@@ -1364,10 +1416,10 @@ class RAGPipeline:
                 except Exception as e:
                     logger.warning(f"Error recording spend: {e}", exc_info=True)
 
-            # Cache in BOTH systems (using truncated history)
-            query_cache.set(query_text, truncated_history, answer, published_sources)  # exact cache
+            # Cache in BOTH systems (using the effective history we actually used for retrieval)
+            query_cache.set(query_text, effective_history, answer, published_sources)  # exact cache
             if self.semantic_cache:
-                self.semantic_cache.set(query_text, truncated_history, answer, published_sources)  # semantic cache
+                self.semantic_cache.set(query_text, effective_history, answer, published_sources)  # semantic cache
             
             # === LOCAL RAG: Store in Redis Stack vector cache ===
             # Only cache responses without chat history (standalone queries)
@@ -1462,9 +1514,12 @@ class RAGPipeline:
             # Truncate chat history to prevent token overflow
             truncated_history = self._truncate_chat_history(sanitized_history)
             
+            # Use conversation history only when the query needs it (pronouns/follow-ups).
+            effective_history = truncated_history if _should_use_history(query_text) else []
+            
             # === 0. Intent Classification (skip if follow-up question) ===
             # Greetings, thanks, and FAQ matches are handled without LLM calls
-            if USE_INTENT_CLASSIFICATION and not truncated_history:
+            if USE_INTENT_CLASSIFICATION and not effective_history:
                 intent_classifier = _get_intent_classifier()
                 if intent_classifier:
                     from backend.services.intent_classifier import Intent
@@ -1557,7 +1612,7 @@ class RAGPipeline:
                         )
             
             # === 1. Try semantic cache first ===
-            cached_result = self.semantic_cache.get(query_text, truncated_history) if self.semantic_cache else None
+            cached_result = self.semantic_cache.get(query_text, effective_history) if self.semantic_cache else None
             if cached_result:
                 logger.debug(f"Semantic cache HIT for query: '{query_text[:50]}...'")
                 cached_answer, cached_sources = cached_result
@@ -1592,7 +1647,7 @@ class RAGPipeline:
                 return
 
             # === 2. Fallback to exact cache ===
-            cached_result = query_cache.get(query_text, truncated_history)
+            cached_result = query_cache.get(query_text, effective_history)
             if cached_result:
                 logger.debug(f"Cache hit for query: '{query_text}'")
                 cached_answer, cached_sources = cached_result
@@ -1636,7 +1691,7 @@ class RAGPipeline:
 
             # Convert chat_history to Langchain's BaseMessage format
             converted_chat_history: List[BaseMessage] = []
-            for human_msg, ai_msg in truncated_history:
+            for human_msg, ai_msg in effective_history:
                 converted_chat_history.append(HumanMessage(content=human_msg))
                 if ai_msg:
                     converted_chat_history.append(AIMessage(content=ai_msg))
@@ -1725,7 +1780,7 @@ class RAGPipeline:
                 if router:
                     rewrite_start = time.time()
                     try:
-                        rewritten_query = await router.rewrite(query_text, truncated_history)
+                        rewritten_query = await router.rewrite(query_text, effective_history)
                         if MONITORING_ENABLED:
                             rag_query_rewrite_duration_seconds.observe(time.time() - rewrite_start)
                         if rewritten_query == "NO_SEARCH_NEEDED":
@@ -2231,10 +2286,10 @@ class RAGPipeline:
                     cache_hit="false"
                 ).observe(total_duration)
             
-            # Cache in BOTH systems (using truncated history)
-            query_cache.set(query_text, truncated_history, full_answer_accumulator, published_sources)  # exact cache
+            # Cache in BOTH systems (using the effective history we actually used for retrieval)
+            query_cache.set(query_text, effective_history, full_answer_accumulator, published_sources)  # exact cache
             if self.semantic_cache:
-                self.semantic_cache.set(query_text, truncated_history, full_answer_accumulator, published_sources)  # semantic cache
+                self.semantic_cache.set(query_text, effective_history, full_answer_accumulator, published_sources)  # semantic cache
             
             # === LOCAL RAG: Store in Redis Stack vector cache (streaming) ===
             # Only cache responses without chat history (standalone queries)

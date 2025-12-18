@@ -10,6 +10,7 @@ cost-effective intent detection.
 """
 
 import os
+import re
 import logging
 from typing import Tuple, Optional, List
 from enum import Enum
@@ -21,6 +22,8 @@ except ImportError:
     RAPIDFUZZ_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+_NORMALIZE_RE = re.compile(r"[a-z0-9]+")
 
 
 class Intent(Enum):
@@ -71,6 +74,21 @@ class IntentClassifier:
         "You're welcome! Is there anything else you'd like to know about Litecoin?"
     )
     
+    @staticmethod
+    def _normalize(text: str) -> str:
+        """
+        Normalize text for robust intent matching.
+        
+        - Lowercases
+        - Strips punctuation
+        - Collapses to space-separated alphanumeric tokens
+        
+        This avoids substring false positives like 'sup' matching 'supply'.
+        """
+        if not text:
+            return ""
+        return " ".join(_NORMALIZE_RE.findall(text.lower()))
+
     def __init__(self, faq_questions: Optional[List[str]] = None):
         """
         Initialize the classifier.
@@ -160,13 +178,25 @@ class IntentClassifier:
         if word_count > 3:
             return False
         
-        # Check for exact or fuzzy matches
+        q = self._normalize(query)
+        if not q:
+            return False
+
+        # Check for exact (normalized) or fuzzy matches
         for pattern in self.GREETING_PATTERNS:
-            if pattern in query:
+            p = self._normalize(pattern)
+            if not p:
+                continue
+            
+            # Exact match only (prevents 'sup' matching 'supply')
+            if q == p:
                 return True
-            # Use fuzzy matching for typos
-            if RAPIDFUZZ_AVAILABLE and fuzz.ratio(query, pattern) > 80:
-                return True
+            
+            # Use fuzzy matching for short, similar-length strings to catch typos
+            if RAPIDFUZZ_AVAILABLE:
+                if len(q) >= 3 and abs(len(q) - len(p)) <= 3:
+                    if fuzz.ratio(q, p) > 80:
+                        return True
         
         return False
     
@@ -188,13 +218,25 @@ class IntentClassifier:
         if word_count > 5:
             return False
         
-        # Check for exact or fuzzy matches
+        q = self._normalize(query)
+        if not q:
+            return False
+
+        # Check for exact (normalized) or fuzzy matches
         for pattern in self.THANKS_PATTERNS:
-            if pattern in query:
+            p = self._normalize(pattern)
+            if not p:
+                continue
+            
+            # Exact match only (prevents accidental substring matches)
+            if q == p:
                 return True
-            # Use fuzzy matching for typos
-            if RAPIDFUZZ_AVAILABLE and fuzz.ratio(query, pattern) > 80:
-                return True
+            
+            # Use fuzzy matching for short, similar-length strings to catch typos
+            if RAPIDFUZZ_AVAILABLE:
+                if len(q) >= 3 and abs(len(q) - len(p)) <= 4:
+                    if fuzz.ratio(q, p) > 80:
+                        return True
         
         return False
     
