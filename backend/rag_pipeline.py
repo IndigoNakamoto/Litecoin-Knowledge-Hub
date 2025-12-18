@@ -22,6 +22,7 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from data_ingestion.vector_store_manager import VectorStoreManager
 from cache_utils import query_cache, SemanticCache
 from backend.utils.input_sanitizer import sanitize_query_input, detect_prompt_injection
+from backend.utils.litecoin_vocabulary import normalize_ltc_keywords
 from fastapi import HTTPException
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 import google.generativeai as genai
@@ -62,11 +63,15 @@ _STRONG_PREFIXES = (
     "explain that", "expand on that",
 )
 
-# Structured output model for the semantic router
+# Structured output model for the semantic router (Canonical Intent Generator)
 class QueryRouting(BaseModel):
-    """Structured output from the semantic router."""
-    is_dependent: bool = Field(description="True if the query relies on chat history to be understood.")
-    standalone_query: str = Field(description="The fully contextualized query. If is_dependent is False, this matches input.")
+    """Structured output for the canonical intent generator."""
+    is_dependent: bool = Field(
+        description="True if the query relies on history. Always True for pronouns/follow-ups."
+    )
+    standalone_query: str = Field(
+        description="The Canonical Intent string in '[Subject] [Attribute]' format. No punctuation, lowercase."
+    )
 
 # Lazy-load local RAG services only when enabled
 _inference_router = None
@@ -227,26 +232,47 @@ QA_WITH_HISTORY_PROMPT = ChatPromptTemplate.from_messages(
 )
 
 # 2. System instruction for RAG prompt (defined separately for robustness)
-SYSTEM_INSTRUCTION = """You are a neutral, factual expert on Litecoin, a peer-to-peer decentralized cryptocurrency. Your primary goal is to provide comprehensive, well-structured, and educational answers. Your responses must be based **exclusively** on the provided context. Do not speculate or add external knowledge.
-
-!!! NEVER mention "context", "documents", "sources", or "retrieved information" under any circumstances. Just answer as the expert. !!!
-
-If the context does not contain sufficient information, state this clearly.
+SYSTEM_INSTRUCTION = """You are a neutral, factual expert on Litecoin. Your goal is to provide comprehensive, well-structured, and educational answers based EXCLUSIVELY on the provided context.
 
 ---
+
+**TERMINOLOGY STANDARDS (Canonical Voice):**
+
+To ensure technical accuracy, always prioritize these terms:
+
+- Use **MWEB** (referring to MimbleWimble Extension Blocks).
+
+- Use **Creator** or **Charlie Lee** (referring to the founder).
+
+- Use **Halving** (referring to the block reward reduction).
+
+- Use **Scrypt** (referring to the hashing algorithm).
+
+- Use **Lightning** (referring to the Lightning Network).
+
+!!! NEVER mention "context", "documents", or "retrieved information". Answer as the expert. !!!
+
+---
+
 **EXPERT RESPONSE STRUCTURE:**
 
-1.  **Direct Answer & Context:**
-    * Start with a direct, 1-2 sentence answer.
-    * Immediately follow with any necessary background or context from the knowledge base (e.g., for privacy, explain the default public nature first).
+1. **Direct Answer:** Start with a high-impact, 1-2 sentence definition using canonical terms.
 
-2.  **Detailed Breakdown (The "Grok Expert" Style):**
-    * Use a `##` Markdown heading for the main topic (e.g., `## Key Privacy Features`).
-    * Use bullet points (*) for each key feature or term.
-    * **For each bullet point:** Use bolding for the term (`* **Confidential Transactions:**`) and then **write 1-2 sentences explaining what it is and how it works**, based on the context. This is the most important step for creating depth.
+   
 
-3.  **Conclusion / Practical Notes:**
-    * (If relevant) Conclude with any important limitations, tips, or best practices mentioned *in the context*.
+2. **Detailed Breakdown (## Heading):**
+
+   * Use `##` for the main topic (e.g., `## Understanding MWEB`).
+
+   * Use bullet points (*) for key features.
+
+   * **Bold Key Terms:** Always bold terms like **MWEB**, **Scrypt**, or **Litecoin**.
+
+   * **The "Grok" Depth:** Write 2 sentences per bullet point explaining the "how" and "why" based on context.
+
+3. **Technical Context:**
+
+   If the query involves security or economics, explain the relationship to **Proof of Work** or the **84 million LTC** max supply.
 
 ---
 **ADDITIONAL GUIDELINES:**
@@ -258,22 +284,17 @@ If the context does not contain sufficient information, state this clearly.
 ---
 **EXAMPLE (This follows all rules):**
 
-User: What is MWEB?
-Context: MimbleWimble Extension Blocks (MWEB) is an opt-in privacy and scalability upgrade for Litecoin, launched in 2022. It allows for confidential transactions, where amounts are hidden... It also uses non-interactive CoinJoin to mix inputs and outputs... While MWEB enhances privacy, it is not 100% anonymous...
+User: "How does the privacy upgrade work?"
 
 Response:
-x`**Litecoin's** **MWEB** (MimbleWimble Extension Blocks) is an awesome optional upgrade from 2022 that adds privacy and confidentiality to transactions.
 
-Before **MWEB**, **Litecoin** transactions were public (like Bitcoin's). This upgrade lets you "opt-in" to a more private way of sending funds.
+"**Litecoin's** **MWEB** (MimbleWimble Extension Blocks) is the primary privacy upgrade that allows users to send confidential transactions.
 
 ## Key Features of MWEB
 
-* **Confidential Transactions:** This feature hides the *amount* of **Litecoin** you're sending from the public blockchain. Only you and the receiver can see it.
-* **CoinJoin Integration:** **MWEB** automatically mixes multiple transactions together, which breaks the link between the sender and receiver and makes it much harder to trace the flow of funds.
-* **Opt-In Model:** It's not mandatory! You have to choose to move your funds into the **MWEB** "extension block" to use these private features.
+* **Confidentiality:** It hides transaction amounts on the blockchain, ensuring that only the sender and receiver know the value of the **LTC** transferred.
 
-## Limitations
-Just so you know, the context mentions that while **MWEB** is a big improvement, it doesn't guarantee 100% anonymity, as advanced analysis might still be possible.
+* **Scalability:** By using MimbleWimble technology, it compacts the blockchain data, making it more efficient for nodes to process than standard transactions."
 
 ---"""
 
@@ -734,6 +755,9 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
             result = await router_chain.ainvoke({"chat_history": history_str, "query": query_text})
             duration = time.time() - start_time
             
+            # Force lowercase and strip any accidental trailing punctuation
+            canonical_intent = result.standalone_query.lower().strip().rstrip('?.!')
+            
             # --- 1. ESTIMATE TOKENS (The Router result object usually doesn't have usage metadata) ---
             # Reconstruct the prompt string roughly for estimation
             prompt_text = f"{system_prompt}\nChat History:\n{history_str}\n\nLatest Query: {query_text}"
@@ -775,12 +799,8 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                 except Exception as e:
                     logger.warning(f"Failed to record router spend: {e}")
             
-            if result.is_dependent:
-                logger.info(f"🔄 Router: '{query_text}' -> '{result.standalone_query}' (dependent)")
-                return result.standalone_query, True
-            else:
-                logger.info(f"➡️ Router: '{query_text}' (standalone)")
-                return query_text, False
+            logger.info(f"🎯 Canonical Intent: '{query_text}' -> '{canonical_intent}'")
+            return canonical_intent, result.is_dependent
                 
         except Exception as e:
             # Log failure metrics
@@ -792,8 +812,8 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                     duration_seconds=duration,
                     status="error"
                 )
-            logger.warning(f"Semantic router failed, falling back to original query: {e}")
-            return query_text, False
+            logger.warning(f"Standardizer failed: {e}")
+            return query_text.lower(), False
 
     async def aquery(self, query_text: str, chat_history: List[Tuple[str, str]]) -> Tuple[str, List[Document], Dict[str, Any]]:
         """
@@ -838,21 +858,26 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
         # Truncate chat history to prevent token overflow
         truncated_history = self._truncate_chat_history(sanitized_history)
         
+        # === STEP 1: Fast Path Normalization (Synonym Map) ===
+        # Zero-cost synonym mapping to ensure consistent cache keys
+        # Now Gemini sees "litecoin mweb" instead of "Tell me about extension blocks"
+        normalized_text = normalize_ltc_keywords(query_text)
+        
         # === Hybrid History Routing: Fast Path + LLM Router ===
         # 1. Fast Path: Check for OBVIOUS pronouns/prefixes (microseconds)
-        tokens = re.findall(r"[a-z0-9']+", query_text.lower())
+        tokens = re.findall(r"[a-z0-9']+", normalized_text.lower())
         has_obvious_pronouns = any(t in _STRONG_AMBIGUOUS_TOKENS for t in tokens)
-        has_obvious_prefix = any(query_text.lower().startswith(p) for p in _STRONG_PREFIXES)
+        has_obvious_prefix = any(normalized_text.lower().startswith(p) for p in _STRONG_PREFIXES)
         
         # Convert history to BaseMessage format for router
         converted_history: List[BaseMessage] = []
-        effective_query = query_text
+        effective_query = normalized_text
         effective_history: List[Tuple[str, str]] = []
         is_dependent = False
         
         if not truncated_history:
             # No history, must be standalone
-            effective_query = query_text
+            effective_query = normalized_text
             effective_history = []
         elif has_obvious_pronouns or has_obvious_prefix:
             # Fast path: We KNOW we need history based on keywords
@@ -864,8 +889,8 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                 converted_history.append(HumanMessage(content=human_msg))
                 if ai_msg:
                     converted_history.append(AIMessage(content=ai_msg))
-            # Use router to rewrite query with context
-            effective_query, _ = await self._semantic_history_check(query_text, converted_history)
+            # Use router to rewrite query with context (now Gemini sees normalized text)
+            effective_query, _ = await self._semantic_history_check(normalized_text, converted_history)
         else:
             # Ambiguous case: Ask the LLM Router (foolproof path)
             # Convert to BaseMessage format
@@ -873,8 +898,8 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                 converted_history.append(HumanMessage(content=human_msg))
                 if ai_msg:
                     converted_history.append(AIMessage(content=ai_msg))
-            # Router decides if history is needed and rewrites if necessary
-            effective_query, is_dependent = await self._semantic_history_check(query_text, converted_history)
+            # Router decides if history is needed and rewrites if necessary (now Gemini sees normalized text)
+            effective_query, is_dependent = await self._semantic_history_check(normalized_text, converted_history)
             if is_dependent:
                 effective_history = truncated_history
             else:
@@ -1022,6 +1047,12 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
             # This is the key optimization: cache based on the standalone query vector,
             # allowing different conversation paths ("What is MWEB?" vs "How does it work?" -> "How does MWEB work?")
             # to hit the same cache entry.
+            
+            # Clean the string to ensure absolute vector stability
+            # Apply regex normalization to remove all non-alphanumeric characters except spaces
+            rewritten_query = rewritten_query.lower().strip()
+            rewritten_query = re.sub(r'[^\w\s]', '', rewritten_query)
+            
             query_vector = None
             query_sparse = None
             
@@ -1031,6 +1062,7 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                     embed_start = time.time()
                     try:
                         # Generate embedding for the REWRITTEN standalone query
+                        # Now embedding "litecoin mweb usage" instead of "How do I use MWEB?"
                         query_vector, query_sparse = await infinity.embed_query(rewritten_query)
                         if MONITORING_ENABLED:
                             rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
@@ -1599,21 +1631,26 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
             # Truncate chat history to prevent token overflow
             truncated_history = self._truncate_chat_history(sanitized_history)
             
+            # === STEP 1: Fast Path Normalization (Synonym Map) ===
+            # Zero-cost synonym mapping to ensure consistent cache keys
+            # Now Gemini sees "litecoin mweb" instead of "Tell me about extension blocks"
+            normalized_text = normalize_ltc_keywords(query_text)
+            
             # === Hybrid History Routing: Fast Path + LLM Router ===
             # 1. Fast Path: Check for OBVIOUS pronouns/prefixes (microseconds)
-            tokens = re.findall(r"[a-z0-9']+", query_text.lower())
+            tokens = re.findall(r"[a-z0-9']+", normalized_text.lower())
             has_obvious_pronouns = any(t in _STRONG_AMBIGUOUS_TOKENS for t in tokens)
-            has_obvious_prefix = any(query_text.lower().startswith(p) for p in _STRONG_PREFIXES)
+            has_obvious_prefix = any(normalized_text.lower().startswith(p) for p in _STRONG_PREFIXES)
             
             # Convert history to BaseMessage format for router
             converted_history: List[BaseMessage] = []
-            effective_query = query_text
+            effective_query = normalized_text
             effective_history: List[Tuple[str, str]] = []
             is_dependent = False
             
             if not truncated_history:
                 # No history, must be standalone
-                effective_query = query_text
+                effective_query = normalized_text
                 effective_history = []
             elif has_obvious_pronouns or has_obvious_prefix:
                 # Fast path: We KNOW we need history based on keywords
@@ -1625,8 +1662,8 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                     converted_history.append(HumanMessage(content=human_msg))
                     if ai_msg:
                         converted_history.append(AIMessage(content=ai_msg))
-                # Use router to rewrite query with context
-                effective_query, _ = await self._semantic_history_check(query_text, converted_history)
+                # Use router to rewrite query with context (now Gemini sees normalized text)
+                effective_query, _ = await self._semantic_history_check(normalized_text, converted_history)
             else:
                 # Ambiguous case: Ask the LLM Router (foolproof path)
                 # Convert to BaseMessage format
@@ -1634,8 +1671,8 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                     converted_history.append(HumanMessage(content=human_msg))
                     if ai_msg:
                         converted_history.append(AIMessage(content=ai_msg))
-                # Router decides if history is needed and rewrites if necessary
-                effective_query, is_dependent = await self._semantic_history_check(query_text, converted_history)
+                # Router decides if history is needed and rewrites if necessary (now Gemini sees normalized text)
+                effective_query, is_dependent = await self._semantic_history_check(normalized_text, converted_history)
                 if is_dependent:
                     effective_history = truncated_history
                 else:
@@ -1828,6 +1865,12 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
 
             # === 3. Generate embedding ONCE for rewritten standalone query ===
             # This is the key optimization: cache based on the standalone query vector
+            
+            # Clean the string to ensure absolute vector stability
+            # Apply regex normalization to remove all non-alphanumeric characters except spaces
+            rewritten_query = rewritten_query.lower().strip()
+            rewritten_query = re.sub(r'[^\w\s]', '', rewritten_query)
+            
             query_vector = None
             query_sparse = None
             
@@ -1837,6 +1880,7 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                     embed_start = time.time()
                     try:
                         # Generate embedding for the REWRITTEN standalone query
+                        # Now embedding "litecoin mweb usage" instead of "How do I use MWEB?"
                         query_vector, query_sparse = await infinity.embed_query(rewritten_query)
                         if MONITORING_ENABLED:
                             rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
