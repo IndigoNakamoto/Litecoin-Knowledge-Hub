@@ -10,6 +10,11 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from typing import List, Tuple, Dict, Any, Optional
 from langchain_core.documents import Document
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+try:
+    from pydantic import BaseModel, Field
+except ImportError:
+    # Fallback for older pydantic versions
+    from pydantic.v1 import BaseModel, Field
 from langchain_community.retrievers import BM25Retriever
 from langchain.retrievers import EnsembleRetriever
 from langchain.chains import create_history_aware_retriever, create_retrieval_chain
@@ -36,53 +41,32 @@ GENERIC_USER_ERROR_MESSAGE = (
     "I encountered an error while processing your query. Please try again or rephrase your question."
 )
 
-# --- Conversation / history heuristics ---
-# We only want to use chat history when the user's query is genuinely ambiguous
-# (pronouns, follow-ups, etc.). Otherwise, treating queries as "global search"
-# avoids accidental topic anchoring after browsing other content.
-_AMBIGUOUS_TOKENS = {
+# --- Conversation / history routing (Hybrid: Fast Path + LLM Router) ---
+# Fast path: Only catch OBVIOUS cases to save latency
+# LLM Router: Handle ambiguous cases with semantic understanding
+
+# Strict list of pronouns that GUARANTEE history dependency
+# Excludes ambiguous words like "IT" (Information Technology) to reduce false positives
+_STRONG_AMBIGUOUS_TOKENS = {
     "it", "this", "that", "these", "those",
     "they", "them", "their", "its",
     "he", "she", "him", "her",
-    "there", "here",
-    "former", "latter",
+    "former", "latter", "previous", "following",
 }
 
-_FOLLOWUP_PREFIXES = (
-    "and ",
-    "also ",
-    "what about",
-    "how about",
-    "tell me more",
-    "more about",
-    "can you expand",
-    "go deeper",
-    "why is that",
+# Only prefixes that GUARANTEE a dependency on history
+_STRONG_PREFIXES = (
+    "and ", "also ", "but ", "so ",
+    "what about", "how about", "why is that",
+    "can you elaborate", "continue", "go on",
+    "explain that", "expand on that",
 )
 
-def _should_use_history(query_text: str) -> bool:
-    """
-    Decide whether to use conversational history for this query.
-    
-    If the query is standalone, we intentionally *ignore* prior chat history so
-    retrieval isn't unintentionally scoped to the previous topic.
-    """
-    if not query_text:
-        return False
-    q = query_text.lower().strip()
-    tokens = re.findall(r"[a-z0-9']+", q)
-    if not tokens:
-        return False
-
-    # Pronouns / deictic references usually need history.
-    if any(t in _AMBIGUOUS_TOKENS for t in tokens):
-        return True
-
-    # Short follow-ups are often dependent on prior context.
-    if len(tokens) <= 6 and any(q.startswith(p) for p in _FOLLOWUP_PREFIXES):
-        return True
-
-    return False
+# Structured output model for the semantic router
+class QueryRouting(BaseModel):
+    """Structured output from the semantic router."""
+    is_dependent: bool = Field(description="True if the query relies on chat history to be understood.")
+    standalone_query: str = Field(description="The fully contextualized query. If is_dependent is False, this matches input.")
 
 # Lazy-load local RAG services only when enabled
 _inference_router = None
@@ -708,6 +692,108 @@ class RAGPipeline:
         except Exception as e:
             logger.error(f"Error refreshing vector store: {e}", exc_info=True)
 
+    async def _semantic_history_check(self, query_text: str, chat_history: List[BaseMessage]) -> Tuple[str, bool]:
+        """
+        Uses the LLM to determine if history is needed and rewrite the query if dependent.
+        
+        Returns:
+            Tuple of (rewritten_query, is_dependent)
+            - rewritten_query: The fully contextualized query if dependent, or original if standalone
+            - is_dependent: True if the query relies on chat history
+        """
+        if not chat_history:
+            return query_text, False
+
+        system_prompt = """You are a query router for a RAG system about Litecoin.
+Analyze the "Latest Query". Does it refer to the "Chat History" (e.g. via pronouns like 'it', 'that', or implicit context)?
+
+1. If YES (Dependent): Rewrite the query to be fully standalone, incorporating the necessary context from history.
+2. If NO (Standalone): Return the latest query exactly as is. Do not add context if it's a new topic.
+
+Be conservative: only mark as dependent if the query is clearly referring to prior conversation."""
+
+        router_prompt = ChatPromptTemplate.from_messages([
+            ("system", system_prompt),
+            ("human", "Chat History:\n{chat_history}\n\nLatest Query: {query}"),
+        ])
+        
+        # Format history string (only last 2 messages for efficiency)
+        history_str = "\n".join([
+            f"{'Human' if isinstance(m, HumanMessage) else 'AI'}: {m.content}" 
+            for m in chat_history[-2:]
+        ])
+
+        start_time = time.time()
+        
+        # Use structured output for reliability
+        try:
+            structured_llm = self.llm.with_structured_output(QueryRouting)
+            router_chain = router_prompt | structured_llm
+
+            result = await router_chain.ainvoke({"chat_history": history_str, "query": query_text})
+            duration = time.time() - start_time
+            
+            # --- 1. ESTIMATE TOKENS (The Router result object usually doesn't have usage metadata) ---
+            # Reconstruct the prompt string roughly for estimation
+            prompt_text = f"{system_prompt}\nChat History:\n{history_str}\n\nLatest Query: {query_text}"
+            
+            # Result is a Pydantic object, convert to string for token counting
+            try:
+                # Try Pydantic v2 method first
+                if hasattr(result, 'model_dump_json'):
+                    output_text = result.model_dump_json()
+                elif hasattr(result, 'model_dump'):
+                    import json
+                    output_text = json.dumps(result.model_dump())
+                elif hasattr(result, 'dict'):
+                    output_text = str(result.dict())
+                else:
+                    output_text = str(result)
+            except Exception:
+                output_text = str(result)
+            
+            input_tokens, output_tokens = self._estimate_token_usage(prompt_text, output_text)
+            
+            # --- 2. CALCULATE COST ---
+            cost = estimate_gemini_cost(input_tokens, output_tokens, LLM_MODEL_NAME)
+            
+            # --- 3. TRACK METRICS ---
+            if MONITORING_ENABLED:
+                track_llm_metrics(
+                    model=LLM_MODEL_NAME,
+                    operation="router_classify",  # Use a distinct operation name
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cost_usd=cost,
+                    duration_seconds=duration,
+                    status="success"
+                )
+                # Record spend against limits
+                try:
+                    await record_spend(cost, input_tokens, output_tokens, LLM_MODEL_NAME)
+                except Exception as e:
+                    logger.warning(f"Failed to record router spend: {e}")
+            
+            if result.is_dependent:
+                logger.info(f"🔄 Router: '{query_text}' -> '{result.standalone_query}' (dependent)")
+                return result.standalone_query, True
+            else:
+                logger.info(f"➡️ Router: '{query_text}' (standalone)")
+                return query_text, False
+                
+        except Exception as e:
+            # Log failure metrics
+            duration = time.time() - start_time
+            if MONITORING_ENABLED:
+                track_llm_metrics(
+                    model=LLM_MODEL_NAME,
+                    operation="router_classify",
+                    duration_seconds=duration,
+                    status="error"
+                )
+            logger.warning(f"Semantic router failed, falling back to original query: {e}")
+            return query_text, False
+
     async def aquery(self, query_text: str, chat_history: List[Tuple[str, str]]) -> Tuple[str, List[Document], Dict[str, Any]]:
         """
         Async version of query method optimized for performance with caching.
@@ -751,12 +837,51 @@ class RAGPipeline:
         # Truncate chat history to prevent token overflow
         truncated_history = self._truncate_chat_history(sanitized_history)
         
-        # Use conversation history only when the query needs it (pronouns/follow-ups).
-        effective_history = truncated_history if _should_use_history(query_text) else []
+        # === Hybrid History Routing: Fast Path + LLM Router ===
+        # 1. Fast Path: Check for OBVIOUS pronouns/prefixes (microseconds)
+        tokens = re.findall(r"[a-z0-9']+", query_text.lower())
+        has_obvious_pronouns = any(t in _STRONG_AMBIGUOUS_TOKENS for t in tokens)
+        has_obvious_prefix = any(query_text.lower().startswith(p) for p in _STRONG_PREFIXES)
+        
+        # Convert history to BaseMessage format for router
+        converted_history: List[BaseMessage] = []
+        effective_query = query_text
+        effective_history: List[Tuple[str, str]] = []
+        is_dependent = False
+        
+        if not truncated_history:
+            # No history, must be standalone
+            effective_query = query_text
+            effective_history = []
+        elif has_obvious_pronouns or has_obvious_prefix:
+            # Fast path: We KNOW we need history based on keywords
+            logger.debug("Fast path: Detected obvious history dependency via keywords")
+            effective_history = truncated_history
+            is_dependent = True
+            # Convert to BaseMessage for potential router rewrite
+            for human_msg, ai_msg in truncated_history:
+                converted_history.append(HumanMessage(content=human_msg))
+                if ai_msg:
+                    converted_history.append(AIMessage(content=ai_msg))
+            # Use router to rewrite query with context
+            effective_query, _ = await self._semantic_history_check(query_text, converted_history)
+        else:
+            # Ambiguous case: Ask the LLM Router (foolproof path)
+            # Convert to BaseMessage format
+            for human_msg, ai_msg in truncated_history:
+                converted_history.append(HumanMessage(content=human_msg))
+                if ai_msg:
+                    converted_history.append(AIMessage(content=ai_msg))
+            # Router decides if history is needed and rewrites if necessary
+            effective_query, is_dependent = await self._semantic_history_check(query_text, converted_history)
+            if is_dependent:
+                effective_history = truncated_history
+            else:
+                effective_history = []
         
         # === 0. Intent Classification (skip if follow-up question) ===
         # Greetings, thanks, and FAQ matches are handled without LLM calls
-        if USE_INTENT_CLASSIFICATION and not effective_history:
+        if USE_INTENT_CLASSIFICATION and not is_dependent:
             intent_classifier = _get_intent_classifier()
             if intent_classifier:
                 from backend.services.intent_classifier import Intent
@@ -942,18 +1067,20 @@ class RAGPipeline:
                     except Exception as e:
                         logger.warning(f"Redis cache lookup failed: {e}")
             
-            # === LOCAL RAG: Router-based query rewriting ===
-            # Only rewrite if cache missed (saves LLM call for cached queries)
-            rewritten_query = query_text
-            if USE_LOCAL_REWRITER:
+            # === LOCAL RAG: Router-based query rewriting (if not already done by semantic router) ===
+            # The semantic router already rewrote the query if needed, so use effective_query
+            # Only use local rewriter if semantic router wasn't used (no history or fast path)
+            rewritten_query = effective_query
+            if USE_LOCAL_REWRITER and not is_dependent and effective_history:
+                # Only use local rewriter if we have history but semantic router didn't rewrite
                 router = _get_inference_router()
                 if router:
                     rewrite_start = time.time()
                     try:
-                        rewritten_query = await router.rewrite(query_text, effective_history)
+                        local_rewritten = await router.rewrite(query_text, effective_history)
                         if MONITORING_ENABLED:
                             rag_query_rewrite_duration_seconds.observe(time.time() - rewrite_start)
-                        if rewritten_query == "NO_SEARCH_NEEDED":
+                        if local_rewritten == "NO_SEARCH_NEEDED":
                             # Non-search query (greeting, thanks, etc.)
                             metadata = {
                                 "input_tokens": 0,
@@ -965,14 +1092,15 @@ class RAGPipeline:
                                 "rewritten_query": "NO_SEARCH_NEEDED",
                             }
                             return "I understand. Is there anything else you'd like to know about Litecoin?", [], metadata
-                        logger.debug(f"Query rewritten: '{query_text}' -> '{rewritten_query}'")
+                        rewritten_query = local_rewritten
+                        logger.debug(f"Local rewriter: '{query_text}' -> '{rewritten_query}'")
                     except Exception as e:
                         if MONITORING_ENABLED:
                             rag_query_rewrite_duration_seconds.observe(time.time() - rewrite_start)
-                        logger.warning(f"Router rewrite failed, using original query: {e}")
-                        rewritten_query = query_text
+                        logger.warning(f"Local rewriter failed, using effective_query: {e}")
+                        rewritten_query = effective_query
             
-            # If query was rewritten, generate embedding for rewritten query
+            # Generate embedding for the query (use effective_query which may have been rewritten)
             if rewritten_query != query_text and (USE_REDIS_CACHE or USE_INFINITY_EMBEDDINGS):
                 infinity = _get_infinity_embeddings()
                 if infinity:
@@ -1033,8 +1161,8 @@ class RAGPipeline:
             # === UNIFIED HYBRID + HISTORY-AWARE RETRIEVAL ===
             # First, do a quick retrieval check to see if we have published sources
             retrieval_start = time.time()
-            # Use rewritten query for retrieval when local rewriter is enabled
-            retrieval_query = rewritten_query if USE_LOCAL_REWRITER else query_text
+            # Use effective_query (from semantic router) or rewritten_query (from local rewriter)
+            retrieval_query = rewritten_query
             # Initialize context_docs to ensure it's always defined
             context_docs = []
             retrieval_failed = False
@@ -1514,12 +1642,51 @@ class RAGPipeline:
             # Truncate chat history to prevent token overflow
             truncated_history = self._truncate_chat_history(sanitized_history)
             
-            # Use conversation history only when the query needs it (pronouns/follow-ups).
-            effective_history = truncated_history if _should_use_history(query_text) else []
+            # === Hybrid History Routing: Fast Path + LLM Router ===
+            # 1. Fast Path: Check for OBVIOUS pronouns/prefixes (microseconds)
+            tokens = re.findall(r"[a-z0-9']+", query_text.lower())
+            has_obvious_pronouns = any(t in _STRONG_AMBIGUOUS_TOKENS for t in tokens)
+            has_obvious_prefix = any(query_text.lower().startswith(p) for p in _STRONG_PREFIXES)
+            
+            # Convert history to BaseMessage format for router
+            converted_history: List[BaseMessage] = []
+            effective_query = query_text
+            effective_history: List[Tuple[str, str]] = []
+            is_dependent = False
+            
+            if not truncated_history:
+                # No history, must be standalone
+                effective_query = query_text
+                effective_history = []
+            elif has_obvious_pronouns or has_obvious_prefix:
+                # Fast path: We KNOW we need history based on keywords
+                logger.debug("Fast path (stream): Detected obvious history dependency via keywords")
+                effective_history = truncated_history
+                is_dependent = True
+                # Convert to BaseMessage for potential router rewrite
+                for human_msg, ai_msg in truncated_history:
+                    converted_history.append(HumanMessage(content=human_msg))
+                    if ai_msg:
+                        converted_history.append(AIMessage(content=ai_msg))
+                # Use router to rewrite query with context
+                effective_query, _ = await self._semantic_history_check(query_text, converted_history)
+            else:
+                # Ambiguous case: Ask the LLM Router (foolproof path)
+                # Convert to BaseMessage format
+                for human_msg, ai_msg in truncated_history:
+                    converted_history.append(HumanMessage(content=human_msg))
+                    if ai_msg:
+                        converted_history.append(AIMessage(content=ai_msg))
+                # Router decides if history is needed and rewrites if necessary
+                effective_query, is_dependent = await self._semantic_history_check(query_text, converted_history)
+                if is_dependent:
+                    effective_history = truncated_history
+                else:
+                    effective_history = []
             
             # === 0. Intent Classification (skip if follow-up question) ===
             # Greetings, thanks, and FAQ matches are handled without LLM calls
-            if USE_INTENT_CLASSIFICATION and not effective_history:
+            if USE_INTENT_CLASSIFICATION and not is_dependent:
                 intent_classifier = _get_intent_classifier()
                 if intent_classifier:
                     from backend.services.intent_classifier import Intent
@@ -1772,18 +1939,20 @@ class RAGPipeline:
                     except Exception as e:
                         logger.warning(f"Redis cache lookup failed in stream: {e}")
             
-            # === LOCAL RAG: Router-based query rewriting (streaming) ===
-            # Only rewrite if cache missed (saves LLM call for cached queries)
-            rewritten_query = query_text
-            if USE_LOCAL_REWRITER:
+            # === LOCAL RAG: Router-based query rewriting (streaming, if not already done by semantic router) ===
+            # The semantic router already rewrote the query if needed, so use effective_query
+            # Only use local rewriter if semantic router wasn't used (no history or fast path)
+            rewritten_query = effective_query
+            if USE_LOCAL_REWRITER and not is_dependent and effective_history:
+                # Only use local rewriter if we have history but semantic router didn't rewrite
                 router = _get_inference_router()
                 if router:
                     rewrite_start = time.time()
                     try:
-                        rewritten_query = await router.rewrite(query_text, effective_history)
+                        local_rewritten = await router.rewrite(query_text, effective_history)
                         if MONITORING_ENABLED:
                             rag_query_rewrite_duration_seconds.observe(time.time() - rewrite_start)
-                        if rewritten_query == "NO_SEARCH_NEEDED":
+                        if local_rewritten == "NO_SEARCH_NEEDED":
                             yield {"type": "sources", "sources": []}
                             response = "I understand. Is there anything else you'd like to know about Litecoin?"
                             for char in response:
@@ -1800,14 +1969,15 @@ class RAGPipeline:
                             yield {"type": "metadata", "metadata": metadata}
                             yield {"type": "complete", "from_cache": False}
                             return
-                        logger.debug(f"Stream query rewritten: '{query_text}' -> '{rewritten_query}'")
+                        rewritten_query = local_rewritten
+                        logger.debug(f"Local rewriter (stream): '{query_text}' -> '{rewritten_query}'")
                     except Exception as e:
                         if MONITORING_ENABLED:
                             rag_query_rewrite_duration_seconds.observe(time.time() - rewrite_start)
-                        logger.warning(f"Router rewrite failed in stream, using original query: {e}")
-                        rewritten_query = query_text
+                        logger.warning(f"Local rewriter failed in stream, using effective_query: {e}")
+                        rewritten_query = effective_query
             
-            # If query was rewritten, generate embedding for rewritten query
+            # Generate embedding for the query (use effective_query which may have been rewritten)
             if rewritten_query != query_text and (USE_REDIS_CACHE or USE_INFINITY_EMBEDDINGS):
                 infinity = _get_infinity_embeddings()
                 if infinity:
@@ -1875,7 +2045,8 @@ class RAGPipeline:
 
             # === UNIFIED HYBRID + HISTORY-AWARE RETRIEVAL ===
             retrieval_start = time.time()
-            retrieval_query = rewritten_query if USE_LOCAL_REWRITER else query_text
+            # Use effective_query (from semantic router) or rewritten_query (from local rewriter)
+            retrieval_query = rewritten_query
             # Initialize context_docs to ensure it's always defined
             context_docs = []
             retrieval_failed = False
