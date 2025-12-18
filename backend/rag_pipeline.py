@@ -355,10 +355,11 @@ class RAGPipeline:
         )
         
         # Initialize semantic cache with the embedding model from VectorStoreManager
-        # Skip legacy semantic cache when using Infinity embeddings (Redis Stack cache is used instead)
-        if USE_INFINITY_EMBEDDINGS:
+        # Skip legacy semantic cache when using Redis Stack cache (unified semantic cache provider)
+        # This avoids redundant embedding calculations with different models
+        if USE_REDIS_CACHE or USE_INFINITY_EMBEDDINGS:
             self.semantic_cache = None
-            logger.info("Legacy semantic cache disabled (using Redis Stack vector cache instead)")
+            logger.info("Legacy semantic cache disabled (using Redis Stack vector cache as unified semantic cache provider)")
         else:
             self.semantic_cache = SemanticCache(
                 embedding_model=self.vector_store_manager.embeddings,  # Reuse existing embedding model
@@ -366,7 +367,7 @@ class RAGPipeline:
                 max_size=int(os.getenv("SEMANTIC_CACHE_MAX_SIZE", "2000")),
                 ttl_seconds=int(os.getenv("SEMANTIC_CACHE_TTL_SECONDS", str(3600 * 72)))  # 72 hours
             )
-            logger.info(f"Semantic cache initialized with threshold={self.semantic_cache.threshold}, TTL={self.semantic_cache.ttl_seconds}s")
+            logger.info(f"Legacy semantic cache initialized with threshold={self.semantic_cache.threshold}, TTL={self.semantic_cache.ttl_seconds}s")
 
     def _load_published_docs_from_mongo(self) -> List[Document]:
         """Safely load all published documents from MongoDB with fallback."""
@@ -946,28 +947,8 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                     # If cache miss, fall through to normal RAG
                     logger.debug(f"FAQ match but cache miss, proceeding with RAG: {matched_faq[:50]}...")
         
-        # === 1. Try semantic cache first (broader recall) ===
-        cached_result = self.semantic_cache.get(query_text, effective_history) if self.semantic_cache else None
-        if cached_result:
-            answer, published_sources = cached_result
-            logger.info(f"Semantic cache HIT for: {query_text[:50]}...")
-            if MONITORING_ENABLED:
-                rag_cache_hits_total.labels(cache_type="semantic").inc()
-                rag_query_duration_seconds.labels(
-                    query_type="async",
-                    cache_hit="true"
-                ).observe(time.time() - start_time)
-            metadata = {
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "cost_usd": 0.0,
-                "duration_seconds": time.time() - start_time,
-                "cache_hit": True,
-                "cache_type": "semantic",
-            }
-            return answer, published_sources, metadata
-        
-        # === 2. Fallback to exact cache ===
+        # === 1. Exact cache check (fastest, zero-cost) ===
+        # Check exact cache first - this is the fastest lookup
         cached_result = query_cache.get(query_text, effective_history)
         if cached_result:
             logger.debug(f"Cache hit for query: '{query_text}'")
@@ -989,88 +970,25 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
             }
             return answer, published_sources, metadata
         
-        # Cache miss
+        # Cache miss for exact cache
         if MONITORING_ENABLED:
             rag_cache_misses_total.labels(cache_type="query").inc()
 
         try:
-            # Convert chat_history to Langchain's BaseMessage format
+            # Convert chat_history to Langchain's BaseMessage format (needed for retrieval)
             converted_chat_history: List[BaseMessage] = []
             for human_msg, ai_msg in effective_history:
                 converted_chat_history.append(HumanMessage(content=human_msg))
                 if ai_msg:
                     converted_chat_history.append(AIMessage(content=ai_msg))
 
-            # === LOCAL RAG: Redis Stack vector cache check (BEFORE query rewriting) ===
-            # Check cache with original query first to avoid unnecessary LLM calls for cached queries
-            query_vector = None
-            query_sparse = None
-            original_query_vector = None
-            original_query_sparse = None
-            
-            if USE_REDIS_CACHE or USE_INFINITY_EMBEDDINGS:
-                infinity = _get_infinity_embeddings()
-                if infinity:
-                    embed_start = time.time()
-                    try:
-                        # Generate embedding for original query first
-                        original_query_vector, original_query_sparse = await infinity.embed_query(query_text)
-                        query_vector = original_query_vector
-                        query_sparse = original_query_sparse
-                        if MONITORING_ENABLED:
-                            rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
-                        if query_sparse:
-                            logger.info(f"✅ Query sparse embedding received: {len(query_sparse)} terms (sample: {list(query_sparse.items())[:3]})")
-                        else:
-                            logger.debug(f"Query sparse embedding: None (model may not support sparse)")
-                    except Exception as e:
-                        if MONITORING_ENABLED:
-                            rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
-                        logger.warning(f"Infinity embedding failed: {e}", exc_info=True)
-            
-            # Check Redis cache with original query embedding (before rewriting)
-            if USE_REDIS_CACHE and original_query_vector:
-                redis_cache = _get_redis_vector_cache()
-                if redis_cache:
-                    try:
-                        redis_result = await redis_cache.get(original_query_vector)
-                        if redis_result:
-                            answer, sources_data = redis_result
-                            # Reconstruct Document objects from cached data
-                            cached_sources = []
-                            for src in sources_data:
-                                if isinstance(src, dict):
-                                    cached_sources.append(Document(
-                                        page_content=src.get("page_content", ""),
-                                        metadata=src.get("metadata", {})
-                                    ))
-                                elif isinstance(src, Document):
-                                    cached_sources.append(src)
-                            
-                            logger.info(f"Redis vector cache HIT (before rewrite) for: {query_text[:50]}...")
-                            if MONITORING_ENABLED:
-                                rag_cache_hits_total.labels(cache_type="redis_vector").inc()
-                                rag_query_duration_seconds.labels(
-                                    query_type="async",
-                                    cache_hit="true"
-                                ).observe(time.time() - start_time)
-                            metadata = {
-                                "input_tokens": 0,
-                                "output_tokens": 0,
-                                "cost_usd": 0.0,
-                                "duration_seconds": time.time() - start_time,
-                                "cache_hit": True,
-                                "cache_type": "redis_vector",
-                                "rewritten_query": None,
-                            }
-                            return answer, cached_sources, metadata
-                    except Exception as e:
-                        logger.warning(f"Redis cache lookup failed: {e}")
-            
-            # === LOCAL RAG: Router-based query rewriting (if not already done by semantic router) ===
-            # The semantic router already rewrote the query if needed, so use effective_query
-            # Only use local rewriter if semantic router wasn't used (no history or fast path)
+            # === 2. Query Rewriting Complete: effective_query is now the standalone query ===
+            # The semantic router has already rewritten the query if needed.
+            # Use effective_query (the rewritten standalone query) for semantic caching.
+            # This allows different conversation paths to hit the same cache entry!
             rewritten_query = effective_query
+            
+            # Optional: Apply local rewriter if enabled and not already rewritten by semantic router
             if USE_LOCAL_REWRITER and not is_dependent and effective_history:
                 # Only use local rewriter if we have history but semantic router didn't rewrite
                 router = _get_inference_router()
@@ -1099,28 +1017,37 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                             rag_query_rewrite_duration_seconds.observe(time.time() - rewrite_start)
                         logger.warning(f"Local rewriter failed, using effective_query: {e}")
                         rewritten_query = effective_query
+
+            # === 3. Generate embedding ONCE for rewritten standalone query ===
+            # This is the key optimization: cache based on the standalone query vector,
+            # allowing different conversation paths ("What is MWEB?" vs "How does it work?" -> "How does MWEB work?")
+            # to hit the same cache entry.
+            query_vector = None
+            query_sparse = None
             
-            # Generate embedding for the query (use effective_query which may have been rewritten)
-            if rewritten_query != query_text and (USE_REDIS_CACHE or USE_INFINITY_EMBEDDINGS):
+            if USE_REDIS_CACHE or USE_INFINITY_EMBEDDINGS:
                 infinity = _get_infinity_embeddings()
                 if infinity:
                     embed_start = time.time()
                     try:
+                        # Generate embedding for the REWRITTEN standalone query
                         query_vector, query_sparse = await infinity.embed_query(rewritten_query)
                         if MONITORING_ENABLED:
                             rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
                         if query_sparse:
-                            logger.info(f"✅ Rewritten query sparse embedding received: {len(query_sparse)} terms")
+                            logger.info(f"✅ Query sparse embedding received: {len(query_sparse)} terms (sample: {list(query_sparse.items())[:3]})")
+                        else:
+                            logger.debug(f"Query sparse embedding: None (model may not support sparse)")
                     except Exception as e:
                         if MONITORING_ENABLED:
                             rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
-                        logger.warning(f"Infinity embedding for rewritten query failed: {e}", exc_info=True)
-                        # Fallback to original query embedding
-                        query_vector = original_query_vector
-                        query_sparse = original_query_sparse
+                        logger.warning(f"Infinity embedding failed: {e}", exc_info=True)
             
-            # Check Redis cache again with rewritten query embedding (if query was rewritten)
-            if USE_REDIS_CACHE and query_vector and rewritten_query != query_text:
+            # === 4. Semantic cache check (Redis Vector Cache) ===
+            # Check Redis cache with rewritten query vector.
+            # This is the unified semantic cache provider when Redis is enabled.
+            # We skip legacy semantic cache when Redis is enabled to avoid redundancy.
+            if USE_REDIS_CACHE and query_vector:
                 redis_cache = _get_redis_vector_cache()
                 if redis_cache:
                     try:
@@ -1138,7 +1065,7 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                                 elif isinstance(src, Document):
                                     cached_sources.append(src)
                             
-                            logger.info(f"Redis vector cache HIT (after rewrite) for: {rewritten_query[:50]}...")
+                            logger.info(f"✅ Redis vector cache HIT for rewritten query: '{rewritten_query[:50]}...' (original: '{query_text[:30]}...')")
                             if MONITORING_ENABLED:
                                 rag_cache_hits_total.labels(cache_type="redis_vector").inc()
                                 rag_query_duration_seconds.labels(
@@ -1152,12 +1079,37 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                                 "duration_seconds": time.time() - start_time,
                                 "cache_hit": True,
                                 "cache_type": "redis_vector",
-                                "rewritten_query": rewritten_query,
+                                "rewritten_query": rewritten_query if rewritten_query != query_text else None,
                             }
                             return answer, cached_sources, metadata
                     except Exception as e:
-                        logger.warning(f"Redis cache lookup for rewritten query failed: {e}")
+                        logger.warning(f"Redis cache lookup failed: {e}")
+            
+            # === 5. Fallback: Legacy semantic cache (only if Redis not enabled) ===
+            # Only use legacy semantic cache if Redis is not enabled
+            if self.semantic_cache and not USE_REDIS_CACHE:
+                cached_result = self.semantic_cache.get(rewritten_query, [])  # Use rewritten query, no history
+                if cached_result:
+                    answer, published_sources = cached_result
+                    logger.info(f"Legacy semantic cache HIT for rewritten query: '{rewritten_query[:50]}...'")
+                    if MONITORING_ENABLED:
+                        rag_cache_hits_total.labels(cache_type="semantic").inc()
+                        rag_query_duration_seconds.labels(
+                            query_type="async",
+                            cache_hit="true"
+                        ).observe(time.time() - start_time)
+                    metadata = {
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "cost_usd": 0.0,
+                        "duration_seconds": time.time() - start_time,
+                        "cache_hit": True,
+                        "cache_type": "semantic",
+                        "rewritten_query": rewritten_query if rewritten_query != query_text else None,
+                    }
+                    return answer, published_sources, metadata
 
+            # === 6. RAG FALLBACK (The expensive part) ===
             # === UNIFIED HYBRID + HISTORY-AWARE RETRIEVAL ===
             # First, do a quick retrieval check to see if we have published sources
             retrieval_start = time.time()
@@ -1546,12 +1498,11 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
 
             # Cache in BOTH systems (using the effective history we actually used for retrieval)
             query_cache.set(query_text, effective_history, answer, published_sources)  # exact cache
-            if self.semantic_cache:
-                self.semantic_cache.set(query_text, effective_history, answer, published_sources)  # semantic cache
             
             # === LOCAL RAG: Store in Redis Stack vector cache ===
-            # Only cache responses without chat history (standalone queries)
-            if USE_REDIS_CACHE and query_vector and not chat_history:
+            # Cache using the rewritten standalone query vector (allows different conversation paths to reuse)
+            # We cache even with chat history, because we cache based on the rewritten standalone query
+            if USE_REDIS_CACHE and query_vector:
                 redis_cache = _get_redis_vector_cache()
                 if redis_cache:
                     try:
@@ -1562,12 +1513,18 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                         ]
                         await redis_cache.set(
                             query_vector,
-                            rewritten_query if USE_LOCAL_REWRITER else query_text,
+                            rewritten_query,  # Always use rewritten standalone query for consistency
                             answer,
                             sources_data
                         )
+                        logger.debug(f"Cached result in Redis using rewritten query: '{rewritten_query[:50]}...'")
                     except Exception as e:
                         logger.warning(f"Redis cache storage failed: {e}")
+            
+            # Legacy semantic cache (only if Redis not enabled)
+            if self.semantic_cache and not USE_REDIS_CACHE:
+                # Use rewritten query for consistency (no history since it's already standalone)
+                self.semantic_cache.set(rewritten_query, [], answer, published_sources)
 
             # Build metadata dict
             metadata = {
@@ -1778,42 +1735,8 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                             f"FAQ match but cache miss, proceeding with RAG (stream): {matched_faq[:50]}..."
                         )
             
-            # === 1. Try semantic cache first ===
-            cached_result = self.semantic_cache.get(query_text, effective_history) if self.semantic_cache else None
-            if cached_result:
-                logger.debug(f"Semantic cache HIT for query: '{query_text[:50]}...'")
-                cached_answer, cached_sources = cached_result
-                
-                if MONITORING_ENABLED:
-                    rag_cache_hits_total.labels(cache_type="semantic").inc()
-                    rag_query_duration_seconds.labels(
-                        query_type="stream",
-                        cache_hit="true"
-                    ).observe(time.time() - start_time)
-
-                # Send sources first
-                yield {"type": "sources", "sources": cached_sources}
-
-                # Stream cached response character by character for consistent UX
-                for i, char in enumerate(cached_answer):
-                    yield {"type": "chunk", "content": char}
-                    # Small delay to control streaming speed
-                    if i % 10 == 0:  # Yield control every 10 characters
-                        await asyncio.sleep(0.001)
-
-                metadata = {
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                    "cost_usd": 0.0,
-                    "duration_seconds": time.time() - start_time,
-                    "cache_hit": True,
-                    "cache_type": "semantic",
-                }
-                yield {"type": "metadata", "metadata": metadata}
-                yield {"type": "complete", "from_cache": True}
-                return
-
-            # === 2. Fallback to exact cache ===
+            # === 1. Exact cache check (fastest, zero-cost) ===
+            # Check exact cache first - this is the fastest lookup
             cached_result = query_cache.get(query_text, effective_history)
             if cached_result:
                 logger.debug(f"Cache hit for query: '{query_text}'")
@@ -1852,97 +1775,23 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                 yield {"type": "complete", "from_cache": True}
                 return
 
-            # Cache miss
+            # Cache miss for exact cache
             if MONITORING_ENABLED:
                 rag_cache_misses_total.labels(cache_type="query").inc()
 
-            # Convert chat_history to Langchain's BaseMessage format
+            # Convert chat_history to Langchain's BaseMessage format (needed for retrieval)
             converted_chat_history: List[BaseMessage] = []
             for human_msg, ai_msg in effective_history:
                 converted_chat_history.append(HumanMessage(content=human_msg))
                 if ai_msg:
                     converted_chat_history.append(AIMessage(content=ai_msg))
 
-            # === LOCAL RAG: Redis Stack vector cache check (BEFORE query rewriting, streaming) ===
-            # Check cache with original query first to avoid unnecessary LLM calls for cached queries
-            query_vector = None
-            query_sparse = None
-            original_query_vector = None
-            original_query_sparse = None
-            
-            if USE_REDIS_CACHE or USE_INFINITY_EMBEDDINGS:
-                infinity = _get_infinity_embeddings()
-                if infinity:
-                    embed_start = time.time()
-                    try:
-                        # Generate embedding for original query first
-                        original_query_vector, original_query_sparse = await infinity.embed_query(query_text)
-                        query_vector = original_query_vector
-                        query_sparse = original_query_sparse
-                        if MONITORING_ENABLED:
-                            rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
-                        if query_sparse:
-                            logger.info(f"✅ Query sparse embedding received (stream): {len(query_sparse)} terms (sample: {list(query_sparse.items())[:3]})")
-                        else:
-                            logger.debug(f"Query sparse embedding (stream): None (model may not support sparse)")
-                    except Exception as e:
-                        if MONITORING_ENABLED:
-                            rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
-                        logger.warning(f"Infinity embedding failed in stream: {e}", exc_info=True)
-            
-            # Check Redis cache with original query embedding (before rewriting)
-            # Skip semantic cache when chat history is present
-            # Follow-up questions need fresh retrieval with context, not cached responses
-            if USE_REDIS_CACHE and original_query_vector and not chat_history:
-                redis_cache = _get_redis_vector_cache()
-                if redis_cache:
-                    try:
-                        redis_result = await redis_cache.get(original_query_vector)
-                        if redis_result:
-                            cached_answer, sources_data = redis_result
-                            # Reconstruct Document objects
-                            cached_sources = []
-                            for src in sources_data:
-                                if isinstance(src, dict):
-                                    cached_sources.append(Document(
-                                        page_content=src.get("page_content", ""),
-                                        metadata=src.get("metadata", {})
-                                    ))
-                                elif isinstance(src, Document):
-                                    cached_sources.append(src)
-                            
-                            logger.info(f"Redis vector cache HIT (before rewrite, stream) for: {query_text[:50]}...")
-                            if MONITORING_ENABLED:
-                                rag_cache_hits_total.labels(cache_type="redis_vector").inc()
-                                rag_query_duration_seconds.labels(
-                                    query_type="stream",
-                                    cache_hit="true"
-                                ).observe(time.time() - start_time)
-                            
-                            yield {"type": "sources", "sources": cached_sources}
-                            for i, char in enumerate(cached_answer):
-                                yield {"type": "chunk", "content": char}
-                                if i % 10 == 0:
-                                    await asyncio.sleep(0.001)
-                            metadata = {
-                                "input_tokens": 0,
-                                "output_tokens": 0,
-                                "cost_usd": 0.0,
-                                "duration_seconds": time.time() - start_time,
-                                "cache_hit": True,
-                                "cache_type": "redis_vector",
-                                "rewritten_query": None,
-                            }
-                            yield {"type": "metadata", "metadata": metadata}
-                            yield {"type": "complete", "from_cache": True}
-                            return
-                    except Exception as e:
-                        logger.warning(f"Redis cache lookup failed in stream: {e}")
-            
-            # === LOCAL RAG: Router-based query rewriting (streaming, if not already done by semantic router) ===
-            # The semantic router already rewrote the query if needed, so use effective_query
-            # Only use local rewriter if semantic router wasn't used (no history or fast path)
+            # === 2. Query Rewriting Complete: effective_query is now the standalone query ===
+            # The semantic router has already rewritten the query if needed.
+            # Use effective_query (the rewritten standalone query) for semantic caching.
             rewritten_query = effective_query
+            
+            # Optional: Apply local rewriter if enabled and not already rewritten by semantic router
             if USE_LOCAL_REWRITER and not is_dependent and effective_history:
                 # Only use local rewriter if we have history but semantic router didn't rewrite
                 router = _get_inference_router()
@@ -1976,28 +1825,79 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                             rag_query_rewrite_duration_seconds.observe(time.time() - rewrite_start)
                         logger.warning(f"Local rewriter failed in stream, using effective_query: {e}")
                         rewritten_query = effective_query
+
+            # === 3. Generate embedding ONCE for rewritten standalone query ===
+            # This is the key optimization: cache based on the standalone query vector
+            query_vector = None
+            query_sparse = None
             
-            # Generate embedding for the query (use effective_query which may have been rewritten)
-            if rewritten_query != query_text and (USE_REDIS_CACHE or USE_INFINITY_EMBEDDINGS):
+            if USE_REDIS_CACHE or USE_INFINITY_EMBEDDINGS:
                 infinity = _get_infinity_embeddings()
                 if infinity:
                     embed_start = time.time()
                     try:
+                        # Generate embedding for the REWRITTEN standalone query
                         query_vector, query_sparse = await infinity.embed_query(rewritten_query)
                         if MONITORING_ENABLED:
                             rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
                         if query_sparse:
-                            logger.info(f"✅ Rewritten query sparse embedding received (stream): {len(query_sparse)} terms")
+                            logger.info(f"✅ Query sparse embedding received (stream): {len(query_sparse)} terms (sample: {list(query_sparse.items())[:3]})")
+                        else:
+                            logger.debug(f"Query sparse embedding (stream): None (model may not support sparse)")
                     except Exception as e:
                         if MONITORING_ENABLED:
                             rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
-                        logger.warning(f"Infinity embedding for rewritten query failed in stream: {e}", exc_info=True)
-                        # Fallback to original query embedding
-                        query_vector = original_query_vector
-                        query_sparse = original_query_sparse
+                        logger.warning(f"Infinity embedding failed in stream: {e}", exc_info=True)
             
-            # Check Redis cache again with rewritten query embedding (if query was rewritten)
-            if USE_REDIS_CACHE and query_vector and rewritten_query != query_text and not chat_history:
+            # === 4. Semantic cache check (Redis Vector Cache) ===
+            # Check Redis cache with rewritten standalone query vector
+            if USE_REDIS_CACHE and query_vector:
+                redis_cache = _get_redis_vector_cache()
+                if redis_cache:
+                    try:
+                        redis_result = await redis_cache.get(query_vector)
+                        if redis_result:
+                            cached_answer, sources_data = redis_result
+                            # Reconstruct Document objects
+                            cached_sources = []
+                            for src in sources_data:
+                                if isinstance(src, dict):
+                                    cached_sources.append(Document(
+                                        page_content=src.get("page_content", ""),
+                                        metadata=src.get("metadata", {})
+                                    ))
+                                elif isinstance(src, Document):
+                                    cached_sources.append(src)
+                            
+                            logger.info(f"✅ Redis vector cache HIT for rewritten query (stream): '{rewritten_query[:50]}...' (original: '{query_text[:30]}...')")
+                            if MONITORING_ENABLED:
+                                rag_cache_hits_total.labels(cache_type="redis_vector").inc()
+                                rag_query_duration_seconds.labels(
+                                    query_type="stream",
+                                    cache_hit="true"
+                                ).observe(time.time() - start_time)
+                            
+                            yield {"type": "sources", "sources": cached_sources}
+                            for i, char in enumerate(cached_answer):
+                                yield {"type": "chunk", "content": char}
+                                if i % 10 == 0:
+                                    await asyncio.sleep(0.001)
+                            metadata = {
+                                "input_tokens": 0,
+                                "output_tokens": 0,
+                                "cost_usd": 0.0,
+                                "duration_seconds": time.time() - start_time,
+                                "cache_hit": True,
+                                "cache_type": "redis_vector",
+                                "rewritten_query": rewritten_query if rewritten_query != query_text else None,
+                            }
+                            yield {"type": "metadata", "metadata": metadata}
+                            yield {"type": "complete", "from_cache": True}
+                            return
+                    except Exception as e:
+                        logger.warning(f"Redis cache lookup failed in stream: {e}")
+
+            # === 6. RAG FALLBACK (The expensive part) ===
                 redis_cache = _get_redis_vector_cache()
                 if redis_cache:
                     try:
@@ -2459,12 +2359,11 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
             
             # Cache in BOTH systems (using the effective history we actually used for retrieval)
             query_cache.set(query_text, effective_history, full_answer_accumulator, published_sources)  # exact cache
-            if self.semantic_cache:
-                self.semantic_cache.set(query_text, effective_history, full_answer_accumulator, published_sources)  # semantic cache
             
             # === LOCAL RAG: Store in Redis Stack vector cache (streaming) ===
-            # Only cache responses without chat history (standalone queries)
-            if USE_REDIS_CACHE and query_vector and not chat_history:
+            # Cache using the rewritten standalone query vector (allows different conversation paths to reuse)
+            # We cache even with chat history, because we cache based on the rewritten standalone query
+            if USE_REDIS_CACHE and query_vector:
                 redis_cache = _get_redis_vector_cache()
                 if redis_cache:
                     try:
@@ -2474,12 +2373,18 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                         ]
                         await redis_cache.set(
                             query_vector,
-                            rewritten_query if USE_LOCAL_REWRITER else query_text,
+                            rewritten_query,  # Always use rewritten standalone query for consistency
                             full_answer_accumulator,
                             sources_data
                         )
+                        logger.debug(f"Cached result in Redis using rewritten query (stream): '{rewritten_query[:50]}...'")
                     except Exception as e:
                         logger.warning(f"Redis cache storage failed in stream: {e}")
+            
+            # Legacy semantic cache (only if Redis not enabled)
+            if self.semantic_cache and not USE_REDIS_CACHE:
+                # Use rewritten query for consistency (no history since it's already standalone)
+                self.semantic_cache.set(rewritten_query, [], full_answer_accumulator, published_sources)
 
             # Yield metadata before completion
             metadata = {
