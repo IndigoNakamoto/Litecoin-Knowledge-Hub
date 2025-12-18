@@ -312,7 +312,8 @@ fi
 echo ""
 
 # Start main production services (pass through filtered arguments like -d for detached mode)
-$DOCKER_COMPOSE $COMPOSE_FILES up "${DOCKER_ARGS[@]}"
+# Include --profile monitoring to start Prometheus and Grafana
+$DOCKER_COMPOSE $COMPOSE_FILES --profile monitoring up "${DOCKER_ARGS[@]}"
 
 # =============================================================================
 # Start Local RAG Services (if --local-rag flag is set)
