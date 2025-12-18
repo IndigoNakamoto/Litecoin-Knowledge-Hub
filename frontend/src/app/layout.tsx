@@ -1,4 +1,4 @@
-import Navigation from '@/components/Navigation';
+import Navigation from '@/components/NavigationMain';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ScrollProvider } from '@/contexts/ScrollContext';
 import type { Metadata } from 'next';
