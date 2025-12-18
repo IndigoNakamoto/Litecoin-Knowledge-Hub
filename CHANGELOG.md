@@ -4,6 +4,21 @@ All notable changes and completed milestones for the Litecoin Knowledge Hub proj
 
 ## Log of Completed Milestones
 
+* **Litecoin.com Integration & Advanced RAG Optimizations (12/12-12/18/2025)**
+  * Implemented Litecoin.com chat integration with basePath configuration and CORS setup
+  * Added chat tunnel support with healthcheck fixes for seamless integration
+  * Replaced heuristic history routing with hybrid LLM-based semantic router for improved query routing
+  * Optimized RAG caching strategy: consolidated semantic cache and cache by rewritten query
+  * Implemented canonical intent generation with synonym mapping for cache optimization
+  * Fixed greeting false-positives and reduced history anchoring for better conversation flow
+  * Added clear conversation action and cancel in-flight stream functionality to frontend
+  * Fixed monitoring profile to properly start Grafana and Prometheus services
+  * Updated navigation component to point to litecoin.com
+  * Added OG/Twitter share metadata for better social media integration
+  * Fixed markdown normalization issues causing malformed lists
+  * Added RAG optimization prompt template for article generation
+  * Created feature specs for admin qualitative analytics and language support
+  * See commit history for detailed implementation notes
 * **Critical Security Patches: React2Shell & Backend Dependencies (12/11/2025)**
   * Patched critical React2Shell / React RSC RCE vulnerabilities (CVE-2025-55182, CVE-2025-66478) across all frontend applications
   * Updated Next.js and React versions to fixed releases:

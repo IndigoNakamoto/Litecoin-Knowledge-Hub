@@ -1,11 +1,67 @@
 # Commit History by Date
 
-**Total Commits:** 384
-**Total Days Worked:** 47
+**Total Commits:** 416
+**Total Days Worked:** 56
 
 ---
 
-## 2025-12-07 (7 commits)
+## 2025-12-18 (7 commits)
+
+- Change navigation component to litecoin.com
+- Fix greeting false-positives and reduce history anchoring
+- frontend: add clear conversation action and cancel in-flight stream
+- Fix: Enable monitoring profile to start Grafana and Prometheus
+- Replace heuristic history routing with hybrid LLM-based semantic router
+- Optimize RAG caching strategy: consolidate semantic cache and cache by rewritten query
+- feat: implement canonical intent generation with synonym mapping for cache optimization
+
+## 2025-12-17 (1 commit)
+
+- feat: Add chat tunnel support and fix healthchecks for litecoin.com integration
+
+## 2025-12-15 (2 commits)
+
+- feat: configure basePath and CORS for litecoin.com/chat integration
+- Fix: redirect domain root to /chat when basePath is set
+
+## 2025-12-14 (4 commits)
+
+- docs: Add feature spec for admin qualitative analytics
+- docs: add language support feature spec
+- Add RAG optimization prompt template for article generation
+- Fix markdown normalization causing malformed lists
+
+## 2025-12-13 (1 commit)
+
+- Add OG/Twitter share metadata and update configs
+
+## 2025-12-12 (3 commits)
+
+- docs: Add RAG performance bottlenecks analysis
+- Optimize RAG pipeline performance and improve error handling
+- Fix navigation chevron rotation - remove horizontal shift on click
+
+## 2025-12-11 (5 commits)
+
+- Configure local MongoDB defaults and add backup tooling
+- fix(security): patch critical React2Shell RCE and backend vulnerabilities
+- fix(rag): avoid caching generic error responses for suggested questions
+- docs(changelog): document React2Shell and backend security patches
+- docs: update security documentation and implementation specs
+
+## 2025-12-09 (1 commit)
+
+- Add Discord alerts for spend limits and cost throttling
+
+## 2025-12-08 (5 commits)
+
+- feat: FAQ-Based Indexing & FAISS Performance Optimizations
+- fix: Normalize markdown headings in LLM responses
+- docs: Update changelog with FAQ indexing and FAISS optimizations
+- feat: Add LaTeX symbol conversion and list formatting to markdown utils
+- Add Litecoin.com integration plan documentation
+
+## 2025-12-07 (10 commits)
 
 - feat: Implement High-Performance Local RAG with Cloud Spillover
 - feat(monitoring): Add Discord alerts for rate limits and Local RAG Grafana panels
@@ -14,6 +70,9 @@
 - fix(tests): update InfinityEmbeddings tests for new tuple return signature
 - fix(tests): update tests to properly mock Lua script eval() calls
 - docs: update test documentation with accurate counts (121 passed, 36 skipped)
+- chore: enable local RAG features by default and update commit history
+- docs: Add comprehensive Dynamic Admin Settings feature document (DEC7)
+- docs: add Advanced RAG Techniques feature spec
 
 ## 2025-12-06 (9 commits)
 
