@@ -76,7 +76,7 @@ services:
       - VECTOR_DIMENSION=${VECTOR_DIMENSION:-1024}
       # Redis Stack cache configuration
       - REDIS_CACHE_INDEX_NAME=${REDIS_CACHE_INDEX_NAME:-cache:index}
-      - REDIS_CACHE_SIMILARITY_THRESHOLD=${REDIS_CACHE_SIMILARITY_THRESHOLD:-0.90}
+      - REDIS_CACHE_SIMILARITY_THRESHOLD=${REDIS_CACHE_SIMILARITY_THRESHOLD:-0.92}
     depends_on:
       mongodb:
         condition: service_healthy

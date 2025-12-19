@@ -10,7 +10,7 @@ enabling semantic matching for similar queries (not just exact matches).
 
 Features:
 - HNSW vector index (1024-dim for stella_en_1.5B_v5)
-- Cosine similarity with configurable threshold (default: 0.90)
+- Cosine similarity with configurable threshold (default: 0.92)
 - LFU eviction via Redis maxmemory-policy
 - Persistent storage with optional AOF
 
@@ -87,7 +87,7 @@ class RedisVectorCache:
         redis_url: Redis Stack connection URL
         index_name: Name of the vector search index
         dimension: Vector dimension (1024 for stella_en_1.5B_v5)
-        threshold: Minimum similarity for cache hit (default: 0.90)
+        threshold: Minimum similarity for cache hit (default: 0.92)
     """
     
     INDEX_NAME = "cache:semantic_index"
@@ -107,12 +107,12 @@ class RedisVectorCache:
             redis_url: Redis Stack URL (default: REDIS_STACK_URL env var)
             index_name: Index name (default: REDIS_CACHE_INDEX_NAME env var)
             dimension: Vector dimension (default: VECTOR_DIMENSION env var or 1024)
-            threshold: Similarity threshold (default: REDIS_CACHE_SIMILARITY_THRESHOLD env var or 0.90)
+            threshold: Similarity threshold (default: REDIS_CACHE_SIMILARITY_THRESHOLD env var or 0.92)
         """
         self.redis_url = redis_url or os.getenv("REDIS_STACK_URL", "redis://localhost:6379")
         self.index_name = index_name or os.getenv("REDIS_CACHE_INDEX_NAME", self.INDEX_NAME)
         self.dimension = dimension or int(os.getenv("VECTOR_DIMENSION", "1024"))
-        self.threshold = threshold or float(os.getenv("REDIS_CACHE_SIMILARITY_THRESHOLD", "0.90"))
+        self.threshold = threshold or float(os.getenv("REDIS_CACHE_SIMILARITY_THRESHOLD", "0.92"))
         
         self._client = None
         self._index_created = False
