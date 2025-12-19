@@ -8,10 +8,8 @@ LTC_SYNONYM_MAP: Dict[str, str] = {
     "extension blocks": "mweb",
     "privacy upgrade": "mweb",
     "confidential transactions": "mweb",
-    "stealth addresses": "mweb",
     "mw": "mweb",
     "eb": "mweb",
-    "hogex": "mweb", # MWEB-specific transaction type
     
     # --- Economics, Supply & Halving ---
     "total coins": "supply",
@@ -35,6 +33,7 @@ LTC_SYNONYM_MAP: Dict[str, str] = {
     "fair launch": "history",
     "silver to gold": "narrative",
     "digital silver": "narrative",
+
     
     # --- Mining & Security ---
     "mining algorithm": "scrypt",
@@ -53,12 +52,16 @@ LTC_SYNONYM_MAP: Dict[str, str] = {
     "l2": "lightning",
     "payment channels": "lightning",
     "omnilite": "smart contracts",
+    "litvm": "litvm",
+    "litecoin virtual machine": "litvm",
+    "zero-knowledge omnichain": "litvm",
     "tokens": "ordinals",
     "inscriptions": "ordinals",
     "brc-20": "ltc-20", # Mapping the BTC equivalent to the LTC version
     "taproot": "upgrades",
     "segwit": "upgrades",
     "bech32": "address format",
+
     
     # --- Wallet & Integration ---
     "litewallet": "wallet",
@@ -67,7 +70,42 @@ LTC_SYNONYM_MAP: Dict[str, str] = {
     "cold storage": "custody",
     "hardware wallet": "custody",
     "ledger": "custody",
-    "trezor": "custody"
+    "trezor": "custody",
+
+    # --- Other ---
+    "blocktime": "litecoin block time",
+    "block time": "litecoin block time",
+    "hashrate": "litecoin hashrate",
+    "supply": "litecoin supply",
+    "address": "litecoin address",
+    "transaction": "litecoin transaction",
+    "transactions": "litecoin transactions",
+    "block": "litecoin block",
+    "blocks": "litecoin blocks",
+    "network": "litecoin network",
+    "networks": "litecoin networks",
+    "node": "litecoin node",
+    "nodes": "litecoin nodes",
+    "peer": "litecoin peer",
+    "peers": "litecoin peers",
+    "peer-to-peer": "litecoin peer-to-peer",
+    "p2p": "litecoin peer-to-peer",
+    "p2p network": "litecoin peer-to-peer network",
+    "p2p network": "litecoin peer-to-peer network",
+}
+
+# Entity expansion map for rare terms that need synonym boosting in retrieval
+# Unlike LTC_SYNONYM_MAP (which replaces terms), this APPENDS synonyms to improve
+# semantic search recall for queries containing these entities.
+LTC_ENTITY_EXPANSIONS: Dict[str, str] = {
+    # Core entities that often fail semantic search due to low similarity scores
+    "litvm": "litecoin virtual machine zero-knowledge omnichain smart contracts",
+    "mweb": "mimblewimble extension blocks privacy confidential transactions",
+    "scrypt": "hashing algorithm mining proof of work",
+    "halving": "block reward reduction subsidy economics",
+    "lightning": "lightning network payment channels layer 2 scaling",
+    "ordinals": "inscriptions tokens ltc-20 nft",
+    "auxpow": "merged mining doge mining auxiliary proof of work",
 }
 
 # 2. Pre-compile the regex for O(1) invocation performance
@@ -95,3 +133,42 @@ def normalize_ltc_keywords(query: str) -> str:
         lambda m: LTC_SYNONYM_MAP[m.group(0).lower()], 
         query
     ).strip()
+
+
+def expand_ltc_entities(query: str) -> str:
+    """
+    Expands known entities with synonyms to improve retrieval recall.
+    
+    Unlike normalize_ltc_keywords() which replaces terms, this function
+    APPENDS synonyms to the query when rare entities are detected. This
+    helps semantic search find relevant documents that use different
+    terminology for the same concept.
+    
+    Example:
+        "explain litvm" -> "explain litvm litecoin virtual machine zero-knowledge omnichain smart contracts"
+    
+    Args:
+        query: User input string (typically after normalization).
+    Returns:
+        Query with appended synonyms for detected entities.
+    """
+    if not query:
+        return ""
+    
+    query_lower = query.lower()
+    expansions_to_add = []
+    
+    for entity, expansion in LTC_ENTITY_EXPANSIONS.items():
+        # Check if entity is in query but expansion terms are not already present
+        if entity in query_lower:
+            # Only add expansion if it's not already in the query
+            expansion_terms = expansion.split()
+            new_terms = [term for term in expansion_terms if term not in query_lower]
+            if new_terms:
+                expansions_to_add.extend(new_terms)
+    
+    if expansions_to_add:
+        # Append unique expansion terms to the query
+        return f"{query} {' '.join(expansions_to_add)}".strip()
+    
+    return query.strip()

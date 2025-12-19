@@ -22,7 +22,7 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from data_ingestion.vector_store_manager import VectorStoreManager
 from cache_utils import query_cache, SemanticCache
 from backend.utils.input_sanitizer import sanitize_query_input, detect_prompt_injection
-from backend.utils.litecoin_vocabulary import normalize_ltc_keywords
+from backend.utils.litecoin_vocabulary import normalize_ltc_keywords, expand_ltc_entities
 from fastapi import HTTPException
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 import google.generativeai as genai
@@ -242,6 +242,8 @@ To ensure technical accuracy, always prioritize these terms:
 
 - Use **MWEB** (referring to MimbleWimble Extension Blocks).
 
+- Use **LitVM** (referring to Litecoin Virtual Machine, the zero-knowledge omnichain).
+
 - Use **Creator** or **Charlie Lee** (referring to the founder).
 
 - Use **Halving** (referring to the block reward reduction).
@@ -251,6 +253,19 @@ To ensure technical accuracy, always prioritize these terms:
 - Use **Lightning** (referring to the Lightning Network).
 
 !!! NEVER mention "context", "documents", or "retrieved information". Answer as the expert. !!!
+
+---
+
+**COMPLETENESS REQUIREMENT (CRITICAL):**
+
+When answering questions that ask about multiple items, lists, or historical/biographical information, you MUST include ALL relevant information from the context. This includes:
+
+- **Work History/Career:** Include ALL positions, companies, and roles mentioned in the context, presented in chronological order when possible.
+- **Features/Capabilities:** Include ALL features, capabilities, or characteristics mentioned in the context.
+- **Historical Events:** Include ALL relevant events, dates, and details from the context.
+- **Lists/Enumerations:** If the context contains multiple items (companies, technologies, events, etc.), include ALL of them, not just a subset.
+
+Do not omit information because you think it's less important. If it's in the context and relevant to the question, it must be included.
 
 ---
 
@@ -277,9 +292,10 @@ To ensure technical accuracy, always prioritize these terms:
 ---
 **ADDITIONAL GUIDELINES:**
 
-* **Formatting:** Use `##` headings, bullet points, and **bold key terms** (like **MWEB** or **Scrypt**).
+* **Formatting:** Use `##` headings, bullet points, and **bold key terms** (like **MWEB**, **LitVM**, or **Scrypt**).
 * **Exclusivity:** Stick *only* to the provided context.
 * **Real-time Data:** If asked for prices, state that your knowledge is static and recommend live sources.
+* **Completeness:** For biographical, historical, or list-type questions, ensure you include ALL relevant information from the context, not just a summary or subset.
 
 ---
 **EXAMPLE (This follows all rules):**
@@ -863,21 +879,28 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
         # Now Gemini sees "litecoin mweb" instead of "Tell me about extension blocks"
         normalized_text = normalize_ltc_keywords(query_text)
         
+        # === STEP 1.5: Entity Expansion for Rare Terms ===
+        # Appends synonyms to improve retrieval for entities with low semantic similarity
+        # Example: "explain litvm" -> "explain litvm litecoin virtual machine zero-knowledge..."
+        expanded_text = expand_ltc_entities(normalized_text)
+        if expanded_text != normalized_text:
+            logger.debug(f"Entity expansion: '{normalized_text}' -> '{expanded_text}'")
+        
         # === Hybrid History Routing: Fast Path + LLM Router ===
         # 1. Fast Path: Check for OBVIOUS pronouns/prefixes (microseconds)
-        tokens = re.findall(r"[a-z0-9']+", normalized_text.lower())
+        tokens = re.findall(r"[a-z0-9']+", expanded_text.lower())
         has_obvious_pronouns = any(t in _STRONG_AMBIGUOUS_TOKENS for t in tokens)
-        has_obvious_prefix = any(normalized_text.lower().startswith(p) for p in _STRONG_PREFIXES)
+        has_obvious_prefix = any(expanded_text.lower().startswith(p) for p in _STRONG_PREFIXES)
         
         # Convert history to BaseMessage format for router
         converted_history: List[BaseMessage] = []
-        effective_query = normalized_text
+        effective_query = expanded_text
         effective_history: List[Tuple[str, str]] = []
         is_dependent = False
         
         if not truncated_history:
             # No history, must be standalone
-            effective_query = normalized_text
+            effective_query = expanded_text
             effective_history = []
         elif has_obvious_pronouns or has_obvious_prefix:
             # Fast path: We KNOW we need history based on keywords
@@ -889,8 +912,8 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                 converted_history.append(HumanMessage(content=human_msg))
                 if ai_msg:
                     converted_history.append(AIMessage(content=ai_msg))
-            # Use router to rewrite query with context (now Gemini sees normalized text)
-            effective_query, _ = await self._semantic_history_check(normalized_text, converted_history)
+            # Use router to rewrite query with context (now includes expanded entity terms)
+            effective_query, _ = await self._semantic_history_check(expanded_text, converted_history)
         else:
             # Ambiguous case: Ask the LLM Router (foolproof path)
             # Convert to BaseMessage format
@@ -898,8 +921,8 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                 converted_history.append(HumanMessage(content=human_msg))
                 if ai_msg:
                     converted_history.append(AIMessage(content=ai_msg))
-            # Router decides if history is needed and rewrites if necessary (now Gemini sees normalized text)
-            effective_query, is_dependent = await self._semantic_history_check(normalized_text, converted_history)
+            # Router decides if history is needed and rewrites if necessary (now includes expanded entity terms)
+            effective_query, is_dependent = await self._semantic_history_check(expanded_text, converted_history)
             if is_dependent:
                 effective_history = truncated_history
             else:
@@ -1048,10 +1071,13 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
             # allowing different conversation paths ("What is MWEB?" vs "How does it work?" -> "How does MWEB work?")
             # to hit the same cache entry.
             
-            # Clean the string to ensure absolute vector stability
-            # Apply regex normalization to remove all non-alphanumeric characters except spaces
-            rewritten_query = rewritten_query.lower().strip()
-            rewritten_query = re.sub(r'[^\w\s]', '', rewritten_query)
+            # Normalize the query (lowercase and strip) but preserve semantic meaning
+            # Don't remove punctuation as it can be semantically important for embeddings
+            # The embedding model should handle punctuation naturally
+            rewritten_query = rewritten_query.strip()
+            
+            # Log the query being embedded for debugging
+            logger.debug(f"Embedding query: '{rewritten_query}' (original: '{query_text}')")
             
             query_vector = None
             query_sparse = None
@@ -1064,6 +1090,19 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                         # Generate embedding for the REWRITTEN standalone query
                         # Now embedding "litecoin mweb usage" instead of "How do I use MWEB?"
                         query_vector, query_sparse = await infinity.embed_query(rewritten_query)
+                        
+                        # Validate query vector dimension
+                        if query_vector:
+                            actual_dim = len(query_vector)
+                            expected_dim = infinity.dimension
+                            if actual_dim != expected_dim:
+                                logger.error(
+                                    f"Query vector dimension mismatch: got {actual_dim}, expected {expected_dim}. "
+                                    f"Query: '{rewritten_query}'. This will cause search failures!"
+                                )
+                            else:
+                                logger.debug(f"Query vector dimension OK: {actual_dim}D for query: '{rewritten_query[:50]}...'")
+                        
                         if MONITORING_ENABLED:
                             rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
                         if query_sparse:
@@ -1196,8 +1235,9 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                         if MONITORING_ENABLED:
                             rag_vector_search_duration_seconds.observe(search_duration)
                     
-                    # Filter vector results by similarity threshold (cosine similarity >= 0.3 for BGE-M3)
-                    MIN_SIMILARITY_THRESHOLD = float(os.getenv("MIN_VECTOR_SIMILARITY", "0.3"))
+                    # Filter vector results by similarity threshold (cosine similarity >= 0.28 for BGE-M3)
+                    # Lowered from 0.3 to 0.28 to include LitVM and other technical documents with slightly lower semantic similarity
+                    MIN_SIMILARITY_THRESHOLD = float(os.getenv("MIN_VECTOR_SIMILARITY", "0.28"))
                     vector_docs = [doc for doc, score in vector_results if score >= MIN_SIMILARITY_THRESHOLD]
                     
                     if len(vector_docs) < RETRIEVER_K:
@@ -1207,6 +1247,11 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                     logger.info(f"Infinity vector search: {len(vector_results)} candidates → {len(vector_docs)} above threshold {MIN_SIMILARITY_THRESHOLD}")
                     if vector_results:
                         logger.debug(f"   Top similarity score: {vector_results[0][1]:.3f}, Bottom: {vector_results[-1][1]:.3f}")
+                        # Log top results for debugging
+                        logger.debug(f"   Query: '{rewritten_query}'")
+                        for i, (doc, score) in enumerate(vector_results[:3]):
+                            preview = doc.page_content[:100].replace('\n', ' ')
+                            logger.debug(f"   Result {i+1} (score={score:.3f}): {preview}...")
                     
                     if bm25_docs:
                         logger.debug(f"BM25 keyword search returned {len(bm25_docs)} documents")
@@ -1297,6 +1342,12 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                             rag_sparse_rerank_duration_seconds.observe(time.time() - rerank_start)
                         
                         logger.info(f"✅ Hybrid retrieval (Infinity + BM25 + Sparse) returned {len(context_docs)} documents")
+                        # Log top retrieved documents for debugging
+                        logger.debug(f"   Top {min(3, len(context_docs))} retrieved documents:")
+                        for i, doc in enumerate(context_docs[:3], 1):
+                            preview = doc.page_content[:150].replace('\n', ' ')
+                            title = doc.metadata.get('doc_title', doc.metadata.get('title', 'N/A'))
+                            logger.debug(f"   {i}. [{title}] {preview}...")
                         if doc_scores:
                             logger.info(f"   Top sparse similarity: {doc_scores[0][0]:.3f}")
                     except Exception as sparse_error:
@@ -1636,21 +1687,28 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
             # Now Gemini sees "litecoin mweb" instead of "Tell me about extension blocks"
             normalized_text = normalize_ltc_keywords(query_text)
             
+            # === STEP 1.5: Entity Expansion for Rare Terms ===
+            # Appends synonyms to improve retrieval for entities with low semantic similarity
+            # Example: "explain litvm" -> "explain litvm litecoin virtual machine zero-knowledge..."
+            expanded_text = expand_ltc_entities(normalized_text)
+            if expanded_text != normalized_text:
+                logger.debug(f"Entity expansion (stream): '{normalized_text}' -> '{expanded_text}'")
+            
             # === Hybrid History Routing: Fast Path + LLM Router ===
             # 1. Fast Path: Check for OBVIOUS pronouns/prefixes (microseconds)
-            tokens = re.findall(r"[a-z0-9']+", normalized_text.lower())
+            tokens = re.findall(r"[a-z0-9']+", expanded_text.lower())
             has_obvious_pronouns = any(t in _STRONG_AMBIGUOUS_TOKENS for t in tokens)
-            has_obvious_prefix = any(normalized_text.lower().startswith(p) for p in _STRONG_PREFIXES)
+            has_obvious_prefix = any(expanded_text.lower().startswith(p) for p in _STRONG_PREFIXES)
             
             # Convert history to BaseMessage format for router
             converted_history: List[BaseMessage] = []
-            effective_query = normalized_text
+            effective_query = expanded_text
             effective_history: List[Tuple[str, str]] = []
             is_dependent = False
             
             if not truncated_history:
                 # No history, must be standalone
-                effective_query = normalized_text
+                effective_query = expanded_text
                 effective_history = []
             elif has_obvious_pronouns or has_obvious_prefix:
                 # Fast path: We KNOW we need history based on keywords
@@ -1662,8 +1720,8 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                     converted_history.append(HumanMessage(content=human_msg))
                     if ai_msg:
                         converted_history.append(AIMessage(content=ai_msg))
-                # Use router to rewrite query with context (now Gemini sees normalized text)
-                effective_query, _ = await self._semantic_history_check(normalized_text, converted_history)
+                # Use router to rewrite query with context (now includes expanded entity terms)
+                effective_query, _ = await self._semantic_history_check(expanded_text, converted_history)
             else:
                 # Ambiguous case: Ask the LLM Router (foolproof path)
                 # Convert to BaseMessage format
@@ -1671,8 +1729,8 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                     converted_history.append(HumanMessage(content=human_msg))
                     if ai_msg:
                         converted_history.append(AIMessage(content=ai_msg))
-                # Router decides if history is needed and rewrites if necessary (now Gemini sees normalized text)
-                effective_query, is_dependent = await self._semantic_history_check(normalized_text, converted_history)
+                # Router decides if history is needed and rewrites if necessary (now includes expanded entity terms)
+                effective_query, is_dependent = await self._semantic_history_check(expanded_text, converted_history)
                 if is_dependent:
                     effective_history = truncated_history
                 else:
@@ -1866,10 +1924,12 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
             # === 3. Generate embedding ONCE for rewritten standalone query ===
             # This is the key optimization: cache based on the standalone query vector
             
-            # Clean the string to ensure absolute vector stability
-            # Apply regex normalization to remove all non-alphanumeric characters except spaces
-            rewritten_query = rewritten_query.lower().strip()
-            rewritten_query = re.sub(r'[^\w\s]', '', rewritten_query)
+            # Normalize the query (strip) but preserve semantic meaning
+            # Don't remove punctuation as it can be semantically important for embeddings
+            rewritten_query = rewritten_query.strip()
+            
+            # Log the query being embedded for debugging
+            logger.debug(f"Embedding query (stream): '{rewritten_query}' (original: '{query_text}')")
             
             query_vector = None
             query_sparse = None
@@ -1882,6 +1942,19 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                         # Generate embedding for the REWRITTEN standalone query
                         # Now embedding "litecoin mweb usage" instead of "How do I use MWEB?"
                         query_vector, query_sparse = await infinity.embed_query(rewritten_query)
+                        
+                        # Validate query vector dimension
+                        if query_vector:
+                            actual_dim = len(query_vector)
+                            expected_dim = infinity.dimension
+                            if actual_dim != expected_dim:
+                                logger.error(
+                                    f"Query vector dimension mismatch (stream): got {actual_dim}, expected {expected_dim}. "
+                                    f"Query: '{rewritten_query}'. This will cause search failures!"
+                                )
+                            else:
+                                logger.debug(f"Query vector dimension OK (stream): {actual_dim}D for query: '{rewritten_query[:50]}...'")
+                        
                         if MONITORING_ENABLED:
                             rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
                         if query_sparse:
@@ -2040,8 +2113,9 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                         if MONITORING_ENABLED:
                             rag_vector_search_duration_seconds.observe(search_duration)
                     
-                    # Filter vector results by similarity threshold (cosine similarity >= 0.3 for BGE-M3)
-                    MIN_SIMILARITY_THRESHOLD = float(os.getenv("MIN_VECTOR_SIMILARITY", "0.3"))
+                    # Filter vector results by similarity threshold (cosine similarity >= 0.28 for BGE-M3)
+                    # Lowered from 0.3 to 0.28 to include LitVM and other technical documents with slightly lower semantic similarity
+                    MIN_SIMILARITY_THRESHOLD = float(os.getenv("MIN_VECTOR_SIMILARITY", "0.28"))
                     vector_docs = [doc for doc, score in vector_results if score >= MIN_SIMILARITY_THRESHOLD]
                     
                     if len(vector_docs) < RETRIEVER_K:
@@ -2051,6 +2125,11 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                     logger.info(f"Infinity vector search (stream): {len(vector_results)} candidates → {len(vector_docs)} above threshold {MIN_SIMILARITY_THRESHOLD}")
                     if vector_results:
                         logger.debug(f"   Top similarity score: {vector_results[0][1]:.3f}, Bottom: {vector_results[-1][1]:.3f}")
+                        # Log top results for debugging
+                        logger.debug(f"   Query (stream): '{rewritten_query}'")
+                        for i, (doc, score) in enumerate(vector_results[:3]):
+                            preview = doc.page_content[:100].replace('\n', ' ')
+                            logger.debug(f"   Result {i+1} (score={score:.3f}): {preview}...")
                     
                     if bm25_docs:
                         logger.debug(f"BM25 keyword search (stream) returned {len(bm25_docs)} documents")
@@ -2141,6 +2220,12 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                             rag_sparse_rerank_duration_seconds.observe(time.time() - rerank_start)
                         
                         logger.info(f"✅ Hybrid retrieval (stream: Infinity + BM25 + Sparse) returned {len(context_docs)} documents")
+                        # Log top retrieved documents for debugging
+                        logger.debug(f"   Top {min(3, len(context_docs))} retrieved documents (stream):")
+                        for i, doc in enumerate(context_docs[:3], 1):
+                            preview = doc.page_content[:150].replace('\n', ' ')
+                            title = doc.metadata.get('doc_title', doc.metadata.get('title', 'N/A'))
+                            logger.debug(f"   {i}. [{title}] {preview}...")
                         if doc_scores:
                             logger.info(f"   Top sparse similarity (stream): {doc_scores[0][0]:.3f}")
                     except Exception as sparse_error:
