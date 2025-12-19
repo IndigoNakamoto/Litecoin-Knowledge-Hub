@@ -46,5 +46,3 @@ echo "  git push"
 echo ""
 echo "💡 Tip: For disaster recovery, store your age/GPG private key in a secure password manager so"
 echo "   another dev can decrypt and restore from these backups if needed."
-
-

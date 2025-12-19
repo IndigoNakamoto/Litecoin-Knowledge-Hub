@@ -72,3 +72,4 @@ echo "✅ Archive and encryption complete."
 echo "   Latest encrypted backups are in: $ENCRYPTED_ROOT"
 
 
+
