@@ -154,6 +154,7 @@ class InfinityEmbeddings:
                     json={
                         "model": self.model_id,
                         "input": texts,
+                        "encoding_format": "float",  # Ensure consistent format with document embeddings
                     },
                     headers={"Content-Type": "application/json"},
                 )
@@ -170,6 +171,22 @@ class InfinityEmbeddings:
                 sorted_data = sorted(data["data"], key=lambda x: x.get("index", 0))
                 dense_embeddings = [item["embedding"] for item in sorted_data]
                 sparse_embeddings = [item.get("sparse_embedding") for item in sorted_data]
+                
+                # Validate embedding dimensions
+                if dense_embeddings:
+                    actual_dim = len(dense_embeddings[0])
+                    expected_dim = self.dimension
+                    if actual_dim != expected_dim:
+                        logger.warning(
+                            f"Embedding dimension mismatch: got {actual_dim}, expected {expected_dim}. "
+                            f"This may cause search issues!"
+                        )
+                    # Validate all embeddings have same dimension
+                    for i, emb in enumerate(dense_embeddings):
+                        if len(emb) != actual_dim:
+                            raise ValueError(
+                                f"Embedding {i} has inconsistent dimension: {len(emb)} vs {actual_dim}"
+                            )
                 
                 logger.debug(f"Generated {len(dense_embeddings)} embeddings (dim={len(dense_embeddings[0]) if dense_embeddings else 0})")
                 logger.debug(f"Sparse embeddings available: {sum(1 for s in sparse_embeddings if s is not None)}/{len(sparse_embeddings)}")
