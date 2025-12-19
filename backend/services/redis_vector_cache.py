@@ -277,11 +277,12 @@ class RedisVectorCache:
                 return None
             
             # Check similarity threshold
-            # Redis returns cosine distance (0 = identical, 2 = opposite)
-            # Convert to similarity: similarity = 1 - (distance / 2)
+            # Redis returns cosine distance where: distance = 1 - cosine_similarity
+            # For normalized vectors: distance 0 = identical (similarity 1), distance 2 = opposite (similarity -1)
+            # Correct conversion: similarity = 1 - distance
             best_match = results.docs[0]
             distance = float(best_match.score)
-            similarity = 1 - (distance / 2)
+            similarity = 1 - distance
             
             if similarity < self.threshold:
                 if METRICS_ENABLED:
