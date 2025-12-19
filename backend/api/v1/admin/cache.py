@@ -196,3 +196,174 @@ async def refresh_suggested_questions_cache(request: Request) -> Dict[str, Any]:
             detail={"error": "Internal server error", "message": "Failed to refresh cache"}
         )
 
+
+@router.get("/semantic/stats")
+async def get_semantic_cache_stats(request: Request) -> Dict[str, Any]:
+    """
+    Get statistics about the semantic cache.
+    
+    Returns stats for both Redis Stack vector cache (if enabled) and
+    legacy in-memory semantic cache (if enabled).
+    
+    Requires Bearer token authentication via Authorization header.
+    
+    Returns:
+        Dictionary with cache statistics.
+    """
+    # Rate limiting
+    await check_rate_limit(request, ADMIN_CACHE_RATE_LIMIT)
+    
+    # Get Authorization header
+    auth_header = request.headers.get("Authorization")
+    
+    # Verify authentication
+    if not verify_admin_token(auth_header):
+        logger.warning(
+            f"Unauthorized semantic cache stats access attempt from IP: {request.client.host if request.client else 'unknown'}"
+        )
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "Unauthorized", "message": "Invalid or missing admin token"}
+        )
+    
+    try:
+        import os
+        USE_REDIS_CACHE = os.getenv("USE_REDIS_CACHE", "false").lower() == "true"
+        
+        result = {
+            "redis_vector_cache": None,
+            "legacy_semantic_cache": None,
+            "active_cache": None
+        }
+        
+        # Get Redis Stack vector cache stats (if enabled)
+        if USE_REDIS_CACHE:
+            try:
+                from backend.rag_pipeline import _get_redis_vector_cache
+                redis_cache = _get_redis_vector_cache()
+                if redis_cache:
+                    stats = await redis_cache.stats()
+                    result["redis_vector_cache"] = stats
+                    result["active_cache"] = "redis_vector_cache"
+            except Exception as e:
+                logger.warning(f"Error getting Redis vector cache stats: {e}")
+        
+        # Get legacy semantic cache stats (if enabled)
+        try:
+            from backend.api.v1.sync.payload import _global_rag_pipeline
+            if _global_rag_pipeline and hasattr(_global_rag_pipeline, "semantic_cache") and _global_rag_pipeline.semantic_cache:
+                stats = _global_rag_pipeline.semantic_cache.stats()
+                result["legacy_semantic_cache"] = stats
+                if not result["active_cache"]:
+                    result["active_cache"] = "legacy_semantic_cache"
+        except Exception as e:
+            logger.warning(f"Error getting legacy semantic cache stats: {e}")
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error getting semantic cache stats: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Internal server error", "message": "Failed to retrieve semantic cache stats"}
+        )
+
+
+@router.post("/semantic/clear")
+async def clear_semantic_cache(request: Request) -> Dict[str, Any]:
+    """
+    Clear the semantic cache.
+    
+    This clears both Redis Stack vector cache (if enabled) and
+    legacy in-memory semantic cache (if enabled).
+    
+    Requires Bearer token authentication via Authorization header.
+    
+    Returns:
+        Dictionary with operation result.
+    """
+    # Rate limiting
+    await check_rate_limit(request, ADMIN_CACHE_RATE_LIMIT)
+    
+    # Get Authorization header
+    auth_header = request.headers.get("Authorization")
+    
+    # Verify authentication
+    if not verify_admin_token(auth_header):
+        logger.warning(
+            f"Unauthorized semantic cache clear attempt from IP: {request.client.host if request.client else 'unknown'}"
+        )
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "Unauthorized", "message": "Invalid or missing admin token"}
+        )
+    
+    try:
+        import os
+        USE_REDIS_CACHE = os.getenv("USE_REDIS_CACHE", "false").lower() == "true"
+        
+        cleared_caches = []
+        redis_cleared = False
+        legacy_cleared = False
+        redis_stats_before = None
+        legacy_stats_before = None
+        
+        # Clear Redis Stack vector cache (if enabled)
+        if USE_REDIS_CACHE:
+            try:
+                from backend.rag_pipeline import _get_redis_vector_cache
+                redis_cache = _get_redis_vector_cache()
+                if redis_cache:
+                    redis_stats_before = await redis_cache.stats()
+                    cleared = await redis_cache.clear()
+                    if cleared:
+                        redis_cleared = True
+                        entries_cleared = redis_stats_before.get("entries", 0)
+                        cleared_caches.append(f"Redis Stack vector cache ({entries_cleared} entries)")
+                        logger.info(f"Admin cleared Redis Stack vector cache ({entries_cleared} entries)")
+            except Exception as e:
+                logger.warning(f"Error clearing Redis vector cache: {e}")
+        
+        # Clear legacy semantic cache (if enabled)
+        try:
+            from backend.api.v1.sync.payload import _global_rag_pipeline
+            if _global_rag_pipeline and hasattr(_global_rag_pipeline, "semantic_cache") and _global_rag_pipeline.semantic_cache:
+                legacy_stats_before = _global_rag_pipeline.semantic_cache.stats()
+                _global_rag_pipeline.semantic_cache.clear()
+                legacy_cleared = True
+                entries_cleared = legacy_stats_before.get("size", 0)
+                cleared_caches.append(f"Legacy semantic cache ({entries_cleared} entries)")
+                logger.info(f"Admin cleared legacy semantic cache ({entries_cleared} entries)")
+        except Exception as e:
+            logger.warning(f"Error clearing legacy semantic cache: {e}")
+        
+        if not redis_cleared and not legacy_cleared:
+            return {
+                "success": True,
+                "message": "No semantic cache was active to clear",
+                "cleared_caches": []
+            }
+        
+        message = f"Cleared semantic cache: {', '.join(cleared_caches)}"
+        
+        return {
+            "success": True,
+            "message": message,
+            "cleared_caches": cleared_caches,
+            "redis_vector_cache": {
+                "cleared": redis_cleared,
+                "entries_before": redis_stats_before.get("entries", 0) if redis_stats_before else 0
+            } if USE_REDIS_CACHE else None,
+            "legacy_semantic_cache": {
+                "cleared": legacy_cleared,
+                "entries_before": legacy_stats_before.get("size", 0) if legacy_stats_before else 0
+            } if legacy_stats_before else None
+        }
+        
+    except Exception as e:
+        logger.error(f"Error clearing semantic cache: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Internal server error", "message": "Failed to clear semantic cache"}
+        )
+
