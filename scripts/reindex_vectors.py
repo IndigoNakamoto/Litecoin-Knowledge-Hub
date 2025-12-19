@@ -55,7 +55,13 @@ async def main():
     
     # Configuration
     BATCH_SIZE = 8  # Small batch for MPS stability
-    OUTPUT_DIR = PROJECT_ROOT / "backend" / "faiss_index_1024"
+    # Use absolute path for container compatibility
+    # When running in container, use /app/backend/faiss_index_1024
+    # When running on host, use PROJECT_ROOT / "backend" / "faiss_index_1024"
+    if os.path.exists("/app/backend"):
+        OUTPUT_DIR = Path("/app/backend/faiss_index_1024")
+    else:
+        OUTPUT_DIR = PROJECT_ROOT / "backend" / "faiss_index_1024"
     
     # Use localhost URLs when running from host
     infinity_url = os.getenv("INFINITY_URL", "http://localhost:7997")
