@@ -91,21 +91,42 @@ LTC_SYNONYM_MAP: Dict[str, str] = {
     "peer-to-peer": "litecoin peer-to-peer",
     "p2p": "litecoin peer-to-peer",
     "p2p network": "litecoin peer-to-peer network",
-    "p2p network": "litecoin peer-to-peer network",
+    "p2wpkh": "bech32",
+    "p2wsh": "bech32",
+    "lip-2": "mweb",
 }
 
 # Entity expansion map for rare terms that need synonym boosting in retrieval
 # Unlike LTC_SYNONYM_MAP (which replaces terms), this APPENDS synonyms to improve
 # semantic search recall for queries containing these entities.
 LTC_ENTITY_EXPANSIONS: Dict[str, str] = {
-    # Core entities that often fail semantic search due to low similarity scores
+    # --- Existing (Kept for context) ---
     "litvm": "litecoin virtual machine zero-knowledge omnichain smart contracts",
-    "mweb": "mimblewimble extension blocks privacy confidential transactions",
+    "mweb": "mimblewimble extension blocks privacy confidential transactions lip-0002 lip-0003", # Added LIPs
     "scrypt": "hashing algorithm mining proof of work",
-    "halving": "block reward reduction subsidy economics",
-    "lightning": "lightning network payment channels layer 2 scaling",
-    "ordinals": "inscriptions tokens ltc-20 nft",
+    "halving": "block reward reduction subsidy economics issuance",
+    "lightning": "lightning network payment channels layer 2 scaling off-chain",
+    "ordinals": "inscriptions tokens ltc-20 nft digital artifacts",
     "auxpow": "merged mining doge mining auxiliary proof of work",
+
+    # --- NEW: Protocol & Upgrades ---
+    "segwit": "segregated witness transaction malleability block weight capacity upgrade bip141",
+    "taproot": "schnorr signatures mast privacy smart contracts upgrade bip341",
+    "atomic swaps": "cross-chain decentralized exchange htlc interoperability swap",
+    "csv": "checksequenceverify timelock relative locktime smart contract",
+    "cltv": "checklocktimeverify timelock absolute locktime smart contract",
+    
+    # --- NEW: Addressing & Standards ---
+    "bech32": "native segwit address format ltc1 prefix efficiency",
+    "p2sh": "pay to script hash multisig compatibility m-address 3-address",
+    "ltc-20": "brc-20 standard fungible tokens json experimental overlay protocol",
+    "omnilite": "omni layer tokens stablecoin usdt assets",
+
+    # --- NEW: Network & Infrastructure ---
+    "mempool": "memory pool unconfirmed transactions fee estimation congestion",
+    "difficulty": "mining difficulty retarget adjustment hashrate security",
+    "litecoin core": "reference client full node daemon wallet software",
+    "electrum-ltc": "spv wallet lightweight client deterministic seed",
 }
 
 # 2. Pre-compile the regex for O(1) invocation performance
