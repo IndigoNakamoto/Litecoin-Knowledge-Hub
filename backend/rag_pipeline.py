@@ -22,7 +22,7 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from data_ingestion.vector_store_manager import VectorStoreManager
 from cache_utils import query_cache, SemanticCache
 from backend.utils.input_sanitizer import sanitize_query_input, detect_prompt_injection
-from backend.utils.litecoin_vocabulary import normalize_ltc_keywords, expand_ltc_entities
+from backend.utils.litecoin_vocabulary import normalize_ltc_keywords, expand_ltc_entities, LTC_ENTITY_EXPANSIONS
 from fastapi import HTTPException
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 import google.generativeai as genai
@@ -70,7 +70,11 @@ class QueryRouting(BaseModel):
         description="True if the query relies on history. Always True for pronouns/follow-ups."
     )
     standalone_query: str = Field(
-        description="The Canonical Intent string in '[Subject] [Attribute]' format. No punctuation, lowercase."
+        description=(
+            "A rewritten standalone version of the user's latest query, resolving pronouns/ambiguous references "
+            "using chat history while preserving the original topic and intent. "
+            "If the latest query is already standalone, return it unchanged."
+        )
     )
 
 # Lazy-load local RAG services only when enabled
@@ -544,6 +548,64 @@ class RAGPipeline:
         logger.warning(f"Chat history truncated from {len(chat_history)} to {len(truncated)} pairs (max: {MAX_CHAT_HISTORY_PAIRS})")
         return truncated
 
+    def _detect_canonical_entities(self, text: str) -> List[str]:
+        """
+        Detect canonical Litecoin entities (e.g. 'litvm', 'mweb') in text.
+
+        We normalize first so phrases like "Litecoin Virtual Machine" become "litvm".
+        """
+        if not text:
+            return []
+        normalized = normalize_ltc_keywords(text)
+        haystack = normalized.lower()
+        found: List[str] = []
+        # Prefer longer entity keys first to avoid partial/shorter matches winning.
+        for entity in sorted(LTC_ENTITY_EXPANSIONS.keys(), key=len, reverse=True):
+            if re.search(rf"\b{re.escape(entity)}\b", haystack):
+                found.append(entity)
+        return found
+
+    def _anchor_pronouns_to_last_entity(self, query: str, chat_history_pairs: List[Tuple[str, str]]) -> str:
+        """
+        Deterministically resolve 'it/this/that/they' style follow-ups to the last explicit entity.
+
+        This is a safety net to prevent LLM-based rewrite from drifting to a different well-known topic
+        (e.g., switching from LitVM to MWEB) when the user asks a follow-up like "who's working on it?".
+        """
+        if not query or not chat_history_pairs:
+            return query
+
+        # Only act if the current query contains obvious pronouns/follow-up markers.
+        tokens = re.findall(r"[a-z0-9']+", query.lower())
+        if not any(t in _STRONG_AMBIGUOUS_TOKENS for t in tokens):
+            return query
+
+        # If the query already names an entity, do nothing.
+        if self._detect_canonical_entities(query):
+            return query
+
+        # Scan backwards through recent human turns to find the most recent named entity.
+        last_entity: Optional[str] = None
+        for human_msg, _ in reversed(chat_history_pairs):
+            entities = self._detect_canonical_entities(human_msg or "")
+            if entities:
+                last_entity = entities[0]
+                break
+
+        if not last_entity:
+            return query
+
+        rewritten = query
+        # Prefer direct replacements when grammar is clear.
+        rewritten = re.sub(r"\bits\b", f"{last_entity}'s", rewritten, flags=re.IGNORECASE)
+        rewritten = re.sub(r"\bit\b", last_entity, rewritten, flags=re.IGNORECASE)
+
+        # If we didn't actually replace anything (e.g., "can you elaborate?"), append an anchor.
+        if rewritten == query:
+            rewritten = f"{query} about {last_entity}"
+
+        return rewritten
+
     def _build_prompt_text(self, query_text: str, context_text: str) -> str:
         """Reconstruct the prompt text fed to the LLM for token accounting."""
         # Build prompt text from the new RAG_PROMPT template structure
@@ -745,8 +807,16 @@ class RAGPipeline:
         system_prompt = """You are a query router for a RAG system about Litecoin.
 Analyze the "Latest Query". Does it refer to the "Chat History" (e.g. via pronouns like 'it', 'that', or implicit context)?
 
-1. If YES (Dependent): Rewrite the query to be fully standalone, incorporating the necessary context from history.
-2. If NO (Standalone): Return the latest query exactly as is. Do not add context if it's a new topic.
+Output MUST conform to the provided schema with:
+- is_dependent: boolean
+- standalone_query: string
+
+Rules:
+1) If YES (Dependent): rewrite the Latest Query into a fully standalone question by resolving ONLY the ambiguous references using Chat History.
+2) If NO (Standalone): return the Latest Query exactly as-is.
+3) Do NOT output a "canonical intent" keyword pair. Preserve the user's natural question phrasing.
+4) Do NOT switch topics. Only resolve references; keep the subject from history (e.g., if the prior turn was about LitVM, resolve "it" to LitVM).
+5) Do NOT add new facts or assumptions beyond resolving what "it/this/that" refers to.
 
 Be conservative: only mark as dependent if the query is clearly referring to prior conversation."""
 
@@ -755,11 +825,9 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
             ("human", "Chat History:\n{chat_history}\n\nLatest Query: {query}"),
         ])
         
-        # Format history string (only last 2 messages for efficiency)
-        history_str = "\n".join([
-            f"{'Human' if isinstance(m, HumanMessage) else 'AI'}: {m.content}" 
-            for m in chat_history[-2:]
-        ])
+        # Format history string (prefer prior *human* turns; avoid tangents in assistant replies)
+        human_msgs = [m.content for m in chat_history if isinstance(m, HumanMessage) and m.content]
+        history_str = "\n".join([f"Human: {c}" for c in human_msgs[-2:]])
 
         start_time = time.time()
         
@@ -771,8 +839,10 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
             result = await router_chain.ainvoke({"chat_history": history_str, "query": query_text})
             duration = time.time() - start_time
             
-            # Force lowercase and strip any accidental trailing punctuation
-            canonical_intent = result.standalone_query.lower().strip().rstrip('?.!')
+            standalone_query = (result.standalone_query or "").strip()
+            if not standalone_query:
+                # Safety fallback: never return an empty rewrite.
+                standalone_query = query_text
             
             # --- 1. ESTIMATE TOKENS (The Router result object usually doesn't have usage metadata) ---
             # Reconstruct the prompt string roughly for estimation
@@ -815,8 +885,8 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                 except Exception as e:
                     logger.warning(f"Failed to record router spend: {e}")
             
-            logger.info(f"🎯 Canonical Intent: '{query_text}' -> '{canonical_intent}'")
-            return canonical_intent, result.is_dependent
+            logger.info(f"🎯 Standalone query: '{query_text}' -> '{standalone_query}' (dependent={result.is_dependent})")
+            return standalone_query, result.is_dependent
                 
         except Exception as e:
             # Log failure metrics
@@ -829,7 +899,7 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                     status="error"
                 )
             logger.warning(f"Standardizer failed: {e}")
-            return query_text.lower(), False
+            return query_text, False
 
     async def aquery(self, query_text: str, chat_history: List[Tuple[str, str]]) -> Tuple[str, List[Document], Dict[str, Any]]:
         """
@@ -876,31 +946,36 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
         
         # === STEP 1: Fast Path Normalization (Synonym Map) ===
         # Zero-cost synonym mapping to ensure consistent cache keys
-        # Now Gemini sees "litecoin mweb" instead of "Tell me about extension blocks"
         normalized_text = normalize_ltc_keywords(query_text)
-        
-        # === STEP 1.5: Entity Expansion for Rare Terms ===
-        # Appends synonyms to improve retrieval for entities with low semantic similarity
-        # Example: "explain litvm" -> "explain litvm litecoin virtual machine zero-knowledge..."
-        expanded_text = expand_ltc_entities(normalized_text)
-        if expanded_text != normalized_text:
-            logger.debug(f"Entity expansion: '{normalized_text}' -> '{expanded_text}'")
+
+        # === STEP 1.5: Deterministic pronoun anchoring (anti-topic-drift) ===
+        router_input_text = self._anchor_pronouns_to_last_entity(normalized_text, truncated_history)
+        if router_input_text != normalized_text:
+            logger.debug(f"Pronoun anchoring: '{normalized_text}' -> '{router_input_text}'")
+
+        # === STEP 1.75: Entity expansion for router input (topic reinforcement) ===
+        # If anchoring injected a canonical entity (e.g., litvm), expand it BEFORE the router rewrite.
+        # This helps the router stay on-topic when rewriting ambiguous follow-ups.
+        router_input_expanded = expand_ltc_entities(router_input_text)
+        if router_input_expanded != router_input_text:
+            logger.debug(f"Entity expansion (router): '{router_input_text}' -> '{router_input_expanded}'")
+        router_input_text = router_input_expanded
         
         # === Hybrid History Routing: Fast Path + LLM Router ===
         # 1. Fast Path: Check for OBVIOUS pronouns/prefixes (microseconds)
-        tokens = re.findall(r"[a-z0-9']+", expanded_text.lower())
+        tokens = re.findall(r"[a-z0-9']+", router_input_text.lower())
         has_obvious_pronouns = any(t in _STRONG_AMBIGUOUS_TOKENS for t in tokens)
-        has_obvious_prefix = any(expanded_text.lower().startswith(p) for p in _STRONG_PREFIXES)
+        has_obvious_prefix = any(router_input_text.lower().startswith(p) for p in _STRONG_PREFIXES)
         
         # Convert history to BaseMessage format for router
         converted_history: List[BaseMessage] = []
-        effective_query = expanded_text
+        effective_query = router_input_text
         effective_history: List[Tuple[str, str]] = []
         is_dependent = False
         
         if not truncated_history:
             # No history, must be standalone
-            effective_query = expanded_text
+            effective_query = router_input_text
             effective_history = []
         elif has_obvious_pronouns or has_obvious_prefix:
             # Fast path: We KNOW we need history based on keywords
@@ -913,7 +988,7 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                 if ai_msg:
                     converted_history.append(AIMessage(content=ai_msg))
             # Use router to rewrite query with context (now includes expanded entity terms)
-            effective_query, _ = await self._semantic_history_check(expanded_text, converted_history)
+            effective_query, _ = await self._semantic_history_check(router_input_text, converted_history)
         else:
             # Ambiguous case: Ask the LLM Router (foolproof path)
             # Convert to BaseMessage format
@@ -922,7 +997,7 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                 if ai_msg:
                     converted_history.append(AIMessage(content=ai_msg))
             # Router decides if history is needed and rewrites if necessary (now includes expanded entity terms)
-            effective_query, is_dependent = await self._semantic_history_check(expanded_text, converted_history)
+            effective_query, is_dependent = await self._semantic_history_check(router_input_text, converted_history)
             if is_dependent:
                 effective_history = truncated_history
             else:
@@ -1065,6 +1140,15 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                             rag_query_rewrite_duration_seconds.observe(time.time() - rewrite_start)
                         logger.warning(f"Local rewriter failed, using effective_query: {e}")
                         rewritten_query = effective_query
+
+            # === STEP 2.5: Post-rewrite normalization + entity expansion (retrieval recall) ===
+            # Apply after router/local rewrite so follow-ups like "who's working on it?"
+            # become "who is working on litvm ..." and get LitVM expansion terms appended.
+            rewritten_normalized = normalize_ltc_keywords(rewritten_query)
+            rewritten_expanded = expand_ltc_entities(rewritten_normalized)
+            if rewritten_expanded != rewritten_query:
+                logger.debug(f"Post-rewrite expansion: '{rewritten_query}' -> '{rewritten_expanded}'")
+            rewritten_query = rewritten_expanded.strip()
 
             # === 3. Generate embedding ONCE for rewritten standalone query ===
             # This is the key optimization: cache based on the standalone query vector,
@@ -1368,29 +1452,19 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                     try:
                         logger.warning("No documents retrieved from hybrid search, falling back to history-aware retriever")
                         retrieval_failed = True
-                        if USE_LOCAL_REWRITER and rewritten_query != query_text:
-                            logger.debug(f"Using hybrid retriever directly with rewritten query (skip history-aware): {rewritten_query[:50]}...")
-                            context_docs = await self.hybrid_retriever.ainvoke(retrieval_query)
-                        else:
-                            context_docs = await self.history_aware_retriever.ainvoke({
-                                "input": retrieval_query,
-                                "chat_history": converted_chat_history
-                            })
+                        # Prefer non-LLM retrieval to avoid topic drift from LLM-based history rephrasing.
+                        logger.debug(f"Fallback: Using hybrid retriever directly with rewritten query: {rewritten_query[:50]}...")
+                        context_docs = await self.hybrid_retriever.ainvoke(retrieval_query)
                     except Exception as fallback_error:
                         logger.error(f"Fallback retrieval also failed: {fallback_error}", exc_info=True)
                         context_docs = []
             else:
-                # Legacy path: use history-aware hybrid retriever
-                # If query was already rewritten by local router, skip history-aware retriever (avoid redundant LLM call)
+                # Legacy path: use hybrid retriever directly.
+                # We already computed a standalone query (effective_query) and applied deterministic pronoun anchoring,
+                # so we avoid LLM-based history-aware rephrasing here (it can drift topics, e.g., LitVM -> MWEB).
                 try:
-                    if USE_LOCAL_REWRITER and rewritten_query != query_text:
-                        logger.debug(f"Using hybrid retriever directly with rewritten query (skip history-aware): {rewritten_query[:50]}...")
-                        context_docs = await self.hybrid_retriever.ainvoke(retrieval_query)
-                    else:
-                        context_docs = await self.history_aware_retriever.ainvoke({
-                            "input": retrieval_query,
-                            "chat_history": converted_chat_history
-                        })
+                    logger.debug(f"Using hybrid retriever directly with rewritten query: {rewritten_query[:50]}...")
+                    context_docs = await self.hybrid_retriever.ainvoke(retrieval_query)
                 except Exception as e:
                     logger.error(f"Legacy retrieval failed: {e}", exc_info=True)
                     retrieval_failed = True
@@ -1481,42 +1555,24 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                     # Log error but allow request (graceful degradation)
                     logger.warning(f"Error in spend limit check: {e}", exc_info=True)
 
-            # Generate answer using retrieval chain (includes retrieval + generation with chat_history)
+            # Generate answer using document_chain with already-retrieved context_docs.
+            # This avoids a second retrieval pass (rag_chain) that could re-introduce topic drift.
             llm_start = time.time()
             
-            # When using Infinity embeddings, use document_chain directly with pre-retrieved docs
-            if USE_INFINITY_EMBEDDINGS and query_vector is not None:
-                # Use document_chain.ainvoke() with already-retrieved context
-                answer_result = await self.document_chain.ainvoke({
-                    "input": query_text,
-                    "context": context_docs,
-                    "chat_history": converted_chat_history
-                })
-                # document_chain returns AIMessage directly
-                if hasattr(answer_result, "content"):
-                    answer = answer_result.content
-                else:
-                    answer = str(answer_result)
-                # Use the already-retrieved context_docs
-                context_docs_from_chain = context_docs
-                # Store result for token extraction
-                llm_result = answer_result
+            answer_result = await self.document_chain.ainvoke({
+                "input": query_text,
+                "context": context_docs,
+                "chat_history": converted_chat_history
+            })
+            # document_chain returns AIMessage directly
+            if hasattr(answer_result, "content"):
+                answer = answer_result.content
             else:
-                # Legacy path: use rag_chain which does retrieval + generation
-                result = await self.rag_chain.ainvoke({
-                    "input": query_text,
-                    "chat_history": converted_chat_history
-                })
-                # Extract answer and context from result
-                answer = result["answer"]
-                if hasattr(answer, "content"):
-                    answer = answer.content
-                else:
-                    answer = str(answer)
-                # Get context documents from result (already retrieved by chain)
-                context_docs_from_chain = result.get("context", [])
-                # Store result for token extraction
-                llm_result = result.get("answer", answer)
+                answer = str(answer_result)
+            # Use the already-retrieved context_docs
+            context_docs_from_chain = context_docs
+            # Store result for token extraction
+            llm_result = answer_result
             
             llm_duration = time.time() - llm_start
             if MONITORING_ENABLED:
@@ -1683,32 +1739,34 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
             truncated_history = self._truncate_chat_history(sanitized_history)
             
             # === STEP 1: Fast Path Normalization (Synonym Map) ===
-            # Zero-cost synonym mapping to ensure consistent cache keys
-            # Now Gemini sees "litecoin mweb" instead of "Tell me about extension blocks"
             normalized_text = normalize_ltc_keywords(query_text)
-            
-            # === STEP 1.5: Entity Expansion for Rare Terms ===
-            # Appends synonyms to improve retrieval for entities with low semantic similarity
-            # Example: "explain litvm" -> "explain litvm litecoin virtual machine zero-knowledge..."
-            expanded_text = expand_ltc_entities(normalized_text)
-            if expanded_text != normalized_text:
-                logger.debug(f"Entity expansion (stream): '{normalized_text}' -> '{expanded_text}'")
+
+            # === STEP 1.5: Deterministic pronoun anchoring (anti-topic-drift) ===
+            router_input_text = self._anchor_pronouns_to_last_entity(normalized_text, truncated_history)
+            if router_input_text != normalized_text:
+                logger.debug(f"Pronoun anchoring (stream): '{normalized_text}' -> '{router_input_text}'")
+
+            # === STEP 1.75: Entity expansion for router input (topic reinforcement) ===
+            router_input_expanded = expand_ltc_entities(router_input_text)
+            if router_input_expanded != router_input_text:
+                logger.debug(f"Entity expansion (router, stream): '{router_input_text}' -> '{router_input_expanded}'")
+            router_input_text = router_input_expanded
             
             # === Hybrid History Routing: Fast Path + LLM Router ===
             # 1. Fast Path: Check for OBVIOUS pronouns/prefixes (microseconds)
-            tokens = re.findall(r"[a-z0-9']+", expanded_text.lower())
+            tokens = re.findall(r"[a-z0-9']+", router_input_text.lower())
             has_obvious_pronouns = any(t in _STRONG_AMBIGUOUS_TOKENS for t in tokens)
-            has_obvious_prefix = any(expanded_text.lower().startswith(p) for p in _STRONG_PREFIXES)
+            has_obvious_prefix = any(router_input_text.lower().startswith(p) for p in _STRONG_PREFIXES)
             
             # Convert history to BaseMessage format for router
             converted_history: List[BaseMessage] = []
-            effective_query = expanded_text
+            effective_query = router_input_text
             effective_history: List[Tuple[str, str]] = []
             is_dependent = False
             
             if not truncated_history:
                 # No history, must be standalone
-                effective_query = expanded_text
+                effective_query = router_input_text
                 effective_history = []
             elif has_obvious_pronouns or has_obvious_prefix:
                 # Fast path: We KNOW we need history based on keywords
@@ -1721,7 +1779,7 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                     if ai_msg:
                         converted_history.append(AIMessage(content=ai_msg))
                 # Use router to rewrite query with context (now includes expanded entity terms)
-                effective_query, _ = await self._semantic_history_check(expanded_text, converted_history)
+                effective_query, _ = await self._semantic_history_check(router_input_text, converted_history)
             else:
                 # Ambiguous case: Ask the LLM Router (foolproof path)
                 # Convert to BaseMessage format
@@ -1730,7 +1788,7 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                     if ai_msg:
                         converted_history.append(AIMessage(content=ai_msg))
                 # Router decides if history is needed and rewrites if necessary (now includes expanded entity terms)
-                effective_query, is_dependent = await self._semantic_history_check(expanded_text, converted_history)
+                effective_query, is_dependent = await self._semantic_history_check(router_input_text, converted_history)
                 if is_dependent:
                     effective_history = truncated_history
                 else:
@@ -1920,6 +1978,13 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                             rag_query_rewrite_duration_seconds.observe(time.time() - rewrite_start)
                         logger.warning(f"Local rewriter failed in stream, using effective_query: {e}")
                         rewritten_query = effective_query
+
+            # === STEP 2.5: Post-rewrite normalization + entity expansion (retrieval recall) ===
+            rewritten_normalized = normalize_ltc_keywords(rewritten_query)
+            rewritten_expanded = expand_ltc_entities(rewritten_normalized)
+            if rewritten_expanded != rewritten_query:
+                logger.debug(f"Post-rewrite expansion (stream): '{rewritten_query}' -> '{rewritten_expanded}'")
+            rewritten_query = rewritten_expanded.strip()
 
             # === 3. Generate embedding ONCE for rewritten standalone query ===
             # This is the key optimization: cache based on the standalone query vector
@@ -2246,29 +2311,21 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                     try:
                         logger.warning("No documents retrieved from hybrid search, falling back to history-aware retriever")
                         retrieval_failed = True
-                        if USE_LOCAL_REWRITER and rewritten_query != query_text:
-                            logger.debug(f"Using hybrid retriever directly with rewritten query (skip history-aware, stream): {rewritten_query[:50]}...")
-                            context_docs = await self.hybrid_retriever.ainvoke(retrieval_query)
-                        else:
-                            context_docs = await self.history_aware_retriever.ainvoke({
-                                "input": retrieval_query,
-                                "chat_history": converted_chat_history
-                            })
+                        # Prefer non-LLM retrieval to avoid topic drift from LLM-based history rephrasing.
+                        logger.debug(
+                            f"Fallback (stream): Using hybrid retriever directly with rewritten query: {rewritten_query[:50]}..."
+                        )
+                        context_docs = await self.hybrid_retriever.ainvoke(retrieval_query)
                     except Exception as fallback_error:
                         logger.error(f"Fallback retrieval also failed in stream: {fallback_error}", exc_info=True)
                         context_docs = []
             else:
-                # Legacy path: use history-aware hybrid retriever
-                # If query was already rewritten by local router, skip history-aware retriever (avoid redundant LLM call)
+                # Legacy path: use hybrid retriever directly.
+                # We already computed a standalone query and applied deterministic pronoun anchoring,
+                # so we avoid LLM-based history-aware rephrasing here (it can drift topics).
                 try:
-                    if USE_LOCAL_REWRITER and rewritten_query != query_text:
-                        logger.debug(f"Using hybrid retriever directly with rewritten query (skip history-aware, stream): {rewritten_query[:50]}...")
-                        context_docs = await self.hybrid_retriever.ainvoke(retrieval_query)
-                    else:
-                        context_docs = await self.history_aware_retriever.ainvoke({
-                            "input": retrieval_query,
-                            "chat_history": converted_chat_history
-                        })
+                    logger.debug(f"Using hybrid retriever directly with rewritten query (stream): {rewritten_query[:50]}...")
+                    context_docs = await self.hybrid_retriever.ainvoke(retrieval_query)
                 except Exception as e:
                     logger.error(f"Legacy retrieval failed in stream: {e}", exc_info=True)
                     retrieval_failed = True
@@ -2396,26 +2453,20 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                         full_answer_accumulator += content
                         yield {"type": "chunk", "content": content}
             else:
-                # Legacy path: use rag_chain.astream() for full retrieval + generation
-                async for chunk in self.rag_chain.astream({
+                # Legacy path: use document_chain directly with pre-retrieved docs.
+                # This avoids a second retrieval pass that could re-introduce topic drift.
+                async for chunk in self.document_chain.astream({
                     "input": query_text,
+                    "context": context_docs,
                     "chat_history": converted_chat_history
                 }):
-                    # Extract content from chunk
-                    # rag_chain.astream() yields dicts with "answer" key containing AIMessageChunk
+                    # document_chain yields AIMessageChunk directly
                     content = ""
-                    if isinstance(chunk, dict) and "answer" in chunk:
-                        answer_obj = chunk["answer"]
-                        if hasattr(answer_obj, "content"):
-                            content = answer_obj.content
-                        elif isinstance(answer_obj, str):
-                            content = answer_obj
-                    elif isinstance(chunk, str):
-                        content = chunk
-                    elif hasattr(chunk, "content"):
-                        # Direct AIMessageChunk
+                    if hasattr(chunk, "content"):
                         answer_obj = chunk
                         content = chunk.content
+                    elif isinstance(chunk, str):
+                        content = chunk
                     
                     if content:
                         full_answer_accumulator += content
