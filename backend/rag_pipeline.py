@@ -745,7 +745,9 @@ class RAGPipeline:
         system_prompt = """You are a query router for a RAG system about Litecoin.
 Analyze the "Latest Query". Does it refer to the "Chat History" (e.g. via pronouns like 'it', 'that', or implicit context)?
 
-1. If YES (Dependent): Rewrite the query to be fully standalone, incorporating the necessary context from history.
+1. If YES (Dependent): Rewrite the query to be fully standalone by replacing pronouns with the SPECIFIC TOPIC from the previous Human question.
+   - Focus on the SUBJECT of the previous HUMAN message, not tangential topics mentioned in the AI response.
+   - Example: If Human asked about "LitVM" and now asks "who's working on it?", rewrite as "who is working on litvm" (NOT about other topics that may have been mentioned).
 2. If NO (Standalone): Return the latest query exactly as is. Do not add context if it's a new topic.
 
 Be conservative: only mark as dependent if the query is clearly referring to prior conversation."""
@@ -1066,6 +1068,16 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                         logger.warning(f"Local rewriter failed, using effective_query: {e}")
                         rewritten_query = effective_query
 
+            # === 2.5 Entity Expansion for Rewritten Query ===
+            # CRITICAL: If the query was rewritten by the semantic router (e.g., "who's working on it?" -> "who is working on litvm"),
+            # we must apply entity expansion AGAIN on the rewritten query. Otherwise, entities like "litvm" in the
+            # rewritten query won't get expanded with their synonyms, causing poor retrieval for follow-up questions.
+            if is_dependent:
+                pre_expansion = rewritten_query
+                rewritten_query = expand_ltc_entities(rewritten_query)
+                if rewritten_query != pre_expansion:
+                    logger.info(f"Post-rewrite entity expansion: '{pre_expansion}' -> '{rewritten_query}'")
+            
             # === 3. Generate embedding ONCE for rewritten standalone query ===
             # This is the key optimization: cache based on the standalone query vector,
             # allowing different conversation paths ("What is MWEB?" vs "How does it work?" -> "How does MWEB work?")
