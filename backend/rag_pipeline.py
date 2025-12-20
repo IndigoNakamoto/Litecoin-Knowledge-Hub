@@ -949,10 +949,17 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
         normalized_text = normalize_ltc_keywords(query_text)
 
         # === STEP 1.5: Deterministic pronoun anchoring (anti-topic-drift) ===
-        # Anchor BEFORE entity expansion so the newly-injected entity can be expanded later.
         router_input_text = self._anchor_pronouns_to_last_entity(normalized_text, truncated_history)
         if router_input_text != normalized_text:
             logger.debug(f"Pronoun anchoring: '{normalized_text}' -> '{router_input_text}'")
+
+        # === STEP 1.75: Entity expansion for router input (topic reinforcement) ===
+        # If anchoring injected a canonical entity (e.g., litvm), expand it BEFORE the router rewrite.
+        # This helps the router stay on-topic when rewriting ambiguous follow-ups.
+        router_input_expanded = expand_ltc_entities(router_input_text)
+        if router_input_expanded != router_input_text:
+            logger.debug(f"Entity expansion (router): '{router_input_text}' -> '{router_input_expanded}'")
+        router_input_text = router_input_expanded
         
         # === Hybrid History Routing: Fast Path + LLM Router ===
         # 1. Fast Path: Check for OBVIOUS pronouns/prefixes (microseconds)
@@ -1738,6 +1745,12 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
             router_input_text = self._anchor_pronouns_to_last_entity(normalized_text, truncated_history)
             if router_input_text != normalized_text:
                 logger.debug(f"Pronoun anchoring (stream): '{normalized_text}' -> '{router_input_text}'")
+
+            # === STEP 1.75: Entity expansion for router input (topic reinforcement) ===
+            router_input_expanded = expand_ltc_entities(router_input_text)
+            if router_input_expanded != router_input_text:
+                logger.debug(f"Entity expansion (router, stream): '{router_input_text}' -> '{router_input_expanded}'")
+            router_input_text = router_input_expanded
             
             # === Hybrid History Routing: Fast Path + LLM Router ===
             # 1. Fast Path: Check for OBVIOUS pronouns/prefixes (microseconds)
