@@ -825,11 +825,9 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
             ("human", "Chat History:\n{chat_history}\n\nLatest Query: {query}"),
         ])
         
-        # Format history string (only last 2 messages for efficiency)
-        history_str = "\n".join([
-            f"{'Human' if isinstance(m, HumanMessage) else 'AI'}: {m.content}" 
-            for m in chat_history[-2:]
-        ])
+        # Format history string (prefer prior *human* turns; avoid tangents in assistant replies)
+        human_msgs = [m.content for m in chat_history if isinstance(m, HumanMessage) and m.content]
+        history_str = "\n".join([f"Human: {c}" for c in human_msgs[-2:]])
 
         start_time = time.time()
         
@@ -948,37 +946,29 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
         
         # === STEP 1: Fast Path Normalization (Synonym Map) ===
         # Zero-cost synonym mapping to ensure consistent cache keys
-        # Now Gemini sees "litecoin mweb" instead of "Tell me about extension blocks"
         normalized_text = normalize_ltc_keywords(query_text)
-        
-        # === STEP 1.5: Entity Expansion for Rare Terms ===
-        # Appends synonyms to improve retrieval for entities with low semantic similarity
-        # Example: "explain litvm" -> "explain litvm litecoin virtual machine zero-knowledge..."
-        expanded_text = expand_ltc_entities(normalized_text)
-        if expanded_text != normalized_text:
-            logger.debug(f"Entity expansion: '{normalized_text}' -> '{expanded_text}'")
 
-        # === STEP 1.75: Deterministic pronoun anchoring (anti-topic-drift) ===
-        anchored_text = self._anchor_pronouns_to_last_entity(expanded_text, truncated_history)
-        if anchored_text != expanded_text:
-            logger.debug(f"Pronoun anchoring: '{expanded_text}' -> '{anchored_text}'")
-        expanded_text = anchored_text
+        # === STEP 1.5: Deterministic pronoun anchoring (anti-topic-drift) ===
+        # Anchor BEFORE entity expansion so the newly-injected entity can be expanded later.
+        router_input_text = self._anchor_pronouns_to_last_entity(normalized_text, truncated_history)
+        if router_input_text != normalized_text:
+            logger.debug(f"Pronoun anchoring: '{normalized_text}' -> '{router_input_text}'")
         
         # === Hybrid History Routing: Fast Path + LLM Router ===
         # 1. Fast Path: Check for OBVIOUS pronouns/prefixes (microseconds)
-        tokens = re.findall(r"[a-z0-9']+", expanded_text.lower())
+        tokens = re.findall(r"[a-z0-9']+", router_input_text.lower())
         has_obvious_pronouns = any(t in _STRONG_AMBIGUOUS_TOKENS for t in tokens)
-        has_obvious_prefix = any(expanded_text.lower().startswith(p) for p in _STRONG_PREFIXES)
+        has_obvious_prefix = any(router_input_text.lower().startswith(p) for p in _STRONG_PREFIXES)
         
         # Convert history to BaseMessage format for router
         converted_history: List[BaseMessage] = []
-        effective_query = expanded_text
+        effective_query = router_input_text
         effective_history: List[Tuple[str, str]] = []
         is_dependent = False
         
         if not truncated_history:
             # No history, must be standalone
-            effective_query = expanded_text
+            effective_query = router_input_text
             effective_history = []
         elif has_obvious_pronouns or has_obvious_prefix:
             # Fast path: We KNOW we need history based on keywords
@@ -991,7 +981,7 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                 if ai_msg:
                     converted_history.append(AIMessage(content=ai_msg))
             # Use router to rewrite query with context (now includes expanded entity terms)
-            effective_query, _ = await self._semantic_history_check(expanded_text, converted_history)
+            effective_query, _ = await self._semantic_history_check(router_input_text, converted_history)
         else:
             # Ambiguous case: Ask the LLM Router (foolproof path)
             # Convert to BaseMessage format
@@ -1000,7 +990,7 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                 if ai_msg:
                     converted_history.append(AIMessage(content=ai_msg))
             # Router decides if history is needed and rewrites if necessary (now includes expanded entity terms)
-            effective_query, is_dependent = await self._semantic_history_check(expanded_text, converted_history)
+            effective_query, is_dependent = await self._semantic_history_check(router_input_text, converted_history)
             if is_dependent:
                 effective_history = truncated_history
             else:
@@ -1143,6 +1133,15 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                             rag_query_rewrite_duration_seconds.observe(time.time() - rewrite_start)
                         logger.warning(f"Local rewriter failed, using effective_query: {e}")
                         rewritten_query = effective_query
+
+            # === STEP 2.5: Post-rewrite normalization + entity expansion (retrieval recall) ===
+            # Apply after router/local rewrite so follow-ups like "who's working on it?"
+            # become "who is working on litvm ..." and get LitVM expansion terms appended.
+            rewritten_normalized = normalize_ltc_keywords(rewritten_query)
+            rewritten_expanded = expand_ltc_entities(rewritten_normalized)
+            if rewritten_expanded != rewritten_query:
+                logger.debug(f"Post-rewrite expansion: '{rewritten_query}' -> '{rewritten_expanded}'")
+            rewritten_query = rewritten_expanded.strip()
 
             # === 3. Generate embedding ONCE for rewritten standalone query ===
             # This is the key optimization: cache based on the standalone query vector,
@@ -1733,38 +1732,28 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
             truncated_history = self._truncate_chat_history(sanitized_history)
             
             # === STEP 1: Fast Path Normalization (Synonym Map) ===
-            # Zero-cost synonym mapping to ensure consistent cache keys
-            # Now Gemini sees "litecoin mweb" instead of "Tell me about extension blocks"
             normalized_text = normalize_ltc_keywords(query_text)
-            
-            # === STEP 1.5: Entity Expansion for Rare Terms ===
-            # Appends synonyms to improve retrieval for entities with low semantic similarity
-            # Example: "explain litvm" -> "explain litvm litecoin virtual machine zero-knowledge..."
-            expanded_text = expand_ltc_entities(normalized_text)
-            if expanded_text != normalized_text:
-                logger.debug(f"Entity expansion (stream): '{normalized_text}' -> '{expanded_text}'")
 
-            # === STEP 1.75: Deterministic pronoun anchoring (anti-topic-drift) ===
-            anchored_text = self._anchor_pronouns_to_last_entity(expanded_text, truncated_history)
-            if anchored_text != expanded_text:
-                logger.debug(f"Pronoun anchoring (stream): '{expanded_text}' -> '{anchored_text}'")
-            expanded_text = anchored_text
+            # === STEP 1.5: Deterministic pronoun anchoring (anti-topic-drift) ===
+            router_input_text = self._anchor_pronouns_to_last_entity(normalized_text, truncated_history)
+            if router_input_text != normalized_text:
+                logger.debug(f"Pronoun anchoring (stream): '{normalized_text}' -> '{router_input_text}'")
             
             # === Hybrid History Routing: Fast Path + LLM Router ===
             # 1. Fast Path: Check for OBVIOUS pronouns/prefixes (microseconds)
-            tokens = re.findall(r"[a-z0-9']+", expanded_text.lower())
+            tokens = re.findall(r"[a-z0-9']+", router_input_text.lower())
             has_obvious_pronouns = any(t in _STRONG_AMBIGUOUS_TOKENS for t in tokens)
-            has_obvious_prefix = any(expanded_text.lower().startswith(p) for p in _STRONG_PREFIXES)
+            has_obvious_prefix = any(router_input_text.lower().startswith(p) for p in _STRONG_PREFIXES)
             
             # Convert history to BaseMessage format for router
             converted_history: List[BaseMessage] = []
-            effective_query = expanded_text
+            effective_query = router_input_text
             effective_history: List[Tuple[str, str]] = []
             is_dependent = False
             
             if not truncated_history:
                 # No history, must be standalone
-                effective_query = expanded_text
+                effective_query = router_input_text
                 effective_history = []
             elif has_obvious_pronouns or has_obvious_prefix:
                 # Fast path: We KNOW we need history based on keywords
@@ -1777,7 +1766,7 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                     if ai_msg:
                         converted_history.append(AIMessage(content=ai_msg))
                 # Use router to rewrite query with context (now includes expanded entity terms)
-                effective_query, _ = await self._semantic_history_check(expanded_text, converted_history)
+                effective_query, _ = await self._semantic_history_check(router_input_text, converted_history)
             else:
                 # Ambiguous case: Ask the LLM Router (foolproof path)
                 # Convert to BaseMessage format
@@ -1786,7 +1775,7 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                     if ai_msg:
                         converted_history.append(AIMessage(content=ai_msg))
                 # Router decides if history is needed and rewrites if necessary (now includes expanded entity terms)
-                effective_query, is_dependent = await self._semantic_history_check(expanded_text, converted_history)
+                effective_query, is_dependent = await self._semantic_history_check(router_input_text, converted_history)
                 if is_dependent:
                     effective_history = truncated_history
                 else:
@@ -1976,6 +1965,13 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                             rag_query_rewrite_duration_seconds.observe(time.time() - rewrite_start)
                         logger.warning(f"Local rewriter failed in stream, using effective_query: {e}")
                         rewritten_query = effective_query
+
+            # === STEP 2.5: Post-rewrite normalization + entity expansion (retrieval recall) ===
+            rewritten_normalized = normalize_ltc_keywords(rewritten_query)
+            rewritten_expanded = expand_ltc_entities(rewritten_normalized)
+            if rewritten_expanded != rewritten_query:
+                logger.debug(f"Post-rewrite expansion (stream): '{rewritten_query}' -> '{rewritten_expanded}'")
+            rewritten_query = rewritten_expanded.strip()
 
             # === 3. Generate embedding ONCE for rewritten standalone query ===
             # This is the key optimization: cache based on the standalone query vector
