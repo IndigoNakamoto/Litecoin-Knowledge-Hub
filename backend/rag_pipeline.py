@@ -26,6 +26,8 @@ from backend.utils.litecoin_vocabulary import normalize_ltc_keywords, expand_ltc
 from fastapi import HTTPException
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 import google.generativeai as genai
+from backend.rag_graph.graph import build_rag_graph
+from backend.rag_graph.nodes.factory import build_nodes
 
 # --- Local RAG Feature Flags ---
 # Enable local-first processing with cloud spillover
@@ -159,14 +161,10 @@ async def _load_faq_questions_for_intent_classifier():
     except Exception as e:
         logging.getLogger(__name__).warning(f"Failed to load FAQ questions: {e}")
 
-# --- Environment Variable Checks ---
+# --- Environment Variables (validated at runtime in RAGPipeline.__init__) ---
+# NOTE: Do not raise at import-time; it breaks tooling/tests that import modules without runtime env.
 google_api_key = os.getenv("GOOGLE_API_KEY")
-if not google_api_key:
-    raise ValueError("GOOGLE_API_KEY environment variable not set!")
-
 MONGO_URI = os.getenv("MONGO_URI")
-if not MONGO_URI:
-    raise ValueError("MONGO_URI environment variable not set!")
 
 # --- Logging ---
 logger = logging.getLogger(__name__)
@@ -335,6 +333,9 @@ class RAGPipeline:
     """
     Simplified RAG Pipeline using FAISS with local embeddings and Google Flash 2.5 LLM.
     """
+
+    # Process-level cache for BM25 doc corpus (MongoDB read is slow; corpus is small ~400 docs)
+    _published_docs_cache: Dict[Tuple[str, str], List[Document]] = {}
     
     def __init__(self, vector_store_manager=None, db_name=None, collection_name=None):
         """
@@ -348,6 +349,13 @@ class RAGPipeline:
         """
         self.db_name = db_name or DB_NAME
         self.collection_name = collection_name or COLLECTION_NAME
+
+        # Validate required environment variables at runtime (not import-time)
+        if not google_api_key:
+            raise ValueError("GOOGLE_API_KEY environment variable not set!")
+        if not MONGO_URI and not vector_store_manager:
+            # If a VectorStoreManager is injected, it may already be configured/mocked.
+            raise ValueError("MONGO_URI environment variable not set!")
         
         if vector_store_manager:
             self.vector_store_manager = vector_store_manager
@@ -410,11 +418,61 @@ class RAGPipeline:
             )
             logger.info(f"Legacy semantic cache initialized with threshold={self.semantic_cache.threshold}, TTL={self.semantic_cache.ttl_seconds}s")
 
+        # --- Expose config + dependencies for LangGraph nodes (no module imports in nodes) ---
+        self.query_cache = query_cache
+        self.use_local_rewriter = USE_LOCAL_REWRITER
+        self.use_infinity_embeddings = USE_INFINITY_EMBEDDINGS
+        self.use_redis_cache = USE_REDIS_CACHE
+        self.use_intent_classification = USE_INTENT_CLASSIFICATION
+        self.use_faq_indexing = USE_FAQ_INDEXING
+        self.retriever_k = RETRIEVER_K
+        self.sparse_rerank_limit = SPARSE_RERANK_LIMIT
+        self.model_name = LLM_MODEL_NAME
+        self.generic_user_error_message = GENERIC_USER_ERROR_MESSAGE
+        self.no_kb_match_response = NO_KB_MATCH_RESPONSE
+        self.strong_ambiguous_tokens = _STRONG_AMBIGUOUS_TOKENS
+        self.strong_prefixes = _STRONG_PREFIXES
+        self.monitoring_enabled = MONITORING_ENABLED
+        # Monitoring helpers (no-op when monitoring is disabled)
+        self.track_llm_metrics = track_llm_metrics
+        self.estimate_gemini_cost = estimate_gemini_cost
+        self.check_spend_limit = check_spend_limit
+        self.record_spend = record_spend
+
+        # LangGraph compiled graph (lazy)
+        self._rag_graph = None
+
+    def _get_rag_graph(self):
+        """Lazy-build and compile the LangGraph state machine."""
+        if self._rag_graph is None:
+            nodes = build_nodes(self)
+            self._rag_graph = build_rag_graph(nodes)
+        return self._rag_graph
+
+    # --- LangGraph helper accessors (wrap existing lazy global getters) ---
+    def get_infinity_embeddings(self):
+        return _get_infinity_embeddings()
+
+    def get_redis_vector_cache(self):
+        return _get_redis_vector_cache()
+
+    def get_intent_classifier(self):
+        return _get_intent_classifier()
+
+    def get_suggested_question_cache(self):
+        return _get_suggested_question_cache()
+
     def _load_published_docs_from_mongo(self) -> List[Document]:
         """Safely load all published documents from MongoDB with fallback."""
         if not self.vector_store_manager.mongodb_available:
             logger.warning("MongoDB not available, skipping BM25 retriever setup")
             return []
+
+        cache_key = (self.db_name, self.collection_name)
+        cached = self.__class__._published_docs_cache.get(cache_key)
+        if cached is not None:
+            logger.debug(f"Using cached published docs corpus for BM25: {len(cached)} docs")
+            return cached
         
         try:
             cursor = self.vector_store_manager.collection.find(
@@ -430,6 +488,8 @@ class RAGPipeline:
                 for doc in cursor
             ]
             logger.info(f"Loaded {len(docs)} published documents from MongoDB for hybrid retrieval")
+            # Cache for future retriever refreshes
+            self.__class__._published_docs_cache[cache_key] = docs
             return docs
         except Exception as e:
             logger.error(f"Failed to load documents from MongoDB for BM25: {e}", exc_info=True)
@@ -770,6 +830,13 @@ class RAGPipeline:
         try:
             logger.info("Refreshing vector store and hybrid retrievers...")
 
+            # Invalidate BM25 corpus cache so changes in MongoDB are reflected
+            try:
+                cache_key = (self.db_name, self.collection_name)
+                self.__class__._published_docs_cache.pop(cache_key, None)
+            except Exception:
+                pass
+
             # Reload the vector store from disk (fast - no rebuild!)
             if hasattr(self, 'vector_store_manager') and self.vector_store_manager:
                 if self.vector_store_manager.reload_from_disk():
@@ -902,802 +969,103 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
             return query_text, False
 
     async def aquery(self, query_text: str, chat_history: List[Tuple[str, str]]) -> Tuple[str, List[Document], Dict[str, Any]]:
-        """
-        Async version of query method optimized for performance with caching.
-
-        Args:
-            query_text: The user's current query.
-            chat_history: A list of (human_message, ai_message) tuples representing the conversation history.
-
-        Returns:
-            A tuple containing:
-            - The generated answer (str)
-            - A list of source documents (List[Document])
-            - A metadata dict with: input_tokens, output_tokens, cost_usd, duration_seconds, cache_hit, cache_type
-        """
+        """Async query endpoint (non-stream). LangGraph handles routing/caching/retrieval; this handles generation + cache write-back."""
         start_time = time.time()
-        
-        # Sanitize query for prompt injection and other attacks
-        # Additional layer of protection even though Pydantic validators already sanitize
-        is_injection, pattern = detect_prompt_injection(query_text)
-        if is_injection:
-            logger.warning(f"Prompt injection detected in query (pattern: {pattern}). Sanitizing...")
-        query_text = sanitize_query_input(query_text)
-        
-        # Sanitize chat history messages as well
-        sanitized_history = []
-        for human_msg, ai_msg in chat_history:
-            # Ensure messages are strings before sanitization
-            # Handle cases where ai_msg might be an AIMessage object or other type
-            if ai_msg and not isinstance(ai_msg, str):
-                if hasattr(ai_msg, 'content'):
-                    ai_msg = str(ai_msg.content) if ai_msg.content else ""
-                else:
-                    ai_msg = str(ai_msg)
-            if human_msg and not isinstance(human_msg, str):
-                human_msg = str(human_msg)
-            
-            sanitized_human = sanitize_query_input(human_msg) if human_msg else human_msg
-            sanitized_ai = sanitize_query_input(ai_msg) if ai_msg else ai_msg
-            sanitized_history.append((sanitized_human, sanitized_ai))
-        
-        # Truncate chat history to prevent token overflow
-        truncated_history = self._truncate_chat_history(sanitized_history)
-        
-        # === STEP 1: Fast Path Normalization (Synonym Map) ===
-        # Zero-cost synonym mapping to ensure consistent cache keys
-        normalized_text = normalize_ltc_keywords(query_text)
-
-        # === STEP 1.5: Deterministic pronoun anchoring (anti-topic-drift) ===
-        router_input_text = self._anchor_pronouns_to_last_entity(normalized_text, truncated_history)
-        if router_input_text != normalized_text:
-            logger.debug(f"Pronoun anchoring: '{normalized_text}' -> '{router_input_text}'")
-
-        # === STEP 1.75: Entity expansion for router input (topic reinforcement) ===
-        # If anchoring injected a canonical entity (e.g., litvm), expand it BEFORE the router rewrite.
-        # This helps the router stay on-topic when rewriting ambiguous follow-ups.
-        router_input_expanded = expand_ltc_entities(router_input_text)
-        if router_input_expanded != router_input_text:
-            logger.debug(f"Entity expansion (router): '{router_input_text}' -> '{router_input_expanded}'")
-        router_input_text = router_input_expanded
-        
-        # === Hybrid History Routing: Fast Path + LLM Router ===
-        # 1. Fast Path: Check for OBVIOUS pronouns/prefixes (microseconds)
-        tokens = re.findall(r"[a-z0-9']+", router_input_text.lower())
-        has_obvious_pronouns = any(t in _STRONG_AMBIGUOUS_TOKENS for t in tokens)
-        has_obvious_prefix = any(router_input_text.lower().startswith(p) for p in _STRONG_PREFIXES)
-        
-        # Convert history to BaseMessage format for router
-        converted_history: List[BaseMessage] = []
-        effective_query = router_input_text
-        effective_history: List[Tuple[str, str]] = []
-        is_dependent = False
-        
-        if not truncated_history:
-            # No history, must be standalone
-            effective_query = router_input_text
-            effective_history = []
-        elif has_obvious_pronouns or has_obvious_prefix:
-            # Fast path: We KNOW we need history based on keywords
-            logger.debug("Fast path: Detected obvious history dependency via keywords")
-            effective_history = truncated_history
-            is_dependent = True
-            # Convert to BaseMessage for potential router rewrite
-            for human_msg, ai_msg in truncated_history:
-                converted_history.append(HumanMessage(content=human_msg))
-                if ai_msg:
-                    converted_history.append(AIMessage(content=ai_msg))
-            # Use router to rewrite query with context (now includes expanded entity terms)
-            effective_query, _ = await self._semantic_history_check(router_input_text, converted_history)
-        else:
-            # Ambiguous case: Ask the LLM Router (foolproof path)
-            # Convert to BaseMessage format
-            for human_msg, ai_msg in truncated_history:
-                converted_history.append(HumanMessage(content=human_msg))
-                if ai_msg:
-                    converted_history.append(AIMessage(content=ai_msg))
-            # Router decides if history is needed and rewrites if necessary (now includes expanded entity terms)
-            effective_query, is_dependent = await self._semantic_history_check(router_input_text, converted_history)
-            if is_dependent:
-                effective_history = truncated_history
-            else:
-                effective_history = []
-        
-        # === 0. Intent Classification (skip if follow-up question) ===
-        # Greetings, thanks, and FAQ matches are handled without LLM calls
-        if USE_INTENT_CLASSIFICATION and not is_dependent:
-            intent_classifier = _get_intent_classifier()
-            if intent_classifier:
-                from backend.services.intent_classifier import Intent
-                intent, matched_faq, static_response = intent_classifier.classify(query_text)
-                
-                if intent in (Intent.GREETING, Intent.THANKS):
-                    logger.info(f"Intent classified as {intent.value} - returning static response")
-                    if MONITORING_ENABLED:
-                        rag_cache_hits_total.labels(cache_type="intent_static").inc()
-                        rag_query_duration_seconds.labels(
-                            query_type="async",
-                            cache_hit="true"
-                        ).observe(time.time() - start_time)
-                    metadata = {
-                        "input_tokens": 0,
-                        "output_tokens": 0,
-                        "cost_usd": 0.0,
-                        "duration_seconds": time.time() - start_time,
-                        "cache_hit": True,
-                        "cache_type": f"intent_{intent.value}",
-                        "intent": intent.value,
-                    }
-                    return static_response, [], metadata
-                
-                elif intent == Intent.FAQ_MATCH and matched_faq:
-                    # Try to get cached response for the matched FAQ question
-                    suggested_cache = _get_suggested_question_cache()
-                    if suggested_cache:
-                        try:
-                            cached_result = await suggested_cache.get(matched_faq)
-                            if cached_result:
-                                answer, sources = cached_result
-                                # Skip entries that only contain the generic error message
-                                if answer.strip() == GENERIC_USER_ERROR_MESSAGE:
-                                    logger.warning(
-                                        "FAQ cache entry contains generic error message; "
-                                        f"treating as cache miss for matched FAQ: '{matched_faq[:50]}...'"
-                                    )
-                                else:
-                                    logger.info(
-                                        f"FAQ match cache HIT: '{query_text[:30]}...' -> '{matched_faq[:30]}...'"
-                                    )
-                                    if MONITORING_ENABLED:
-                                        rag_cache_hits_total.labels(cache_type="intent_faq").inc()
-                                        rag_query_duration_seconds.labels(
-                                            query_type="async",
-                                            cache_hit="true"
-                                        ).observe(time.time() - start_time)
-                                    metadata = {
-                                        "input_tokens": 0,
-                                        "output_tokens": 0,
-                                        "cost_usd": 0.0,
-                                        "duration_seconds": time.time() - start_time,
-                                        "cache_hit": True,
-                                        "cache_type": "intent_faq_match",
-                                        "intent": "faq_match",
-                                        "matched_faq": matched_faq,
-                                    }
-                                    return answer, sources, metadata
-                        except Exception as e:
-                            logger.warning(f"FAQ cache lookup failed: {e}")
-                    # If cache miss, fall through to normal RAG
-                    logger.debug(f"FAQ match but cache miss, proceeding with RAG: {matched_faq[:50]}...")
-        
-        # === 1. Exact cache check (fastest, zero-cost) ===
-        # Check exact cache first - this is the fastest lookup
-        cached_result = query_cache.get(query_text, effective_history)
-        if cached_result:
-            logger.debug(f"Cache hit for query: '{query_text}'")
-            if MONITORING_ENABLED:
-                rag_cache_hits_total.labels(cache_type="query").inc()
-                rag_query_duration_seconds.labels(
-                    query_type="async",
-                    cache_hit="true"
-                ).observe(time.time() - start_time)
-            # Return cached result with metadata indicating cache hit
-            answer, published_sources = cached_result
-            metadata = {
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "cost_usd": 0.0,
-                "duration_seconds": time.time() - start_time,
-                "cache_hit": True,
-                "cache_type": "exact",
-            }
-            return answer, published_sources, metadata
-        
-        # Cache miss for exact cache
-        if MONITORING_ENABLED:
-            rag_cache_misses_total.labels(cache_type="query").inc()
-
         try:
-            # Convert chat_history to Langchain's BaseMessage format (needed for retrieval)
-            converted_chat_history: List[BaseMessage] = []
-            for human_msg, ai_msg in effective_history:
-                converted_chat_history.append(HumanMessage(content=human_msg))
-                if ai_msg:
-                    converted_chat_history.append(AIMessage(content=ai_msg))
+            graph = self._get_rag_graph()
+            state = await graph.ainvoke({"raw_query": query_text, "chat_history_pairs": chat_history, "metadata": {}})
+            metadata: Dict[str, Any] = state.get("metadata") or {}
 
-            # === 2. Query Rewriting Complete: effective_query is now the standalone query ===
-            # The semantic router has already rewritten the query if needed.
-            # Use effective_query (the rewritten standalone query) for semantic caching.
-            # This allows different conversation paths to hit the same cache entry!
-            rewritten_query = effective_query
-            
-            # Optional: Apply local rewriter if enabled and not already rewritten by semantic router
-            if USE_LOCAL_REWRITER and not is_dependent and effective_history:
-                # Only use local rewriter if we have history but semantic router didn't rewrite
-                router = _get_inference_router()
-                if router:
-                    rewrite_start = time.time()
-                    try:
-                        local_rewritten = await router.rewrite(query_text, effective_history)
-                        if MONITORING_ENABLED:
-                            rag_query_rewrite_duration_seconds.observe(time.time() - rewrite_start)
-                        if local_rewritten == "NO_SEARCH_NEEDED":
-                            # Non-search query (greeting, thanks, etc.)
-                            metadata = {
-                                "input_tokens": 0,
-                                "output_tokens": 0,
-                                "cost_usd": 0.0,
-                                "duration_seconds": time.time() - start_time,
-                                "cache_hit": False,
-                                "cache_type": None,
-                                "rewritten_query": "NO_SEARCH_NEEDED",
-                            }
-                            return "I understand. Is there anything else you'd like to know about Litecoin?", [], metadata
-                        rewritten_query = local_rewritten
-                        logger.debug(f"Local rewriter: '{query_text}' -> '{rewritten_query}'")
-                    except Exception as e:
-                        if MONITORING_ENABLED:
-                            rag_query_rewrite_duration_seconds.observe(time.time() - rewrite_start)
-                        logger.warning(f"Local rewriter failed, using effective_query: {e}")
-                        rewritten_query = effective_query
+            # Early return (intent/static or cache hits)
+            if state.get("early_answer") is not None:
+                metadata.setdefault("duration_seconds", time.time() - start_time)
+                return state.get("early_answer") or "", state.get("early_sources") or [], metadata
 
-            # === STEP 2.5: Post-rewrite normalization + entity expansion (retrieval recall) ===
-            # Apply after router/local rewrite so follow-ups like "who's working on it?"
-            # become "who is working on litvm ..." and get LitVM expansion terms appended.
-            rewritten_normalized = normalize_ltc_keywords(rewritten_query)
-            rewritten_expanded = expand_ltc_entities(rewritten_normalized)
-            if rewritten_expanded != rewritten_query:
-                logger.debug(f"Post-rewrite expansion: '{rewritten_query}' -> '{rewritten_expanded}'")
-            rewritten_query = rewritten_expanded.strip()
-
-            # === 3. Generate embedding ONCE for rewritten standalone query ===
-            # This is the key optimization: cache based on the standalone query vector,
-            # allowing different conversation paths ("What is MWEB?" vs "How does it work?" -> "How does MWEB work?")
-            # to hit the same cache entry.
-            
-            # Normalize the query (lowercase and strip) but preserve semantic meaning
-            # Don't remove punctuation as it can be semantically important for embeddings
-            # The embedding model should handle punctuation naturally
-            rewritten_query = rewritten_query.strip()
-            
-            # Log the query being embedded for debugging
-            logger.debug(f"Embedding query: '{rewritten_query}' (original: '{query_text}')")
-            
-            query_vector = None
-            query_sparse = None
-            
-            if USE_REDIS_CACHE or USE_INFINITY_EMBEDDINGS:
-                infinity = _get_infinity_embeddings()
-                if infinity:
-                    embed_start = time.time()
-                    try:
-                        # Generate embedding for the REWRITTEN standalone query
-                        # Now embedding "litecoin mweb usage" instead of "How do I use MWEB?"
-                        query_vector, query_sparse = await infinity.embed_query(rewritten_query)
-                        
-                        # Validate query vector dimension
-                        if query_vector:
-                            actual_dim = len(query_vector)
-                            expected_dim = infinity.dimension
-                            if actual_dim != expected_dim:
-                                logger.error(
-                                    f"Query vector dimension mismatch: got {actual_dim}, expected {expected_dim}. "
-                                    f"Query: '{rewritten_query}'. This will cause search failures!"
-                                )
-                            else:
-                                logger.debug(f"Query vector dimension OK: {actual_dim}D for query: '{rewritten_query[:50]}...'")
-                        
-                        if MONITORING_ENABLED:
-                            rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
-                        if query_sparse:
-                            logger.info(f"✅ Query sparse embedding received: {len(query_sparse)} terms (sample: {list(query_sparse.items())[:3]})")
-                        else:
-                            logger.debug(f"Query sparse embedding: None (model may not support sparse)")
-                    except Exception as e:
-                        if MONITORING_ENABLED:
-                            rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
-                        logger.warning(f"Infinity embedding failed: {e}", exc_info=True)
-            
-            # === 4. Semantic cache check (Redis Vector Cache) ===
-            # Check Redis cache with rewritten query vector.
-            # This is the unified semantic cache provider when Redis is enabled.
-            # We skip legacy semantic cache when Redis is enabled to avoid redundancy.
-            if USE_REDIS_CACHE and query_vector:
-                redis_cache = _get_redis_vector_cache()
-                if redis_cache:
-                    try:
-                        redis_result = await redis_cache.get(query_vector)
-                        if redis_result:
-                            answer, sources_data = redis_result
-                            # Reconstruct Document objects from cached data
-                            cached_sources = []
-                            for src in sources_data:
-                                if isinstance(src, dict):
-                                    cached_sources.append(Document(
-                                        page_content=src.get("page_content", ""),
-                                        metadata=src.get("metadata", {})
-                                    ))
-                                elif isinstance(src, Document):
-                                    cached_sources.append(src)
-                            
-                            logger.info(f"✅ Redis vector cache HIT for rewritten query: '{rewritten_query[:50]}...' (original: '{query_text[:30]}...')")
-                            if MONITORING_ENABLED:
-                                rag_cache_hits_total.labels(cache_type="redis_vector").inc()
-                                rag_query_duration_seconds.labels(
-                                    query_type="async",
-                                    cache_hit="true"
-                                ).observe(time.time() - start_time)
-                            metadata = {
-                                "input_tokens": 0,
-                                "output_tokens": 0,
-                                "cost_usd": 0.0,
-                                "duration_seconds": time.time() - start_time,
-                                "cache_hit": True,
-                                "cache_type": "redis_vector",
-                                "rewritten_query": rewritten_query if rewritten_query != query_text else None,
-                            }
-                            return answer, cached_sources, metadata
-                    except Exception as e:
-                        logger.warning(f"Redis cache lookup failed: {e}")
-            
-            # === 5. Fallback: Legacy semantic cache (only if Redis not enabled) ===
-            # Only use legacy semantic cache if Redis is not enabled
-            if self.semantic_cache and not USE_REDIS_CACHE:
-                cached_result = self.semantic_cache.get(rewritten_query, [])  # Use rewritten query, no history
-                if cached_result:
-                    answer, published_sources = cached_result
-                    logger.info(f"Legacy semantic cache HIT for rewritten query: '{rewritten_query[:50]}...'")
-                    if MONITORING_ENABLED:
-                        rag_cache_hits_total.labels(cache_type="semantic").inc()
-                        rag_query_duration_seconds.labels(
-                            query_type="async",
-                            cache_hit="true"
-                        ).observe(time.time() - start_time)
-                    metadata = {
-                        "input_tokens": 0,
-                        "output_tokens": 0,
-                        "cost_usd": 0.0,
-                        "duration_seconds": time.time() - start_time,
-                        "cache_hit": True,
-                        "cache_type": "semantic",
-                        "rewritten_query": rewritten_query if rewritten_query != query_text else None,
-                    }
-                    return answer, published_sources, metadata
-
-            # === 6. RAG FALLBACK (The expensive part) ===
-            # === UNIFIED HYBRID + HISTORY-AWARE RETRIEVAL ===
-            # First, do a quick retrieval check to see if we have published sources
-            retrieval_start = time.time()
-            # Use effective_query (from semantic router) or rewritten_query (from local rewriter)
-            retrieval_query = rewritten_query
-            # Initialize context_docs to ensure it's always defined
-            context_docs = []
-            retrieval_failed = False
-            
-            # When using Infinity embeddings with 1024-dim index, use HYBRID retrieval
-            # Combines: 1) Infinity vector search (semantic) + 2) BM25 keyword search
-            if USE_INFINITY_EMBEDDINGS and query_vector is not None:
-                vector_docs = []
-                bm25_docs = []
-                try:
-                    # Helper functions for parallel execution
-                    def run_vector_search():
-                        """Run vector search synchronously."""
-                        return self.vector_store_manager.vector_store.similarity_search_with_score_by_vector(
-                            query_vector, 
-                            k=RETRIEVER_K * 2  # Retrieve more candidates for better filtering
-                        )
-                    
-                    def run_bm25_search():
-                        """Run BM25 search synchronously."""
-                        if hasattr(self, 'bm25_retriever') and self.bm25_retriever:
-                            # Temporarily increase k for BM25 to get better coverage
-                            original_k = self.bm25_retriever.k
-                            self.bm25_retriever.k = RETRIEVER_K * 2
-                            try:
-                                return self.bm25_retriever.invoke(retrieval_query)
-                            finally:
-                                self.bm25_retriever.k = original_k  # Restore original
-                        return []
-                    
-                    # 1. & 2. Run vector and BM25 searches in parallel
-                    search_start = time.time()
-                    vector_task = asyncio.to_thread(run_vector_search)
-                    bm25_task = asyncio.to_thread(run_bm25_search) if hasattr(self, 'bm25_retriever') and self.bm25_retriever else None
-                    
-                    if bm25_task:
-                        vector_results, bm25_docs = await asyncio.gather(vector_task, bm25_task)
-                        search_duration = time.time() - search_start
-                        if MONITORING_ENABLED:
-                            # Both searches ran in parallel, so duration is the same for both
-                            rag_vector_search_duration_seconds.observe(search_duration)
-                            rag_bm25_search_duration_seconds.observe(search_duration)
-                    else:
-                        vector_results = await vector_task
-                        bm25_docs = []
-                        search_duration = time.time() - search_start
-                        if MONITORING_ENABLED:
-                            rag_vector_search_duration_seconds.observe(search_duration)
-                    
-                    # Filter vector results by similarity threshold (cosine similarity >= 0.28 for BGE-M3)
-                    # Lowered from 0.3 to 0.28 to include LitVM and other technical documents with slightly lower semantic similarity
-                    MIN_SIMILARITY_THRESHOLD = float(os.getenv("MIN_VECTOR_SIMILARITY", "0.28"))
-                    vector_docs = [doc for doc, score in vector_results if score >= MIN_SIMILARITY_THRESHOLD]
-                    
-                    if len(vector_docs) < RETRIEVER_K:
-                        # If filtering removed too many, use top K anyway
-                        vector_docs = [doc for doc, _ in vector_results[:RETRIEVER_K]]
-                    
-                    logger.info(f"Infinity vector search: {len(vector_results)} candidates → {len(vector_docs)} above threshold {MIN_SIMILARITY_THRESHOLD}")
-                    if vector_results:
-                        logger.debug(f"   Top similarity score: {vector_results[0][1]:.3f}, Bottom: {vector_results[-1][1]:.3f}")
-                        # Log top results for debugging
-                        logger.debug(f"   Query: '{rewritten_query}'")
-                        for i, (doc, score) in enumerate(vector_results[:3]):
-                            preview = doc.page_content[:100].replace('\n', ' ')
-                            logger.debug(f"   Result {i+1} (score={score:.3f}): {preview}...")
-                    
-                    if bm25_docs:
-                        logger.debug(f"BM25 keyword search returned {len(bm25_docs)} documents")
-                    elif hasattr(self, 'bm25_retriever') and self.bm25_retriever:
-                        logger.debug("BM25 keyword search returned 0 documents")
-                except Exception as bm25_error:
-                    logger.warning(f"Parallel search failed: {bm25_error}")
-                    # Fallback to sequential execution
-                    try:
-                        vector_results = self.vector_store_manager.vector_store.similarity_search_with_score_by_vector(
-                            query_vector, 
-                            k=RETRIEVER_K * 2
-                        )
-                        MIN_SIMILARITY_THRESHOLD = float(os.getenv("MIN_VECTOR_SIMILARITY", "0.3"))
-                        vector_docs = [doc for doc, score in vector_results if score >= MIN_SIMILARITY_THRESHOLD]
-                        if len(vector_docs) < RETRIEVER_K:
-                            vector_docs = [doc for doc, _ in vector_results[:RETRIEVER_K]]
-                        bm25_docs = []
-                        if hasattr(self, 'bm25_retriever') and self.bm25_retriever:
-                            original_k = self.bm25_retriever.k
-                            self.bm25_retriever.k = RETRIEVER_K * 2
-                            bm25_docs = self.bm25_retriever.invoke(retrieval_query)
-                            self.bm25_retriever.k = original_k
-                    except Exception as fallback_error:
-                        logger.error(f"Fallback search also failed: {fallback_error}")
-                        vector_docs = []
-                        bm25_docs = []
-                
-                # 3. Merge and deduplicate results with better priority logic
-                # This is outside the try block so exceptions here don't lose the retrieved documents
-                seen_contents = set()
-                candidate_docs = []
-                candidate_scores = {}  # Track which source (BM25 vs vector) for priority
-                
-                # Prioritize BM25 results (better for exact keyword matches)
-                for doc in bm25_docs:
-                    content_key = doc.page_content[:200]  # Use first 200 chars as key
-                    if content_key not in seen_contents:
-                        seen_contents.add(content_key)
-                        candidate_docs.append(doc)
-                        candidate_scores[id(doc)] = 'bm25'
-                
-                # Add vector results, avoiding duplicates
-                for doc in vector_docs:
-                    content_key = doc.page_content[:200]
-                    if content_key not in seen_contents:
-                        seen_contents.add(content_key)
-                        candidate_docs.append(doc)
-                        candidate_scores[id(doc)] = 'vector'
-                
-                logger.debug(f"Hybrid merge: {len(bm25_docs)} BM25 + {len(vector_docs)} vector → {len(candidate_docs)} unique candidates")
-                
-                # 4. Re-rank using sparse embeddings if available (BGE-M3)
-                # This is outside the main try block so exceptions here don't trigger full fallback
-                if query_sparse and infinity and len(candidate_docs) > 0:
-                    try:
-                        rerank_start = time.time()
-                        # Limit candidates for sparse re-ranking to save time (only embed top N)
-                        candidates_for_rerank = candidate_docs[:SPARSE_RERANK_LIMIT]
-                        logger.info(f"🔄 Sparse re-ranking: {len(candidates_for_rerank)}/{len(candidate_docs)} candidates (limited to top {SPARSE_RERANK_LIMIT}), query has {len(query_sparse)} sparse terms")
-                        # Generate sparse embeddings for candidate documents
-                        doc_texts = [doc.page_content[:8000] for doc in candidates_for_rerank]  # Truncate for TF-IDF
-                        _, doc_sparse_list = await infinity.embed_documents(doc_texts)
-                        
-                        # Compute sparse similarity scores
-                        doc_scores = []
-                        sparse_count = sum(1 for s in doc_sparse_list if s is not None)
-                        logger.info(f"   Generated {sparse_count}/{len(doc_sparse_list)} document sparse embeddings")
-                        
-                        for i, (doc, doc_sparse) in enumerate(zip(candidates_for_rerank, doc_sparse_list)):
-                            if doc_sparse:
-                                sparse_sim = infinity.sparse_similarity(query_sparse, doc_sparse)
-                                doc_scores.append((sparse_sim, i, doc))
-                            else:
-                                doc_scores.append((0.0, i, doc))
-                        
-                        # Sort by sparse similarity (highest first)
-                        doc_scores.sort(reverse=True, key=lambda x: x[0])
-                        # Take top RETRIEVER_K from re-ranked results, then add remaining candidates if needed
-                        reranked_docs = [doc for _, _, doc in doc_scores]
-                        # If we have fewer reranked docs than RETRIEVER_K, add remaining candidates
-                        if len(reranked_docs) < RETRIEVER_K and len(candidate_docs) > len(candidates_for_rerank):
-                            remaining_docs = [doc for doc in candidate_docs[SPARSE_RERANK_LIMIT:] if doc not in reranked_docs]
-                            reranked_docs.extend(remaining_docs[:RETRIEVER_K - len(reranked_docs)])
-                        context_docs = reranked_docs[:RETRIEVER_K]
-                        
-                        if MONITORING_ENABLED:
-                            rag_sparse_rerank_duration_seconds.observe(time.time() - rerank_start)
-                        
-                        logger.info(f"✅ Hybrid retrieval (Infinity + BM25 + Sparse) returned {len(context_docs)} documents")
-                        # Log top retrieved documents for debugging
-                        logger.debug(f"   Top {min(3, len(context_docs))} retrieved documents:")
-                        for i, doc in enumerate(context_docs[:3], 1):
-                            preview = doc.page_content[:150].replace('\n', ' ')
-                            title = doc.metadata.get('doc_title', doc.metadata.get('title', 'N/A'))
-                            logger.debug(f"   {i}. [{title}] {preview}...")
-                        if doc_scores:
-                            logger.info(f"   Top sparse similarity: {doc_scores[0][0]:.3f}")
-                    except Exception as sparse_error:
-                        if MONITORING_ENABLED and 'rerank_start' in locals():
-                            rag_sparse_rerank_duration_seconds.observe(time.time() - rerank_start)
-                        logger.warning(f"⚠️ Sparse re-ranking failed, using basic hybrid: {sparse_error}", exc_info=True)
-                        # Fallback to basic hybrid - use the candidate_docs we successfully retrieved
-                        context_docs = candidate_docs[:RETRIEVER_K]
-                else:
-                    context_docs = candidate_docs[:RETRIEVER_K]
-                    if not query_sparse:
-                        logger.debug(f"Hybrid retrieval (Infinity + BM25) - no sparse embeddings available")
-                    else:
-                        logger.debug(f"Hybrid retrieval (Infinity + BM25) returned {len(context_docs)} unique documents")
-                
-                # Only fall back to history-aware retriever if we got no results at all
-                if not context_docs:
-                    try:
-                        logger.warning("No documents retrieved from hybrid search, falling back to history-aware retriever")
-                        retrieval_failed = True
-                        # Prefer non-LLM retrieval to avoid topic drift from LLM-based history rephrasing.
-                        logger.debug(f"Fallback: Using hybrid retriever directly with rewritten query: {rewritten_query[:50]}...")
-                        context_docs = await self.hybrid_retriever.ainvoke(retrieval_query)
-                    except Exception as fallback_error:
-                        logger.error(f"Fallback retrieval also failed: {fallback_error}", exc_info=True)
-                        context_docs = []
-            else:
-                # Legacy path: use hybrid retriever directly.
-                # We already computed a standalone query (effective_query) and applied deterministic pronoun anchoring,
-                # so we avoid LLM-based history-aware rephrasing here (it can drift topics, e.g., LitVM -> MWEB).
-                try:
-                    logger.debug(f"Using hybrid retriever directly with rewritten query: {rewritten_query[:50]}...")
-                    context_docs = await self.hybrid_retriever.ainvoke(retrieval_query)
-                except Exception as e:
-                    logger.error(f"Legacy retrieval failed: {e}", exc_info=True)
-                    retrieval_failed = True
-                    context_docs = []
-            retrieval_duration = time.time() - retrieval_start
-
-            # === PARENT DOCUMENT PATTERN: Resolve synthetic questions ===
-            # If FAQ indexing is enabled, swap any synthetic question hits
-            # with their full-text parent chunks before sending to LLM
-            if USE_FAQ_INDEXING and context_docs:
-                synthetic_count = sum(1 for d in context_docs if d.metadata.get("is_synthetic", False))
-                if synthetic_count > 0:
-                    try:
-                        from backend.services.faq_generator import resolve_parents
-                        parent_chunks_map = self._load_parent_chunks_map()
-                        if parent_chunks_map:
-                            original_count = len(context_docs)
-                            context_docs = resolve_parents(context_docs, parent_chunks_map)
-                            logger.info(f"🔄 FAQ resolution: {original_count} docs ({synthetic_count} synthetic) → {len(context_docs)} resolved")
-                        else:
-                            logger.debug("Parent chunks map empty, skipping FAQ resolution")
-                    except Exception as resolve_error:
-                        logger.warning(f"FAQ resolution failed, using original docs: {resolve_error}")
-
-            # Filter out draft/unpublished documents from sources
-            published_sources = [
-                doc for doc in context_docs
-                if doc.metadata.get("status") == "published"
-            ]
+            context_docs: List[Document] = state.get("context_docs") or []
+            published_sources: List[Document] = state.get("published_sources") or []
+            retrieval_failed = bool(state.get("retrieval_failed", False))
 
             if not published_sources:
-                if MONITORING_ENABLED:
-                    rag_retrieval_duration_seconds.observe(retrieval_duration)
-                    rag_documents_retrieved_total.observe(0)
-                    total_duration = time.time() - start_time
-                    rag_query_duration_seconds.labels(
-                        query_type="async",
-                        cache_hit="false"
-                    ).observe(total_duration)
-                # Use generic error message if retrieval failed, otherwise use standard no-match message
-                response_message = GENERIC_USER_ERROR_MESSAGE if retrieval_failed else NO_KB_MATCH_RESPONSE
-                metadata = {
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                    "cost_usd": 0.0,
-                    "duration_seconds": time.time() - start_time,
-                    "cache_hit": False,
-                    "cache_type": None,
-                }
+                metadata.update(
+                    {
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "cost_usd": 0.0,
+                        "duration_seconds": time.time() - start_time,
+                        "cache_hit": False,
+                        "cache_type": None,
+                    }
+                )
+                response_message = self.generic_user_error_message if retrieval_failed else self.no_kb_match_response
                 return response_message, [], metadata
 
-            # Format context for token estimation (needed for spend limit check and metrics)
-            context_text = format_docs(context_docs)
+            converted_history: List[BaseMessage] = state.get("converted_history_messages") or []
+            sanitized_query = state.get("sanitized_query") or query_text
 
-            # Pre-flight spend limit check (before LLM API call)
-            if MONITORING_ENABLED:
-                try:
-                    # Estimate cost before making API call (include chat history in estimation)
-                    prompt_text = self._build_prompt_text_with_history(query_text, context_text, converted_chat_history)
-                    input_tokens_est, _ = self._estimate_token_usage(prompt_text, "")
-                    # Use max expected output tokens for worst-case estimation (2048 tokens)
-                    max_output_tokens = 2048
-                    estimated_cost = estimate_gemini_cost(
-                        input_tokens_est,
-                        max_output_tokens,
-                        LLM_MODEL_NAME,
-                    )
-                    # Check spend limit with 10% buffer
-                    allowed, error_msg, _ = await check_spend_limit(estimated_cost, LLM_MODEL_NAME)
-                    if not allowed:
-                        # Increment rejection counter
-                        if "daily" in error_msg.lower():
-                            llm_spend_limit_rejections_total.labels(limit_type="daily").inc()
-                        elif "hourly" in error_msg.lower():
-                            llm_spend_limit_rejections_total.labels(limit_type="hourly").inc()
-                        # Return user-friendly error message
-                        raise HTTPException(
-                            status_code=429,
-                            detail={
-                                "error": "spend_limit_exceeded",
-                                "message": "We've reached our daily usage limit. Please try again later.",
-                                "type": "daily" if "daily" in error_msg.lower() else "hourly"
-                            }
-                        )
-                except HTTPException:
-                    raise
-                except Exception as e:
-                    # Log error but allow request (graceful degradation)
-                    logger.warning(f"Error in spend limit check: {e}", exc_info=True)
-
-            # Generate answer using document_chain with already-retrieved context_docs.
-            # This avoids a second retrieval pass (rag_chain) that could re-introduce topic drift.
             llm_start = time.time()
-            
-            answer_result = await self.document_chain.ainvoke({
-                "input": query_text,
-                "context": context_docs,
-                "chat_history": converted_chat_history
-            })
-            # document_chain returns AIMessage directly
-            if hasattr(answer_result, "content"):
-                answer = answer_result.content
-            else:
-                answer = str(answer_result)
-            # Use the already-retrieved context_docs
-            context_docs_from_chain = context_docs
-            # Store result for token extraction
-            llm_result = answer_result
-            
+            answer_result = await self.document_chain.ainvoke(
+                {"input": sanitized_query, "context": context_docs, "chat_history": converted_history}
+            )
+            answer = answer_result.content if hasattr(answer_result, "content") else str(answer_result)
             llm_duration = time.time() - llm_start
-            if MONITORING_ENABLED:
-                rag_llm_generation_duration_seconds.observe(llm_duration)
-            if MONITORING_ENABLED:
-                rag_llm_generation_duration_seconds.observe(llm_duration)
 
-            # Filter published sources from chain result
-            published_sources = [
-                doc for doc in context_docs_from_chain
-                if doc.metadata.get("status") == "published"
-            ]
-            sources = published_sources
-
-            # Initialize token usage variables (needed for metadata dict)
-            input_tokens = 0
-            output_tokens = 0
-            estimated_cost = 0.0
-
-            # Track metrics
-            if MONITORING_ENABLED:
-                rag_retrieval_duration_seconds.observe(retrieval_duration)
-                rag_documents_retrieved_total.observe(len(published_sources))
-                total_duration = time.time() - start_time
-                rag_query_duration_seconds.labels(
-                    query_type="async",
-                    cache_hit="false"
-                ).observe(total_duration)
-                
-                # Extract actual token usage from LLM response, fallback to estimation
-                input_tokens, output_tokens = self._extract_token_usage_from_llm_response(llm_result)
+            # Token usage + cost
+            input_tokens, output_tokens = 0, 0
+            cost_usd = 0.0
+            if self.monitoring_enabled:
+                input_tokens, output_tokens = self._extract_token_usage_from_llm_response(answer_result)
                 if input_tokens == 0 and output_tokens == 0:
-                    # Fallback to estimation if metadata not available (reuse pre-flight estimation if available)
-                    prompt_text = self._build_prompt_text_with_history(query_text, context_text, converted_chat_history)
-                    input_tokens, output_tokens = self._estimate_token_usage(
-                        prompt_text,
-                        answer,
-                    )
-                    logger.debug("Using estimated token counts (metadata not available)")
-                else:
-                    logger.debug(f"Using actual token counts: input={input_tokens}, output={output_tokens}")
-                estimated_cost = estimate_gemini_cost(
-                    input_tokens,
-                    output_tokens,
-                    LLM_MODEL_NAME,
-                )
-                track_llm_metrics(
-                    model=LLM_MODEL_NAME,
+                    context_text = "\n\n".join(d.page_content for d in context_docs)
+                    prompt_text = self._build_prompt_text_with_history(sanitized_query, context_text, converted_history)
+                    input_tokens, output_tokens = self._estimate_token_usage(prompt_text, answer)
+                cost_usd = self.estimate_gemini_cost(input_tokens, output_tokens, self.model_name)
+                self.track_llm_metrics(
+                    model=self.model_name,
                     operation="generate",
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
-                    cost_usd=estimated_cost,
+                    cost_usd=cost_usd,
                     duration_seconds=llm_duration,
                     status="success",
                 )
-                
-                # Record actual spend in Redis
                 try:
-                    await record_spend(estimated_cost, input_tokens, output_tokens, LLM_MODEL_NAME)
+                    await self.record_spend(cost_usd, input_tokens, output_tokens, self.model_name)
                 except Exception as e:
-                    logger.warning(f"Error recording spend: {e}", exc_info=True)
+                    logger.warning("Error recording spend: %s", e, exc_info=True)
 
-            # Cache in BOTH systems (using the effective history we actually used for retrieval)
-            query_cache.set(query_text, effective_history, answer, published_sources)  # exact cache
-            
-            # === LOCAL RAG: Store in Redis Stack vector cache ===
-            # Cache using the rewritten standalone query vector (allows different conversation paths to reuse)
-            # We cache even with chat history, because we cache based on the rewritten standalone query
-            if USE_REDIS_CACHE and query_vector:
-                redis_cache = _get_redis_vector_cache()
+            # Cache write-back
+            effective_history = state.get("effective_history_pairs") or []
+            self.query_cache.set(query_text, effective_history, answer, published_sources)
+
+            query_vector = state.get("query_vector")
+            rewritten_query = state.get("rewritten_query_for_cache") or state.get("rewritten_query") or ""
+            if self.use_redis_cache and query_vector:
+                redis_cache = self.get_redis_vector_cache()
                 if redis_cache:
                     try:
-                        # Serialize sources for storage
-                        sources_data = [
-                            {"page_content": doc.page_content, "metadata": doc.metadata}
-                            for doc in published_sources
-                        ]
-                        await redis_cache.set(
-                            query_vector,
-                            rewritten_query,  # Always use rewritten standalone query for consistency
-                            answer,
-                            sources_data
-                        )
-                        logger.debug(f"Cached result in Redis using rewritten query: '{rewritten_query[:50]}...'")
+                        sources_data = [{"page_content": d.page_content, "metadata": d.metadata} for d in published_sources]
+                        await redis_cache.set(query_vector, rewritten_query, answer, sources_data)
                     except Exception as e:
-                        logger.warning(f"Redis cache storage failed: {e}")
-            
-            # Legacy semantic cache (only if Redis not enabled)
-            if self.semantic_cache and not USE_REDIS_CACHE:
-                # Use rewritten query for consistency (no history since it's already standalone)
+                        logger.warning("Redis cache storage failed: %s", e)
+            if self.semantic_cache and not self.use_redis_cache:
                 self.semantic_cache.set(rewritten_query, [], answer, published_sources)
 
-            # Build metadata dict
-            metadata = {
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "cost_usd": estimated_cost,
-                "duration_seconds": time.time() - start_time,
-                "cache_hit": False,
-                "cache_type": None,
-                "rewritten_query": rewritten_query if USE_LOCAL_REWRITER and rewritten_query != query_text else None,
-            }
-
+            metadata.update(
+                {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "cost_usd": cost_usd,
+                    "duration_seconds": time.time() - start_time,
+                    "cache_hit": False,
+                    "cache_type": None,
+                    "rewritten_query": rewritten_query if rewritten_query and rewritten_query != query_text else None,
+                }
+            )
             return answer, published_sources, metadata
-        except HTTPException as he:
-            # Re-raise HTTPExceptions (e.g., 429 for spend limits)
-            raise he
+        except HTTPException:
+            raise
         except Exception as e:
-            # Log full error details for debugging but don't expose to user
-            logger.error(f"Error during async RAG query execution: {e}", exc_info=True)
-            
-            if MONITORING_ENABLED:
-                total_duration = time.time() - start_time
-                rag_query_duration_seconds.labels(
-                    query_type="async",
-                    cache_hit="false"
-                ).observe(total_duration)
-                track_llm_metrics(
-                    model=LLM_MODEL_NAME,
-                    operation="generate",
-                    duration_seconds=total_duration,
-                    status="error",
-                )
-            
-            # Return generic error message without exposing internal details
+            logger.error("Error during async RAG query execution: %s", e, exc_info=True)
             metadata = {
                 "input_tokens": 0,
                 "output_tokens": 0,
@@ -1706,7 +1074,7 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                 "cache_hit": False,
                 "cache_type": None,
             }
-            return GENERIC_USER_ERROR_MESSAGE, [], metadata
+            return self.generic_user_error_message, [], metadata
 
     async def astream_query(self, query_text: str, chat_history: List[Tuple[str, str]]):
         """
@@ -1721,887 +1089,135 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
         """
         start_time = time.time()
         try:
-            # Sanitize query for prompt injection and other attacks
-            # Additional layer of protection even though Pydantic validators already sanitize
-            is_injection, pattern = detect_prompt_injection(query_text)
-            if is_injection:
-                logger.warning(f"Prompt injection detected in query (pattern: {pattern}). Sanitizing...")
-            query_text = sanitize_query_input(query_text)
-            
-            # Sanitize chat history messages as well
-            sanitized_history = []
-            for human_msg, ai_msg in chat_history:
-                sanitized_human = sanitize_query_input(human_msg) if human_msg else human_msg
-                sanitized_ai = sanitize_query_input(ai_msg) if ai_msg else ai_msg
-                sanitized_history.append((sanitized_human, sanitized_ai))
-            
-            # Truncate chat history to prevent token overflow
-            truncated_history = self._truncate_chat_history(sanitized_history)
-            
-            # === STEP 1: Fast Path Normalization (Synonym Map) ===
-            normalized_text = normalize_ltc_keywords(query_text)
+            graph = self._get_rag_graph()
+            state = await graph.ainvoke({"raw_query": query_text, "chat_history_pairs": chat_history, "metadata": {}})
+            metadata: Dict[str, Any] = state.get("metadata") or {}
 
-            # === STEP 1.5: Deterministic pronoun anchoring (anti-topic-drift) ===
-            router_input_text = self._anchor_pronouns_to_last_entity(normalized_text, truncated_history)
-            if router_input_text != normalized_text:
-                logger.debug(f"Pronoun anchoring (stream): '{normalized_text}' -> '{router_input_text}'")
-
-            # === STEP 1.75: Entity expansion for router input (topic reinforcement) ===
-            router_input_expanded = expand_ltc_entities(router_input_text)
-            if router_input_expanded != router_input_text:
-                logger.debug(f"Entity expansion (router, stream): '{router_input_text}' -> '{router_input_expanded}'")
-            router_input_text = router_input_expanded
-            
-            # === Hybrid History Routing: Fast Path + LLM Router ===
-            # 1. Fast Path: Check for OBVIOUS pronouns/prefixes (microseconds)
-            tokens = re.findall(r"[a-z0-9']+", router_input_text.lower())
-            has_obvious_pronouns = any(t in _STRONG_AMBIGUOUS_TOKENS for t in tokens)
-            has_obvious_prefix = any(router_input_text.lower().startswith(p) for p in _STRONG_PREFIXES)
-            
-            # Convert history to BaseMessage format for router
-            converted_history: List[BaseMessage] = []
-            effective_query = router_input_text
-            effective_history: List[Tuple[str, str]] = []
-            is_dependent = False
-            
-            if not truncated_history:
-                # No history, must be standalone
-                effective_query = router_input_text
-                effective_history = []
-            elif has_obvious_pronouns or has_obvious_prefix:
-                # Fast path: We KNOW we need history based on keywords
-                logger.debug("Fast path (stream): Detected obvious history dependency via keywords")
-                effective_history = truncated_history
-                is_dependent = True
-                # Convert to BaseMessage for potential router rewrite
-                for human_msg, ai_msg in truncated_history:
-                    converted_history.append(HumanMessage(content=human_msg))
-                    if ai_msg:
-                        converted_history.append(AIMessage(content=ai_msg))
-                # Use router to rewrite query with context (now includes expanded entity terms)
-                effective_query, _ = await self._semantic_history_check(router_input_text, converted_history)
-            else:
-                # Ambiguous case: Ask the LLM Router (foolproof path)
-                # Convert to BaseMessage format
-                for human_msg, ai_msg in truncated_history:
-                    converted_history.append(HumanMessage(content=human_msg))
-                    if ai_msg:
-                        converted_history.append(AIMessage(content=ai_msg))
-                # Router decides if history is needed and rewrites if necessary (now includes expanded entity terms)
-                effective_query, is_dependent = await self._semantic_history_check(router_input_text, converted_history)
-                if is_dependent:
-                    effective_history = truncated_history
-                else:
-                    effective_history = []
-            
-            # === 0. Intent Classification (skip if follow-up question) ===
-            # Greetings, thanks, and FAQ matches are handled without LLM calls
-            if USE_INTENT_CLASSIFICATION and not is_dependent:
-                intent_classifier = _get_intent_classifier()
-                if intent_classifier:
-                    from backend.services.intent_classifier import Intent
-                    intent, matched_faq, static_response = intent_classifier.classify(query_text)
-                    
-                    if intent in (Intent.GREETING, Intent.THANKS):
-                        logger.info(f"Intent classified as {intent.value} - returning static response (stream)")
-                        if MONITORING_ENABLED:
-                            rag_cache_hits_total.labels(cache_type="intent_static").inc()
-                            rag_query_duration_seconds.labels(
-                                query_type="stream",
-                                cache_hit="true"
-                            ).observe(time.time() - start_time)
-                        
-                        # Send empty sources
-                        yield {"type": "sources", "sources": []}
-                        
-                        # Stream static response
-                        for i, char in enumerate(static_response):
-                            yield {"type": "chunk", "content": char}
-                            if i % 10 == 0:
-                                await asyncio.sleep(0.001)
-                        
-                        metadata = {
-                            "input_tokens": 0,
-                            "output_tokens": 0,
-                            "cost_usd": 0.0,
-                            "duration_seconds": time.time() - start_time,
-                            "cache_hit": True,
-                            "cache_type": f"intent_{intent.value}",
-                            "intent": intent.value,
-                        }
-                        yield {"type": "metadata", "metadata": metadata}
-                        yield {"type": "complete", "from_cache": True}
-                        return
-                    
-                    elif intent == Intent.FAQ_MATCH and matched_faq:
-                        # Try to get cached response for the matched FAQ question
-                        suggested_cache = _get_suggested_question_cache()
-                        if suggested_cache:
-                            try:
-                                cached_result = await suggested_cache.get(matched_faq)
-                                if cached_result:
-                                    answer, sources = cached_result
-                                    # Skip entries that only contain the generic error message
-                                    if answer.strip() == GENERIC_USER_ERROR_MESSAGE:
-                                        logger.warning(
-                                            "FAQ cache entry contains generic error message (stream); "
-                                            f"treating as cache miss for matched FAQ: '{matched_faq[:50]}...'"
-                                        )
-                                    else:
-                                        logger.info(
-                                            "FAQ match cache HIT (stream): "
-                                            f"'{query_text[:30]}...' -> '{matched_faq[:30]}...'"
-                                        )
-                                        if MONITORING_ENABLED:
-                                            rag_cache_hits_total.labels(cache_type="intent_faq").inc()
-                                            rag_query_duration_seconds.labels(
-                                                query_type="stream",
-                                                cache_hit="true"
-                                            ).observe(time.time() - start_time)
-                                        
-                                        # Send sources first
-                                        yield {"type": "sources", "sources": sources}
-                                        
-                                        # Stream cached answer
-                                        for i, char in enumerate(answer):
-                                            yield {"type": "chunk", "content": char}
-                                            if i % 10 == 0:
-                                                await asyncio.sleep(0.001)
-                                        
-                                        metadata = {
-                                            "input_tokens": 0,
-                                            "output_tokens": 0,
-                                            "cost_usd": 0.0,
-                                            "duration_seconds": time.time() - start_time,
-                                            "cache_hit": True,
-                                            "cache_type": "intent_faq_match",
-                                            "intent": "faq_match",
-                                            "matched_faq": matched_faq,
-                                        }
-                                        yield {"type": "metadata", "metadata": metadata}
-                                        yield {"type": "complete", "from_cache": True}
-                                        return
-                            except Exception as e:
-                                logger.warning(f"FAQ cache lookup failed (stream): {e}")
-                        # If cache miss, fall through to normal RAG
-                        logger.debug(
-                            f"FAQ match but cache miss, proceeding with RAG (stream): {matched_faq[:50]}..."
-                        )
-            
-            # === 1. Exact cache check (fastest, zero-cost) ===
-            # Check exact cache first - this is the fastest lookup
-            cached_result = query_cache.get(query_text, effective_history)
-            if cached_result:
-                logger.debug(f"Cache hit for query: '{query_text}'")
-                cached_answer, cached_sources = cached_result
-                
-                # Track cache hit metrics
-                if MONITORING_ENABLED:
-                    rag_cache_hits_total.labels(cache_type="query").inc()
-                    rag_query_duration_seconds.labels(
-                        query_type="stream",
-                        cache_hit="true"
-                    ).observe(time.time() - start_time)
-
-                # Send sources first
-                yield {"type": "sources", "sources": cached_sources}
-
-                # Stream cached response character by character for consistent UX
-                for i, char in enumerate(cached_answer):
+            # Early returns (intent/static or cache hits)
+            if state.get("early_answer") is not None:
+                sources = state.get("early_sources") or []
+                yield {"type": "sources", "sources": sources}
+                answer_text = state.get("early_answer") or ""
+                for i, char in enumerate(answer_text):
                     yield {"type": "chunk", "content": char}
-                    # Small delay to control streaming speed
-                    if i % 10 == 0:  # Yield control every 10 characters
+                    if i % 10 == 0:
                         await asyncio.sleep(0.001)
-
-                # Yield metadata for cache hit
-                metadata = {
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                    "cost_usd": 0.0,
-                    "duration_seconds": time.time() - start_time,
-                    "cache_hit": True,
-                    "cache_type": "exact",
-                }
+                metadata.setdefault("duration_seconds", time.time() - start_time)
                 yield {"type": "metadata", "metadata": metadata}
-
-                # Signal completion with cache flag
                 yield {"type": "complete", "from_cache": True}
                 return
 
-            # Cache miss for exact cache
-            if MONITORING_ENABLED:
-                rag_cache_misses_total.labels(cache_type="query").inc()
+            context_docs: List[Document] = state.get("context_docs") or []
+            published_sources: List[Document] = state.get("published_sources") or []
+            retrieval_failed = bool(state.get("retrieval_failed", False))
 
-            # Convert chat_history to Langchain's BaseMessage format (needed for retrieval)
-            converted_chat_history: List[BaseMessage] = []
-            for human_msg, ai_msg in effective_history:
-                converted_chat_history.append(HumanMessage(content=human_msg))
-                if ai_msg:
-                    converted_chat_history.append(AIMessage(content=ai_msg))
-
-            # === 2. Query Rewriting Complete: effective_query is now the standalone query ===
-            # The semantic router has already rewritten the query if needed.
-            # Use effective_query (the rewritten standalone query) for semantic caching.
-            rewritten_query = effective_query
-            
-            # Optional: Apply local rewriter if enabled and not already rewritten by semantic router
-            if USE_LOCAL_REWRITER and not is_dependent and effective_history:
-                # Only use local rewriter if we have history but semantic router didn't rewrite
-                router = _get_inference_router()
-                if router:
-                    rewrite_start = time.time()
-                    try:
-                        local_rewritten = await router.rewrite(query_text, effective_history)
-                        if MONITORING_ENABLED:
-                            rag_query_rewrite_duration_seconds.observe(time.time() - rewrite_start)
-                        if local_rewritten == "NO_SEARCH_NEEDED":
-                            yield {"type": "sources", "sources": []}
-                            response = "I understand. Is there anything else you'd like to know about Litecoin?"
-                            for char in response:
-                                yield {"type": "chunk", "content": char}
-                            metadata = {
-                                "input_tokens": 0,
-                                "output_tokens": 0,
-                                "cost_usd": 0.0,
-                                "duration_seconds": time.time() - start_time,
-                                "cache_hit": False,
-                                "cache_type": None,
-                                "rewritten_query": "NO_SEARCH_NEEDED",
-                            }
-                            yield {"type": "metadata", "metadata": metadata}
-                            yield {"type": "complete", "from_cache": False}
-                            return
-                        rewritten_query = local_rewritten
-                        logger.debug(f"Local rewriter (stream): '{query_text}' -> '{rewritten_query}'")
-                    except Exception as e:
-                        if MONITORING_ENABLED:
-                            rag_query_rewrite_duration_seconds.observe(time.time() - rewrite_start)
-                        logger.warning(f"Local rewriter failed in stream, using effective_query: {e}")
-                        rewritten_query = effective_query
-
-            # === STEP 2.5: Post-rewrite normalization + entity expansion (retrieval recall) ===
-            rewritten_normalized = normalize_ltc_keywords(rewritten_query)
-            rewritten_expanded = expand_ltc_entities(rewritten_normalized)
-            if rewritten_expanded != rewritten_query:
-                logger.debug(f"Post-rewrite expansion (stream): '{rewritten_query}' -> '{rewritten_expanded}'")
-            rewritten_query = rewritten_expanded.strip()
-
-            # === 3. Generate embedding ONCE for rewritten standalone query ===
-            # This is the key optimization: cache based on the standalone query vector
-            
-            # Normalize the query (strip) but preserve semantic meaning
-            # Don't remove punctuation as it can be semantically important for embeddings
-            rewritten_query = rewritten_query.strip()
-            
-            # Log the query being embedded for debugging
-            logger.debug(f"Embedding query (stream): '{rewritten_query}' (original: '{query_text}')")
-            
-            query_vector = None
-            query_sparse = None
-            
-            if USE_REDIS_CACHE or USE_INFINITY_EMBEDDINGS:
-                infinity = _get_infinity_embeddings()
-                if infinity:
-                    embed_start = time.time()
-                    try:
-                        # Generate embedding for the REWRITTEN standalone query
-                        # Now embedding "litecoin mweb usage" instead of "How do I use MWEB?"
-                        query_vector, query_sparse = await infinity.embed_query(rewritten_query)
-                        
-                        # Validate query vector dimension
-                        if query_vector:
-                            actual_dim = len(query_vector)
-                            expected_dim = infinity.dimension
-                            if actual_dim != expected_dim:
-                                logger.error(
-                                    f"Query vector dimension mismatch (stream): got {actual_dim}, expected {expected_dim}. "
-                                    f"Query: '{rewritten_query}'. This will cause search failures!"
-                                )
-                            else:
-                                logger.debug(f"Query vector dimension OK (stream): {actual_dim}D for query: '{rewritten_query[:50]}...'")
-                        
-                        if MONITORING_ENABLED:
-                            rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
-                        if query_sparse:
-                            logger.info(f"✅ Query sparse embedding received (stream): {len(query_sparse)} terms (sample: {list(query_sparse.items())[:3]})")
-                        else:
-                            logger.debug(f"Query sparse embedding (stream): None (model may not support sparse)")
-                    except Exception as e:
-                        if MONITORING_ENABLED:
-                            rag_embedding_generation_duration_seconds.observe(time.time() - embed_start)
-                        logger.warning(f"Infinity embedding failed in stream: {e}", exc_info=True)
-            
-            # === 4. Semantic cache check (Redis Vector Cache) ===
-            # Check Redis cache with rewritten standalone query vector
-            if USE_REDIS_CACHE and query_vector:
-                redis_cache = _get_redis_vector_cache()
-                if redis_cache:
-                    try:
-                        redis_result = await redis_cache.get(query_vector)
-                        if redis_result:
-                            cached_answer, sources_data = redis_result
-                            # Reconstruct Document objects
-                            cached_sources = []
-                            for src in sources_data:
-                                if isinstance(src, dict):
-                                    cached_sources.append(Document(
-                                        page_content=src.get("page_content", ""),
-                                        metadata=src.get("metadata", {})
-                                    ))
-                                elif isinstance(src, Document):
-                                    cached_sources.append(src)
-                            
-                            logger.info(f"✅ Redis vector cache HIT for rewritten query (stream): '{rewritten_query[:50]}...' (original: '{query_text[:30]}...')")
-                            if MONITORING_ENABLED:
-                                rag_cache_hits_total.labels(cache_type="redis_vector").inc()
-                                rag_query_duration_seconds.labels(
-                                    query_type="stream",
-                                    cache_hit="true"
-                                ).observe(time.time() - start_time)
-                            
-                            yield {"type": "sources", "sources": cached_sources}
-                            for i, char in enumerate(cached_answer):
-                                yield {"type": "chunk", "content": char}
-                                if i % 10 == 0:
-                                    await asyncio.sleep(0.001)
-                            metadata = {
-                                "input_tokens": 0,
-                                "output_tokens": 0,
-                                "cost_usd": 0.0,
-                                "duration_seconds": time.time() - start_time,
-                                "cache_hit": True,
-                                "cache_type": "redis_vector",
-                                "rewritten_query": rewritten_query if rewritten_query != query_text else None,
-                            }
-                            yield {"type": "metadata", "metadata": metadata}
-                            yield {"type": "complete", "from_cache": True}
-                            return
-                    except Exception as e:
-                        logger.warning(f"Redis cache lookup failed in stream: {e}")
-
-            # === 6. RAG FALLBACK (The expensive part) ===
-                redis_cache = _get_redis_vector_cache()
-                if redis_cache:
-                    try:
-                        redis_result = await redis_cache.get(query_vector)
-                        if redis_result:
-                            cached_answer, sources_data = redis_result
-                            # Reconstruct Document objects
-                            cached_sources = []
-                            for src in sources_data:
-                                if isinstance(src, dict):
-                                    cached_sources.append(Document(
-                                        page_content=src.get("page_content", ""),
-                                        metadata=src.get("metadata", {})
-                                    ))
-                                elif isinstance(src, Document):
-                                    cached_sources.append(src)
-                            
-                            logger.info(f"Redis vector cache HIT (after rewrite, stream) for: {rewritten_query[:50]}...")
-                            if MONITORING_ENABLED:
-                                rag_cache_hits_total.labels(cache_type="redis_vector").inc()
-                                rag_query_duration_seconds.labels(
-                                    query_type="stream",
-                                    cache_hit="true"
-                                ).observe(time.time() - start_time)
-                            
-                            yield {"type": "sources", "sources": cached_sources}
-                            for i, char in enumerate(cached_answer):
-                                yield {"type": "chunk", "content": char}
-                                if i % 10 == 0:
-                                    await asyncio.sleep(0.001)
-                            metadata = {
-                                "input_tokens": 0,
-                                "output_tokens": 0,
-                                "cost_usd": 0.0,
-                                "duration_seconds": time.time() - start_time,
-                                "cache_hit": True,
-                                "cache_type": "redis_vector",
-                                "rewritten_query": rewritten_query,
-                            }
-                            yield {"type": "metadata", "metadata": metadata}
-                            yield {"type": "complete", "from_cache": True}
-                            return
-                    except Exception as e:
-                        logger.warning(f"Redis cache lookup for rewritten query failed in stream: {e}")
-
-            # === UNIFIED HYBRID + HISTORY-AWARE RETRIEVAL ===
-            retrieval_start = time.time()
-            # Use effective_query (from semantic router) or rewritten_query (from local rewriter)
-            retrieval_query = rewritten_query
-            # Initialize context_docs to ensure it's always defined
-            context_docs = []
-            retrieval_failed = False
-            
-            # When using Infinity embeddings with 1024-dim index, use HYBRID retrieval
-            # Combines: 1) Infinity vector search (semantic) + 2) BM25 keyword search
-            if USE_INFINITY_EMBEDDINGS and query_vector is not None:
-                vector_docs = []
-                bm25_docs = []
-                try:
-                    # Helper functions for parallel execution
-                    def run_vector_search():
-                        """Run vector search synchronously."""
-                        return self.vector_store_manager.vector_store.similarity_search_with_score_by_vector(
-                            query_vector, 
-                            k=RETRIEVER_K * 2  # Retrieve more candidates for better filtering
-                        )
-                    
-                    def run_bm25_search():
-                        """Run BM25 search synchronously."""
-                        if hasattr(self, 'bm25_retriever') and self.bm25_retriever:
-                            # Temporarily increase k for BM25 to get better coverage
-                            original_k = self.bm25_retriever.k
-                            self.bm25_retriever.k = RETRIEVER_K * 2
-                            try:
-                                return self.bm25_retriever.invoke(retrieval_query)
-                            finally:
-                                self.bm25_retriever.k = original_k  # Restore original
-                        return []
-                    
-                    # 1. & 2. Run vector and BM25 searches in parallel
-                    search_start = time.time()
-                    vector_task = asyncio.to_thread(run_vector_search)
-                    bm25_task = asyncio.to_thread(run_bm25_search) if hasattr(self, 'bm25_retriever') and self.bm25_retriever else None
-                    
-                    if bm25_task:
-                        vector_results, bm25_docs = await asyncio.gather(vector_task, bm25_task)
-                        search_duration = time.time() - search_start
-                        if MONITORING_ENABLED:
-                            # Both searches ran in parallel, so duration is the same for both
-                            rag_vector_search_duration_seconds.observe(search_duration)
-                            rag_bm25_search_duration_seconds.observe(search_duration)
-                    else:
-                        vector_results = await vector_task
-                        bm25_docs = []
-                        search_duration = time.time() - search_start
-                        if MONITORING_ENABLED:
-                            rag_vector_search_duration_seconds.observe(search_duration)
-                    
-                    # Filter vector results by similarity threshold (cosine similarity >= 0.28 for BGE-M3)
-                    # Lowered from 0.3 to 0.28 to include LitVM and other technical documents with slightly lower semantic similarity
-                    MIN_SIMILARITY_THRESHOLD = float(os.getenv("MIN_VECTOR_SIMILARITY", "0.28"))
-                    vector_docs = [doc for doc, score in vector_results if score >= MIN_SIMILARITY_THRESHOLD]
-                    
-                    if len(vector_docs) < RETRIEVER_K:
-                        # If filtering removed too many, use top K anyway
-                        vector_docs = [doc for doc, _ in vector_results[:RETRIEVER_K]]
-                    
-                    logger.info(f"Infinity vector search (stream): {len(vector_results)} candidates → {len(vector_docs)} above threshold {MIN_SIMILARITY_THRESHOLD}")
-                    if vector_results:
-                        logger.debug(f"   Top similarity score: {vector_results[0][1]:.3f}, Bottom: {vector_results[-1][1]:.3f}")
-                        # Log top results for debugging
-                        logger.debug(f"   Query (stream): '{rewritten_query}'")
-                        for i, (doc, score) in enumerate(vector_results[:3]):
-                            preview = doc.page_content[:100].replace('\n', ' ')
-                            logger.debug(f"   Result {i+1} (score={score:.3f}): {preview}...")
-                    
-                    if bm25_docs:
-                        logger.debug(f"BM25 keyword search (stream) returned {len(bm25_docs)} documents")
-                    elif hasattr(self, 'bm25_retriever') and self.bm25_retriever:
-                        logger.debug("BM25 keyword search (stream) returned 0 documents")
-                except Exception as bm25_error:
-                    logger.warning(f"Parallel search failed in stream: {bm25_error}")
-                    # Fallback to sequential execution
-                    try:
-                        vector_results = self.vector_store_manager.vector_store.similarity_search_with_score_by_vector(
-                            query_vector, 
-                            k=RETRIEVER_K * 2
-                        )
-                        MIN_SIMILARITY_THRESHOLD = float(os.getenv("MIN_VECTOR_SIMILARITY", "0.3"))
-                        vector_docs = [doc for doc, score in vector_results if score >= MIN_SIMILARITY_THRESHOLD]
-                        if len(vector_docs) < RETRIEVER_K:
-                            vector_docs = [doc for doc, _ in vector_results[:RETRIEVER_K]]
-                        bm25_docs = []
-                        if hasattr(self, 'bm25_retriever') and self.bm25_retriever:
-                            original_k = self.bm25_retriever.k
-                            self.bm25_retriever.k = RETRIEVER_K * 2
-                            bm25_docs = self.bm25_retriever.invoke(retrieval_query)
-                            self.bm25_retriever.k = original_k
-                    except Exception as fallback_error:
-                        logger.error(f"Fallback search also failed in stream: {fallback_error}")
-                        vector_docs = []
-                        bm25_docs = []
-                
-                # 3. Merge and deduplicate results with better priority logic
-                # This is outside the try block so exceptions here don't lose the retrieved documents
-                seen_contents = set()
-                candidate_docs = []
-                candidate_scores = {}  # Track which source (BM25 vs vector) for priority
-                
-                # Prioritize BM25 results (better for exact keyword matches)
-                for doc in bm25_docs:
-                    content_key = doc.page_content[:200]  # Use first 200 chars as key
-                    if content_key not in seen_contents:
-                        seen_contents.add(content_key)
-                        candidate_docs.append(doc)
-                        candidate_scores[id(doc)] = 'bm25'
-                
-                # Add vector results, avoiding duplicates
-                for doc in vector_docs:
-                    content_key = doc.page_content[:200]
-                    if content_key not in seen_contents:
-                        seen_contents.add(content_key)
-                        candidate_docs.append(doc)
-                        candidate_scores[id(doc)] = 'vector'
-                
-                logger.debug(f"Hybrid merge (stream): {len(bm25_docs)} BM25 + {len(vector_docs)} vector → {len(candidate_docs)} unique candidates")
-                
-                # 4. Re-rank using sparse embeddings if available (BGE-M3)
-                # This is outside the main try block so exceptions here don't trigger full fallback
-                if query_sparse and infinity and len(candidate_docs) > 0:
-                    try:
-                        rerank_start = time.time()
-                        # Limit candidates for sparse re-ranking to save time (only embed top N)
-                        candidates_for_rerank = candidate_docs[:SPARSE_RERANK_LIMIT]
-                        logger.info(f"🔄 Sparse re-ranking (stream): {len(candidates_for_rerank)}/{len(candidate_docs)} candidates (limited to top {SPARSE_RERANK_LIMIT}), query has {len(query_sparse)} sparse terms")
-                        # Generate sparse embeddings for candidate documents
-                        doc_texts = [doc.page_content[:8000] for doc in candidates_for_rerank]  # Truncate for TF-IDF
-                        _, doc_sparse_list = await infinity.embed_documents(doc_texts)
-                        
-                        # Compute sparse similarity scores
-                        doc_scores = []
-                        sparse_count = sum(1 for s in doc_sparse_list if s is not None)
-                        logger.info(f"   Generated {sparse_count}/{len(doc_sparse_list)} document sparse embeddings (stream)")
-                        
-                        for i, (doc, doc_sparse) in enumerate(zip(candidates_for_rerank, doc_sparse_list)):
-                            if doc_sparse:
-                                sparse_sim = infinity.sparse_similarity(query_sparse, doc_sparse)
-                                doc_scores.append((sparse_sim, i, doc))
-                            else:
-                                doc_scores.append((0.0, i, doc))
-                        
-                        # Sort by sparse similarity (highest first)
-                        doc_scores.sort(reverse=True, key=lambda x: x[0])
-                        # Take top RETRIEVER_K from re-ranked results, then add remaining candidates if needed
-                        reranked_docs = [doc for _, _, doc in doc_scores]
-                        # If we have fewer reranked docs than RETRIEVER_K, add remaining candidates
-                        if len(reranked_docs) < RETRIEVER_K and len(candidate_docs) > len(candidates_for_rerank):
-                            remaining_docs = [doc for doc in candidate_docs[SPARSE_RERANK_LIMIT:] if doc not in reranked_docs]
-                            reranked_docs.extend(remaining_docs[:RETRIEVER_K - len(reranked_docs)])
-                        context_docs = reranked_docs[:RETRIEVER_K]
-                        
-                        if MONITORING_ENABLED:
-                            rag_sparse_rerank_duration_seconds.observe(time.time() - rerank_start)
-                        
-                        logger.info(f"✅ Hybrid retrieval (stream: Infinity + BM25 + Sparse) returned {len(context_docs)} documents")
-                        # Log top retrieved documents for debugging
-                        logger.debug(f"   Top {min(3, len(context_docs))} retrieved documents (stream):")
-                        for i, doc in enumerate(context_docs[:3], 1):
-                            preview = doc.page_content[:150].replace('\n', ' ')
-                            title = doc.metadata.get('doc_title', doc.metadata.get('title', 'N/A'))
-                            logger.debug(f"   {i}. [{title}] {preview}...")
-                        if doc_scores:
-                            logger.info(f"   Top sparse similarity (stream): {doc_scores[0][0]:.3f}")
-                    except Exception as sparse_error:
-                        if MONITORING_ENABLED and 'rerank_start' in locals():
-                            rag_sparse_rerank_duration_seconds.observe(time.time() - rerank_start)
-                        logger.warning(f"⚠️ Sparse re-ranking failed in stream, using basic hybrid: {sparse_error}", exc_info=True)
-                        # Fallback to basic hybrid - use the candidate_docs we successfully retrieved
-                        context_docs = candidate_docs[:RETRIEVER_K]
-                else:
-                    context_docs = candidate_docs[:RETRIEVER_K]
-                    if not query_sparse:
-                        logger.debug(f"Hybrid retrieval (stream: Infinity + BM25) - no sparse embeddings available")
-                    else:
-                        logger.debug(f"Hybrid retrieval (stream) returned {len(context_docs)} unique documents")
-                    
-                # Only fall back to history-aware retriever if we got no results at all
-                if not context_docs:
-                    try:
-                        logger.warning("No documents retrieved from hybrid search, falling back to history-aware retriever")
-                        retrieval_failed = True
-                        # Prefer non-LLM retrieval to avoid topic drift from LLM-based history rephrasing.
-                        logger.debug(
-                            f"Fallback (stream): Using hybrid retriever directly with rewritten query: {rewritten_query[:50]}..."
-                        )
-                        context_docs = await self.hybrid_retriever.ainvoke(retrieval_query)
-                    except Exception as fallback_error:
-                        logger.error(f"Fallback retrieval also failed in stream: {fallback_error}", exc_info=True)
-                        context_docs = []
-            else:
-                # Legacy path: use hybrid retriever directly.
-                # We already computed a standalone query and applied deterministic pronoun anchoring,
-                # so we avoid LLM-based history-aware rephrasing here (it can drift topics).
-                try:
-                    logger.debug(f"Using hybrid retriever directly with rewritten query (stream): {rewritten_query[:50]}...")
-                    context_docs = await self.hybrid_retriever.ainvoke(retrieval_query)
-                except Exception as e:
-                    logger.error(f"Legacy retrieval failed in stream: {e}", exc_info=True)
-                    retrieval_failed = True
-                    context_docs = []
-            retrieval_duration = time.time() - retrieval_start
-            
-            # === PARENT DOCUMENT PATTERN: Resolve synthetic questions ===
-            # If FAQ indexing is enabled, swap any synthetic question hits
-            # with their full-text parent chunks before sending to LLM
-            if USE_FAQ_INDEXING and context_docs:
-                synthetic_count = sum(1 for d in context_docs if d.metadata.get("is_synthetic", False))
-                if synthetic_count > 0:
-                    try:
-                        from backend.services.faq_generator import resolve_parents
-                        parent_chunks_map = self._load_parent_chunks_map()
-                        if parent_chunks_map:
-                            original_count = len(context_docs)
-                            context_docs = resolve_parents(context_docs, parent_chunks_map)
-                            logger.info(f"🔄 FAQ resolution (stream): {original_count} docs ({synthetic_count} synthetic) → {len(context_docs)} resolved")
-                        else:
-                            logger.debug("Parent chunks map empty, skipping FAQ resolution")
-                    except Exception as resolve_error:
-                        logger.warning(f"FAQ resolution failed, using original docs: {resolve_error}")
-            
-            # Filter published sources
-            published_sources = [
-                doc for doc in context_docs
-                if doc.metadata.get("status") == "published"
-            ]
-            
-            # Format context for token estimation (needed for metrics)
-            context_text = format_docs(context_docs)
-            
             if not published_sources:
-                if MONITORING_ENABLED:
-                    rag_retrieval_duration_seconds.observe(retrieval_duration)
-                    rag_documents_retrieved_total.observe(0)
-                    total_duration = time.time() - start_time
-                    rag_query_duration_seconds.labels(
-                        query_type="stream",
-                        cache_hit="false"
-                    ).observe(total_duration)
-                # Inform client that no sources were available
                 yield {"type": "sources", "sources": []}
-                # Use generic error message if retrieval failed, otherwise use standard no-match message
-                response_message = GENERIC_USER_ERROR_MESSAGE if retrieval_failed else NO_KB_MATCH_RESPONSE
+                response_message = self.generic_user_error_message if retrieval_failed else self.no_kb_match_response
                 yield {"type": "chunk", "content": response_message}
-                metadata = {
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                    "cost_usd": 0.0,
-                    "duration_seconds": time.time() - start_time,
-                    "cache_hit": False,
-                    "cache_type": None,
-                }
+                metadata.update(
+                    {
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "cost_usd": 0.0,
+                        "duration_seconds": time.time() - start_time,
+                        "cache_hit": False,
+                        "cache_type": None,
+                    }
+                )
                 yield {"type": "metadata", "metadata": metadata}
                 yield {"type": "complete", "from_cache": False, "no_kb_results": True}
                 return
-            
-            # Send sources immediately (low latency UX)
-            yield {"type": "sources", "sources": published_sources}
-            
-            # 2. Pre-flight spend limit check (before LLM API call)
-            if MONITORING_ENABLED:
-                try:
-                    # Estimate cost before making API call (use history for accurate estimation)
-                    prompt_text = self._build_prompt_text_with_history(
-                        query_text, context_text, converted_chat_history
-                    )
-                    input_tokens_est, _ = self._estimate_token_usage(prompt_text, "")
-                    # Use max expected output tokens for worst-case estimation (2048 tokens)
-                    max_output_tokens = 2048
-                    estimated_cost = estimate_gemini_cost(
-                        input_tokens_est,
-                        max_output_tokens,
-                        LLM_MODEL_NAME,
-                    )
-                    # Check spend limit with 10% buffer
-                    allowed, error_msg, _ = await check_spend_limit(estimated_cost, LLM_MODEL_NAME)
-                    if not allowed:
-                        # Increment rejection counter
-                        error_type = "daily" if "daily" in error_msg.lower() else "hourly"
-                        if error_type == "daily":
-                            llm_spend_limit_rejections_total.labels(limit_type="daily").inc()
-                        else:
-                            llm_spend_limit_rejections_total.labels(limit_type="hourly").inc()
-                        # Yield user-friendly error message and complete
-                        yield {
-                            "type": "error",
-                            "message": "We've reached our daily usage limit. Please try again later.",
-                            "error_type": error_type
-                        }
-                        yield {"type": "complete", "error": True}
-                        return
-                except HTTPException:
-                    # Re-raise HTTPExceptions from spend limit check
-                    raise
-                except Exception as e:
-                    # Log error but allow request (graceful degradation)
-                    logger.warning(f"Error in spend limit check: {e}", exc_info=True)
 
-            # 3. TRUE STREAMING GENERATION
+            # Send sources immediately (low-latency UX)
+            yield {"type": "sources", "sources": published_sources}
+
+            converted_history: List[BaseMessage] = state.get("converted_history_messages") or []
+            sanitized_query = state.get("sanitized_query") or query_text
+
             llm_start = time.time()
-            full_answer_accumulator = ""
-            answer_obj = None  # Store answer object for metadata extraction
-            
-            # When using Infinity embeddings, use document_chain directly with pre-retrieved docs
-            # This avoids the rag_chain's internal retrieval which would fail with placeholder embeddings
-            if USE_INFINITY_EMBEDDINGS and query_vector is not None:
-                # Use document_chain.astream() with already-retrieved context
-                async for chunk in self.document_chain.astream({
-                    "input": query_text,
-                    "context": context_docs,
-                    "chat_history": converted_chat_history
-                }):
-                    # document_chain yields AIMessageChunk directly
-                    content = ""
-                    if hasattr(chunk, "content"):
-                        answer_obj = chunk
-                        content = chunk.content
-                    elif isinstance(chunk, str):
-                        content = chunk
-                    
-                    if content:
-                        full_answer_accumulator += content
-                        yield {"type": "chunk", "content": content}
-            else:
-                # Legacy path: use document_chain directly with pre-retrieved docs.
-                # This avoids a second retrieval pass that could re-introduce topic drift.
-                async for chunk in self.document_chain.astream({
-                    "input": query_text,
-                    "context": context_docs,
-                    "chat_history": converted_chat_history
-                }):
-                    # document_chain yields AIMessageChunk directly
-                    content = ""
-                    if hasattr(chunk, "content"):
-                        answer_obj = chunk
-                        content = chunk.content
-                    elif isinstance(chunk, str):
-                        content = chunk
-                    
-                    if content:
-                        full_answer_accumulator += content
-                        yield {"type": "chunk", "content": content}
-            
+            full_answer = ""
+            answer_obj = None
+            async for chunk in self.document_chain.astream(
+                {"input": sanitized_query, "context": context_docs, "chat_history": converted_history}
+            ):
+                content = ""
+                if hasattr(chunk, "content"):
+                    answer_obj = chunk
+                    content = chunk.content
+                elif isinstance(chunk, str):
+                    content = chunk
+                if content:
+                    full_answer += content
+                    yield {"type": "chunk", "content": content}
+
             llm_duration = time.time() - llm_start
             total_duration = time.time() - start_time
 
-            # 4. POST-PROCESSING (Metrics & Cache)
-            # Initialize variables for metadata
-            input_tokens = 0
-            output_tokens = 0
-            estimated_cost = 0.0
-            
-            if MONITORING_ENABLED:
-                # Extract actual token usage from answer object if available, otherwise estimate
+            input_tokens, output_tokens = 0, 0
+            cost_usd = 0.0
+            if self.monitoring_enabled:
                 if answer_obj:
                     input_tokens, output_tokens = self._extract_token_usage_from_llm_response(answer_obj)
-                    if input_tokens == 0 and output_tokens == 0:
-                        # Fallback to estimation if metadata not available
-                        prompt_text = self._build_prompt_text_with_history(
-                            query_text, context_text, converted_chat_history
-                        )
-                        input_tokens, output_tokens = self._estimate_token_usage(
-                            prompt_text,
-                            full_answer_accumulator
-                        )
-                        logger.debug("Using estimated token counts (metadata not available)")
-                    else:
-                        logger.debug(f"Using actual token counts: input={input_tokens}, output={output_tokens}")
-                else:
-                    # Fallback to estimation if no answer object
-                    prompt_text = self._build_prompt_text_with_history(
-                        query_text, context_text, converted_chat_history
-                    )
-                    input_tokens, output_tokens = self._estimate_token_usage(
-                        prompt_text,
-                        full_answer_accumulator
-                    )
-                    logger.debug("Using estimated token counts (no answer object)")
-                
-                estimated_cost = estimate_gemini_cost(
-                    input_tokens,
-                    output_tokens,
-                    LLM_MODEL_NAME,
-                )
-                track_llm_metrics(
-                    model=LLM_MODEL_NAME,
+                if input_tokens == 0 and output_tokens == 0:
+                    context_text = "\n\n".join(d.page_content for d in context_docs)
+                    prompt_text = self._build_prompt_text_with_history(sanitized_query, context_text, converted_history)
+                    input_tokens, output_tokens = self._estimate_token_usage(prompt_text, full_answer)
+                cost_usd = self.estimate_gemini_cost(input_tokens, output_tokens, self.model_name)
+                self.track_llm_metrics(
+                    model=self.model_name,
                     operation="generate",
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
-                    cost_usd=estimated_cost,
+                    cost_usd=cost_usd,
                     duration_seconds=llm_duration,
                     status="success",
                 )
-                
-                # Record actual spend in Redis
                 try:
-                    await record_spend(estimated_cost, input_tokens, output_tokens, LLM_MODEL_NAME)
+                    await self.record_spend(cost_usd, input_tokens, output_tokens, self.model_name)
                 except Exception as e:
-                    logger.warning(f"Error recording spend: {e}", exc_info=True)
-                
-                # Track retrieval metrics
-                rag_retrieval_duration_seconds.observe(retrieval_duration)
-                rag_documents_retrieved_total.observe(len(published_sources))
-                rag_query_duration_seconds.labels(
-                    query_type="stream",
-                    cache_hit="false"
-                ).observe(total_duration)
-            
-            # Cache in BOTH systems (using the effective history we actually used for retrieval)
-            query_cache.set(query_text, effective_history, full_answer_accumulator, published_sources)  # exact cache
-            
-            # === LOCAL RAG: Store in Redis Stack vector cache (streaming) ===
-            # Cache using the rewritten standalone query vector (allows different conversation paths to reuse)
-            # We cache even with chat history, because we cache based on the rewritten standalone query
-            if USE_REDIS_CACHE and query_vector:
-                redis_cache = _get_redis_vector_cache()
+                    logger.warning("Error recording spend: %s", e, exc_info=True)
+
+            # Cache write-back
+            effective_history = state.get("effective_history_pairs") or []
+            self.query_cache.set(query_text, effective_history, full_answer, published_sources)
+
+            query_vector = state.get("query_vector")
+            rewritten_query = state.get("rewritten_query_for_cache") or state.get("rewritten_query") or ""
+            if self.use_redis_cache and query_vector:
+                redis_cache = self.get_redis_vector_cache()
                 if redis_cache:
                     try:
-                        sources_data = [
-                            {"page_content": doc.page_content, "metadata": doc.metadata}
-                            for doc in published_sources
-                        ]
-                        await redis_cache.set(
-                            query_vector,
-                            rewritten_query,  # Always use rewritten standalone query for consistency
-                            full_answer_accumulator,
-                            sources_data
-                        )
-                        logger.debug(f"Cached result in Redis using rewritten query (stream): '{rewritten_query[:50]}...'")
+                        sources_data = [{"page_content": d.page_content, "metadata": d.metadata} for d in published_sources]
+                        await redis_cache.set(query_vector, rewritten_query, full_answer, sources_data)
                     except Exception as e:
-                        logger.warning(f"Redis cache storage failed in stream: {e}")
-            
-            # Legacy semantic cache (only if Redis not enabled)
-            if self.semantic_cache and not USE_REDIS_CACHE:
-                # Use rewritten query for consistency (no history since it's already standalone)
-                self.semantic_cache.set(rewritten_query, [], full_answer_accumulator, published_sources)
+                        logger.warning("Redis cache storage failed in stream: %s", e)
+            if self.semantic_cache and not self.use_redis_cache:
+                self.semantic_cache.set(rewritten_query, [], full_answer, published_sources)
 
-            # Yield metadata before completion
-            metadata = {
-                "input_tokens": input_tokens if MONITORING_ENABLED else 0,
-                "output_tokens": output_tokens if MONITORING_ENABLED else 0,
-                "cost_usd": estimated_cost if MONITORING_ENABLED else 0.0,
-                "duration_seconds": total_duration,
-                "cache_hit": False,
-                "cache_type": None,
-            }
+            metadata.update(
+                {
+                    "input_tokens": input_tokens if self.monitoring_enabled else 0,
+                    "output_tokens": output_tokens if self.monitoring_enabled else 0,
+                    "cost_usd": cost_usd if self.monitoring_enabled else 0.0,
+                    "duration_seconds": total_duration,
+                    "cache_hit": False,
+                    "cache_type": None,
+                }
+            )
             yield {"type": "metadata", "metadata": metadata}
-
-            # Signal completion
             yield {"type": "complete", "from_cache": False}
-
         except HTTPException as he:
-            # Re-raise HTTPExceptions (e.g., 429 for spend limits)
-            raise he
+            # Preserve previous streaming behavior: emit an error event instead of raising.
+            if getattr(he, "status_code", None) == 429:
+                detail = getattr(he, "detail", {}) or {}
+                message = detail.get("message") or "We've reached our daily usage limit. Please try again later."
+                yield {"type": "error", "error": message}
+                yield {"type": "complete", "error": True}
+                return
+            raise
         except Exception as e:
-            # Log full error details for debugging but don't expose to user
-            logger.error(f"Error during streaming RAG query execution: {e}", exc_info=True)
-            
-            # Track error metrics
-            if MONITORING_ENABLED:
-                total_duration = time.time() - start_time
-                rag_query_duration_seconds.labels(
-                    query_type="stream",
-                    cache_hit="false"
-                ).observe(total_duration)
-                track_llm_metrics(
-                    model=LLM_MODEL_NAME,
-                    operation="generate",
-                    duration_seconds=total_duration,
-                    status="error",
-                )
-            
-            # Yield metadata for error case
+            logger.error("Error during streaming RAG query execution: %s", e, exc_info=True)
             metadata = {
                 "input_tokens": 0,
                 "output_tokens": 0,
@@ -2611,8 +1227,6 @@ Be conservative: only mark as dependent if the query is clearly referring to pri
                 "cache_type": None,
             }
             yield {"type": "metadata", "metadata": metadata}
-            
-            # Return generic error message without exposing internal details
             yield {"type": "error", "error": "An error occurred while processing your query. Please try again or rephrase your question."}
 
 
