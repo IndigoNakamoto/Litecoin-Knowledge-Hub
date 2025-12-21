@@ -33,6 +33,15 @@ def make_retrieve_node(pipeline: Any):
 
         retriever_k = int(getattr(pipeline, "retriever_k", 12))
         sparse_rerank_limit = int(getattr(pipeline, "sparse_rerank_limit", 10))
+        # Short-query heuristic: boost BM25 breadth for 1–N token queries (semantic sparsity)
+        try:
+            import re
+
+            short_threshold = int(getattr(pipeline, "short_query_word_threshold", 3) or 3)
+            _tokens = re.findall(r"[a-z0-9']+", (retrieval_query or "").lower())
+            is_short_query = 0 < len(_tokens) <= short_threshold
+        except Exception:
+            is_short_query = False
 
         use_infinity = bool(getattr(pipeline, "use_infinity_embeddings", False))
         query_vector = state.get("query_vector")
@@ -55,7 +64,7 @@ def make_retrieve_node(pipeline: Any):
                     if not bm25:
                         return []
                     original_k = getattr(bm25, "k", retriever_k)
-                    bm25.k = retriever_k * 2
+                    bm25.k = retriever_k * (4 if is_short_query else 2)
                     try:
                         return bm25.invoke(retrieval_query)
                     finally:
@@ -71,10 +80,12 @@ def make_retrieve_node(pipeline: Any):
                     vector_results = await vector_task
                     bm25_docs = []
 
-                min_sim = float(os.getenv("MIN_VECTOR_SIMILARITY", "0.28"))
-                vector_docs = [doc for doc, score in vector_results if score >= min_sim]
-                if len(vector_docs) < retriever_k:
-                    vector_docs = [doc for doc, _ in vector_results[:retriever_k]]
+                # NOTE: FAISS (via LangChain) commonly returns a *distance* score where
+                # lower is better (not a similarity where higher is better).
+                # Thresholding with `score >= MIN_VECTOR_SIMILARITY` can therefore drop
+                # the best matches and keep worse ones. We avoid score-based filtering
+                # and just take the top-K results returned by the vector store.
+                vector_docs = [doc for doc, _score in (vector_results or [])[:retriever_k]]
 
             except Exception as e:
                 logger.warning("Infinity parallel retrieval failed; falling back: %s", e, exc_info=True)

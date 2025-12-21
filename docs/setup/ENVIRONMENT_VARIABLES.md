@@ -159,6 +159,10 @@ These variables are usually the same across environments but can be overridden.
 | `ENABLE_GLOBAL_RATE_LIMIT` | `true` | Enable global rate limiting |
 | `TURNSTILE_SECRET_KEY` | (none) | Cloudflare Turnstile secret key (required if `ENABLE_TURNSTILE=true`) |
 | `ENABLE_TURNSTILE` | `false` | Enable Cloudflare Turnstile verification |
+| `USE_SHORT_QUERY_EXPANSION` | `false` | Mitigate semantic sparsity for 1–N word queries by expanding them via the LLM before retrieval. Recommended for short queries like `MWEB`, `supply`, `halving`. |
+| `SHORT_QUERY_WORD_THRESHOLD` | `3` | A query is considered “short” when it has ≤ this many tokens (used for short-query expansion + retrieval heuristics). |
+| `SHORT_QUERY_EXPANSION_MAX_WORDS` | `12` | Max words allowed in the expanded query (prevents prompt/retrieval bloat). |
+| `SHORT_QUERY_EXPANSION_CACHE_MAX` | `512` | In-memory LRU size for cached expansions (controls cost/latency by reusing expansions for repeated short queries). |
 | `HIGH_COST_THRESHOLD_USD` | `10.0` | Cost threshold in USD that triggers throttling (per fingerprint in 10-minute window) |
 | `HIGH_COST_WINDOW_SECONDS` | `600` | Cost tracking window in seconds (10 minutes) |
 | `ENABLE_COST_THROTTLING` | `true` | Enable cost-based throttling |

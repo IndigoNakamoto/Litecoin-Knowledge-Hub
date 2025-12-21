@@ -39,6 +39,14 @@ USE_REDIS_CACHE = os.getenv("USE_REDIS_CACHE", "false").lower() == "true"
 USE_INTENT_CLASSIFICATION = os.getenv("USE_INTENT_CLASSIFICATION", "true").lower() == "true"
 USE_FAQ_INDEXING = os.getenv("USE_FAQ_INDEXING", "true").lower() == "true"
 
+# --- Short-query semantic sparsity mitigations ---
+# When enabled, very short queries (e.g. "MWEB", "supply") are expanded via the LLM
+# before retrieval to increase semantic "surface area" for embeddings + retrieval.
+USE_SHORT_QUERY_EXPANSION = os.getenv("USE_SHORT_QUERY_EXPANSION", "false").lower() == "true"
+SHORT_QUERY_WORD_THRESHOLD = int(os.getenv("SHORT_QUERY_WORD_THRESHOLD", "3"))
+SHORT_QUERY_EXPANSION_MAX_WORDS = int(os.getenv("SHORT_QUERY_EXPANSION_MAX_WORDS", "12"))
+SHORT_QUERY_EXPANSION_CACHE_MAX = int(os.getenv("SHORT_QUERY_EXPANSION_CACHE_MAX", "512"))
+
 # --- User-facing error messages (shared across modules) ---
 GENERIC_USER_ERROR_MESSAGE = (
     "I encountered an error while processing your query. Please try again or rephrase your question."
@@ -425,6 +433,13 @@ class RAGPipeline:
         self.use_redis_cache = USE_REDIS_CACHE
         self.use_intent_classification = USE_INTENT_CLASSIFICATION
         self.use_faq_indexing = USE_FAQ_INDEXING
+        self.use_short_query_expansion = USE_SHORT_QUERY_EXPANSION
+        self.short_query_word_threshold = SHORT_QUERY_WORD_THRESHOLD
+        self.short_query_expansion_max_words = SHORT_QUERY_EXPANSION_MAX_WORDS
+        # Simple in-memory LRU for short-query expansions (keeps cost/latency bounded)
+        # Stored as OrderedDict-like mapping in nodes; populated lazily.
+        self.short_query_expansion_cache = None
+        self.short_query_expansion_cache_max = SHORT_QUERY_EXPANSION_CACHE_MAX
         self.retriever_k = RETRIEVER_K
         self.sparse_rerank_limit = SPARSE_RERANK_LIMIT
         self.model_name = LLM_MODEL_NAME
