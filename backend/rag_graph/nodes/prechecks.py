@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict
 
 from ..state import RAGState
+
+logger = logging.getLogger(__name__)
 
 
 def make_prechecks_node(pipeline: Any):
@@ -137,7 +140,10 @@ def make_prechecks_node(pipeline: Any):
                 tokens = re.findall(r"[a-z0-9']+", effective_query.lower())
                 short_threshold = int(getattr(pipeline, "short_query_word_threshold", 3) or 3)
 
+                logger.debug(f"Short query expansion check: query='{effective_query}', tokens={len(tokens)}, threshold={short_threshold}")
+
                 if 0 < len(tokens) <= short_threshold:
+                    logger.info(f"Short query detected (≤{short_threshold} tokens): '{effective_query}'")
                     cache_key = effective_query.strip().lower()
                     cache_max = int(getattr(pipeline, "short_query_expansion_cache_max", 512) or 512)
                     max_words = int(getattr(pipeline, "short_query_expansion_max_words", 12) or 12)
@@ -150,6 +156,7 @@ def make_prechecks_node(pipeline: Any):
                     if isinstance(cache, OrderedDict) and cache_key in cache:
                         expanded_query = cache[cache_key]
                         cache.move_to_end(cache_key)
+                        logger.info(f"Short query expansion (cache hit): '{effective_query}' -> '{expanded_query}'")
                     else:
                         # Ask the LLM to expand the short query into a concise retrieval-friendly question.
                         llm = getattr(pipeline, "llm", None)
@@ -164,6 +171,7 @@ def make_prechecks_node(pipeline: Any):
                             "If the query is an acronym or term (e.g., MWEB, LitVM, halving), expand it."
                         )
 
+                        logger.info(f"Expanding short query via LLM: '{effective_query}'")
                         result = await llm.ainvoke([SystemMessage(content=sys), HumanMessage(content=human)])
                         candidate = getattr(result, "content", None) or str(result)
                         candidate = candidate.strip().strip('"').strip("'")
@@ -178,6 +186,7 @@ def make_prechecks_node(pipeline: Any):
                             # Use only if it meaningfully changed the query.
                             if candidate and candidate.lower() != effective_query.strip().lower():
                                 expanded_query = candidate
+                                logger.info(f"Short query expanded: '{effective_query}' -> '{expanded_query}'")
 
                                 # Update LRU.
                                 if isinstance(cache, OrderedDict):
@@ -193,9 +202,13 @@ def make_prechecks_node(pipeline: Any):
                                         "short_query_expanded_query": expanded_query,
                                     }
                                 )
-            except Exception:
+                            else:
+                                logger.debug(f"Short query expansion resulted in no meaningful change (candidate same as original): '{candidate}'")
+                        else:
+                            logger.warning(f"Short query expansion returned empty result for: '{effective_query}'")
+            except Exception as e:
                 # Best-effort only; fall through to deterministic normalization/expansion.
-                pass
+                logger.warning(f"Short query expansion failed: {e}", exc_info=True)
 
         # Post-rewrite normalization + entity expansion for retrieval recall
         try:

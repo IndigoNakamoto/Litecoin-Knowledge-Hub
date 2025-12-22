@@ -4,6 +4,19 @@ All notable changes and completed milestones for the Litecoin Knowledge Hub proj
 
 ## Log of Completed Milestones
 
+* **Short Query Expansion & RAG Pipeline Improvements (12/19-12/21/2025)**
+  * Fixed short query sparsity issue by implementing LLM-based query expansion for 1-3 word queries
+  * Added comprehensive logging for short query expansion feature to track when expansion occurs (cache hits, LLM expansions, and failures)
+  * Corrected FAISS scoring calculations for improved retrieval accuracy
+  * Enhanced Litecoin vocabulary with protocol terms and entity expansions for better query understanding
+  * Fixed Redis vector cache similarity calculation bug
+  * Added comprehensive chunking strategy analysis and improvement recommendations documentation
+  * Created article template guide for LLM-generated content quality and consistency
+* **Follow-up Query Topic Drift Fixes & LangGraph Migration (12/20/2025)**
+  * Fixed topic drift on follow-up questions by improving entity expansion after follow-up rewrite
+  * Expanded router input after pronoun anchoring to better handle conversational context
+  * Refactored RAG pipeline control flow to LangGraph state machine for improved maintainability and extensibility
+  * Enhanced entity expansion to run after follow-up query rewriting for better context preservation
 * **Litecoin.com Integration & Advanced RAG Optimizations (12/12-12/18/2025)**
   * Implemented Litecoin.com chat integration with basePath configuration and CORS setup
   * Added chat tunnel support with healthcheck fixes for seamless integration

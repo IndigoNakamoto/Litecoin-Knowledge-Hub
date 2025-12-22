@@ -1,11 +1,30 @@
 # Commit History by Date
 
-**Total Commits:** 416
-**Total Days Worked:** 56
+**Total Commits:** 434
+**Total Days Worked:** 59
 
 ---
 
-## 2025-12-18 (7 commits)
+## 2025-12-21 (1 commit)
+
+- Fix short-query sparsity: correct FAISS scoring, add LLM expansion
+
+## 2025-12-20 (5 commits)
+
+- fix(rag): prevent topic drift on follow-up questions
+- fix(rag): expand entities after follow-up rewrite
+- fix(rag): expand router input after pronoun anchoring
+- Merge branch 'fix/rag-followup-topic-drift'
+- refactor(rag): move pipeline control flow to LangGraph
+
+## 2025-12-19 (4 commits)
+
+- docs: Add chunking strategy analysis and improvement recommendations
+- docs: Add comprehensive article template guide for LLM-generated content
+- Fix Redis vector cache similarity calculation bug
+- Enhance Litecoin vocabulary with protocol terms and entity expansions
+
+## 2025-12-18 (15 commits)
 
 - Change navigation component to litecoin.com
 - Fix greeting false-positives and reduce history anchoring
@@ -14,6 +33,14 @@
 - Replace heuristic history routing with hybrid LLM-based semantic router
 - Optimize RAG caching strategy: consolidate semantic cache and cache by rewritten query
 - feat: implement canonical intent generation with synonym mapping for cache optimization
+- Update documentation: CHANGELOG, COMMIT_HISTORY, and README
+- feat(retrieval): add query expansion for rare entities
+- fix(embeddings): improve query embedding consistency and add validation
+- feat(admin): add semantic cache stats and clear API endpoints
+- feat(scripts): add semantic cache management CLI scripts
+- config: increase semantic cache similarity threshold to 0.92
+- fix(scripts): reindex_vectors path compatibility for Docker container
+- chore(scripts): normalize trailing newlines in backup scripts
 
 ## 2025-12-17 (1 commit)
 
