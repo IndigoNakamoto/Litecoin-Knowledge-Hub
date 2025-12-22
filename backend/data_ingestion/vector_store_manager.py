@@ -1,7 +1,7 @@
 import os
 import logging
 from typing import List, Dict, Any, Optional
-from pymongo import MongoClient
+from pymongo import MongoClient, UpdateOne
 import torch
 from langchain_core.documents import Document
 from langchain_community.vectorstores import FAISS
@@ -13,15 +13,15 @@ except ImportError:
 from cache_utils import embedding_cache
 import numpy as np
 
+logger = logging.getLogger(__name__)
+
 # Import Google embeddings if available
 try:
     from langchain_google_genai import GoogleGenerativeAIEmbeddings
     GOOGLE_EMBEDDINGS_AVAILABLE = True
 except ImportError:
     GOOGLE_EMBEDDINGS_AVAILABLE = False
-    logger.warning("langchain_google_genai not available. Google embeddings will not work.")
-
-logger = logging.getLogger(__name__)
+    logging.getLogger(__name__).warning("langchain_google_genai not available. Google embeddings will not work.")
 
 # Global shared MongoClient instance for connection pool sharing
 # This prevents creating multiple connection pools when multiple VectorStoreManager instances are created
@@ -395,90 +395,166 @@ class VectorStoreManager:
         logger.info("Acquired FAISS rebuild lock, starting index rebuild...")
         
         try:
-            # Load all documents from MongoDB
+            # Load all documents from MongoDB.
+            # If embeddings are present, rebuild FAISS from stored embeddings (no re-embed).
+            # If embeddings are missing, optionally backfill them (guarded by env var).
             mongo_docs = list(self.collection.find({}))
-            documents = []
-            for doc in mongo_docs:
-                text = doc.get('text', '')
-                metadata = doc.get('metadata', {})
-                if text:  # Only add non-empty documents
-                    documents.append(Document(page_content=text, metadata=metadata))
 
-            if not documents:
+            texts: List[str] = []
+            metadatas: List[Dict[str, Any]] = []
+            embeddings: List[List[float]] = []
+            missing_for_backfill: List[Dict[str, Any]] = []
+
+            for doc in mongo_docs:
+                text = doc.get("text", "") or ""
+                if not text:
+                    continue
+                metadata = doc.get("metadata", {}) or {}
+                emb = doc.get("embedding")
+                if isinstance(emb, list) and emb:
+                    texts.append(text)
+                    metadatas.append(metadata)
+                    embeddings.append(emb)
+                else:
+                    missing_for_backfill.append(
+                        {
+                            "_id": doc.get("_id"),
+                            "text": text,
+                            "metadata": metadata,
+                        }
+                    )
+
+            if not texts and not missing_for_backfill:
                 logger.info("No documents in MongoDB, creating empty FAISS index")
                 return self._create_empty_faiss_index()
 
-            logger.info(f"Creating FAISS index from {len(documents)} documents in MongoDB")
-            
-            if self.use_infinity:
-                # Use Infinity embeddings to compute vectors
-                import httpx
-                
-                infinity_url = os.getenv("INFINITY_URL", "http://localhost:7997")
-                model_id = os.getenv("EMBEDDING_MODEL_ID", "BAAI/bge-m3")
-                
-                texts = [doc.page_content for doc in documents]
-                metadatas = [doc.metadata for doc in documents]
-                
-                # Batch embed all documents
-                batch_size = 10
-                all_embeddings = []
-                
-                with httpx.Client(timeout=120.0) as client:
-                    for i in range(0, len(texts), batch_size):
-                        batch_texts = texts[i:i + batch_size]
-                        batch_num = i//batch_size + 1
-                        total_batches = (len(texts) + batch_size - 1)//batch_size
-                        logger.info(f"Embedding batch {batch_num}/{total_batches} from MongoDB...")
-                        
-                        # Retry logic for intermittent 500 errors
-                        max_retries = 3
-                        retry_delay = 2.0
-                        result = None
-                        
-                        for attempt in range(max_retries):
-                            try:
-                                response = client.post(
-                                    f"{infinity_url}/embeddings",
-                                    json={
-                                        "input": batch_texts,
-                                        "model": model_id,
-                                        "encoding_format": "float"
-                                    }
+            # Backfill missing embeddings if needed.
+            # If allow_backfill is false, we will still embed missing docs for this rebuild,
+            # but we won't persist them to MongoDB (so operators can choose to run backfill explicitly).
+            if missing_for_backfill:
+                allow_backfill = os.getenv("ALLOW_EMBEDDING_BACKFILL_ON_REBUILD", "false").lower() == "true"
+                backfill_batch_size = int(os.getenv("EMBEDDING_BACKFILL_BATCH_SIZE", "10"))
+
+                if allow_backfill:
+                    logger.info(
+                        "Backfilling %s MongoDB docs missing embeddings during rebuild (ALLOW_EMBEDDING_BACKFILL_ON_REBUILD=true)",
+                        len(missing_for_backfill),
+                    )
+                else:
+                    logger.warning(
+                        "Found %s MongoDB docs missing embeddings. "
+                        "Rebuild will embed them now, but will NOT persist. "
+                        "Set ALLOW_EMBEDDING_BACKFILL_ON_REBUILD=true or run a dedicated backfill script.",
+                        len(missing_for_backfill),
+                    )
+
+                updates: List[UpdateOne] = []
+
+                if self.use_infinity:
+                    import httpx
+
+                    infinity_url = os.getenv("INFINITY_URL", "http://localhost:7997")
+                    model_id = os.getenv("EMBEDDING_MODEL_ID", "BAAI/bge-m3")
+
+                    with httpx.Client(timeout=120.0) as client:
+                        for i in range(0, len(missing_for_backfill), backfill_batch_size):
+                            batch_missing = missing_for_backfill[i : i + backfill_batch_size]
+                            batch_texts = [d["text"] for d in batch_missing]
+
+                            batch_num = i // backfill_batch_size + 1
+                            total_batches = (len(missing_for_backfill) + backfill_batch_size - 1) // backfill_batch_size
+                            logger.info(f"Embedding backfill batch {batch_num}/{total_batches} from MongoDB...")
+
+                            response = client.post(
+                                f"{infinity_url}/embeddings",
+                                json={
+                                    "input": batch_texts,
+                                    "model": model_id,
+                                    "encoding_format": "float",
+                                },
+                            )
+                            response.raise_for_status()
+                            result = response.json()
+                            batch_embeddings = [item["embedding"] for item in result.get("data", [])]
+
+                            if len(batch_embeddings) != len(batch_texts):
+                                raise ValueError(
+                                    f"Backfill embedding count mismatch: got {len(batch_embeddings)}, expected {len(batch_texts)}"
                                 )
-                                response.raise_for_status()
-                                result = response.json()
-                                break  # Success
-                            except Exception as retry_error:
-                                if attempt < max_retries - 1:
-                                    logger.warning(f"Embedding batch {batch_num} failed (attempt {attempt + 1}/{max_retries}): {retry_error}")
-                                    import time
-                                    time.sleep(retry_delay * (attempt + 1))
-                                else:
-                                    raise
-                        
-                        if result is None:
-                            raise ValueError(f"Failed to embed batch {batch_num} after {max_retries} retries")
-                        
-                        batch_embeddings = [item["embedding"] for item in result.get("data", [])]
-                        all_embeddings.extend(batch_embeddings)
-                
-                # Create FAISS from embeddings
-                text_embeddings = list(zip(texts, all_embeddings))
-                vector_store = FAISS.from_embeddings(
-                    text_embeddings=text_embeddings,
-                    embedding=self.embeddings,
-                    metadatas=metadatas
-                )
-                vector_store.save_local(self.faiss_index_path)
-                logger.info(f"FAISS index created from MongoDB (Infinity mode) and saved to {self.faiss_index_path}")
-                return vector_store
-            else:
-                # Legacy mode: use from_documents
-                vector_store = FAISS.from_documents(documents, self.embeddings)
-                vector_store.save_local(self.faiss_index_path)
-                logger.info(f"FAISS index created and saved to {self.faiss_index_path}")
-                return vector_store
+
+                            embedding_dim = len(batch_embeddings[0]) if batch_embeddings else 0
+                            for doc_row, emb in zip(batch_missing, batch_embeddings):
+                                md = dict(doc_row.get("metadata") or {})
+                                md.setdefault("embedding_model", model_id)
+                                if embedding_dim:
+                                    md.setdefault("embedding_dim", embedding_dim)
+
+                                texts.append(doc_row["text"])
+                                metadatas.append(md)
+                                embeddings.append(emb)
+
+                                if allow_backfill and doc_row.get("_id") is not None:
+                                    updates.append(
+                                        UpdateOne(
+                                            {"_id": doc_row["_id"]},
+                                            {"$set": {"embedding": emb, "metadata": md}},
+                                        )
+                                    )
+                else:
+                    embedding_model = DEFAULT_EMBEDDING_MODEL
+
+                    for i in range(0, len(missing_for_backfill), backfill_batch_size):
+                        batch_missing = missing_for_backfill[i : i + backfill_batch_size]
+                        batch_texts = [d["text"] for d in batch_missing]
+
+                        batch_num = i // backfill_batch_size + 1
+                        total_batches = (len(missing_for_backfill) + backfill_batch_size - 1) // backfill_batch_size
+                        logger.info(f"Embedding backfill batch {batch_num}/{total_batches} from MongoDB...")
+
+                        batch_embeddings = self.get_cached_embeddings(batch_texts)
+                        embedding_dim = len(batch_embeddings[0]) if batch_embeddings else 0
+
+                        for doc_row, emb in zip(batch_missing, batch_embeddings):
+                            md = dict(doc_row.get("metadata") or {})
+                            md.setdefault("embedding_model", embedding_model)
+                            if embedding_dim:
+                                md.setdefault("embedding_dim", embedding_dim)
+
+                            texts.append(doc_row["text"])
+                            metadatas.append(md)
+                            embeddings.append(emb)
+
+                            if allow_backfill and doc_row.get("_id") is not None:
+                                updates.append(
+                                    UpdateOne(
+                                        {"_id": doc_row["_id"]},
+                                        {"$set": {"embedding": emb, "metadata": md}},
+                                    )
+                                )
+
+                if allow_backfill and updates:
+                    try:
+                        self.collection.bulk_write(updates, ordered=False)
+                        logger.info("Backfill persisted %s embeddings to MongoDB", len(updates))
+                    except Exception as e:
+                        logger.warning("Failed to persist backfilled embeddings to MongoDB: %s", e, exc_info=True)
+
+            if not texts:
+                logger.info("No documents available for FAISS rebuild after filtering; creating empty FAISS index")
+                return self._create_empty_faiss_index()
+
+            logger.info(f"Creating FAISS index from {len(texts)} documents in MongoDB (stored embeddings)")
+
+            # Create FAISS from stored embeddings (works for both Infinity + legacy)
+            text_embeddings = list(zip(texts, embeddings))
+            vector_store = FAISS.from_embeddings(
+                text_embeddings=text_embeddings,
+                embedding=self.embeddings,
+                metadatas=metadatas,
+            )
+            vector_store.save_local(self.faiss_index_path)
+            logger.info(f"FAISS index created from stored embeddings and saved to {self.faiss_index_path}")
+            return vector_store
         finally:
             # Always release the lock
             _set_faiss_rebuild_in_progress(False)
@@ -538,7 +614,7 @@ class VectorStoreManager:
             self._add_documents_with_infinity_sync(documents, batch_size)
             return
 
-        # Legacy mode: use LangChain's built-in embedding
+        # Legacy mode: compute embeddings once and add via add_embeddings (avoid double-embedding)
         total_docs = len(documents)
         success_count = 0
         
@@ -546,17 +622,37 @@ class VectorStoreManager:
             batch = documents[i:i + batch_size]
             logger.info(f"Processing batch {i//batch_size + 1}/{(total_docs + batch_size - 1)//batch_size}...")
             try:
-                # Add to FAISS
-                self.vector_store.add_documents(batch, embedding=self.embeddings)
+                texts = [doc.page_content for doc in batch]
+                metadatas = [dict(doc.metadata or {}) for doc in batch]
 
-                # Store in MongoDB if available
+                # Compute embeddings (cached where possible)
+                embeddings = self.get_cached_embeddings(texts)
+                embedding_dim = len(embeddings[0]) if embeddings else 0
+                embedding_model = DEFAULT_EMBEDDING_MODEL
+
+                # Stamp embedding identity into metadata (helps detect model/dim drift later)
+                for md in metadatas:
+                    md.setdefault("embedding_model", embedding_model)
+                    if embedding_dim:
+                        md.setdefault("embedding_dim", embedding_dim)
+
+                # Add to FAISS using precomputed vectors
+                text_embeddings = list(zip(texts, embeddings))
+                self.vector_store.add_embeddings(text_embeddings, metadatas=metadatas)
+
+                # Store in MongoDB if available (persist embeddings for cheap rebuilds)
                 if self.mongodb_available:
-                    for doc in batch:
-                        mongo_doc = {
-                            "text": doc.page_content,
-                            "metadata": doc.metadata
-                        }
-                        self.collection.insert_one(mongo_doc)
+                    mongo_docs = []
+                    for text, metadata, emb in zip(texts, metadatas, embeddings):
+                        mongo_docs.append(
+                            {
+                                "text": text,
+                                "metadata": metadata,
+                                "embedding": emb,
+                            }
+                        )
+                    if mongo_docs:
+                        self.collection.insert_many(mongo_docs, ordered=False)
 
                 success_count += len(batch)
                 logger.info(f"Successfully added batch of {len(batch)} documents.")
@@ -640,12 +736,23 @@ class VectorStoreManager:
                     
                     # Store in MongoDB if available
                     if self.mongodb_available:
-                        for doc in batch:
-                            mongo_doc = {
-                                "text": doc.page_content,
-                                "metadata": doc.metadata
-                            }
-                            self.collection.insert_one(mongo_doc)
+                        embedding_dim = len(dense_embeddings[0]) if dense_embeddings else 0
+
+                        mongo_docs = []
+                        for text, metadata, emb in zip(texts, metadatas, dense_embeddings):
+                            md = dict(metadata or {})
+                            md.setdefault("embedding_model", model_id)
+                            if embedding_dim:
+                                md.setdefault("embedding_dim", embedding_dim)
+                            mongo_docs.append(
+                                {
+                                    "text": text,
+                                    "metadata": md,
+                                    "embedding": emb,
+                                }
+                            )
+                        if mongo_docs:
+                            self.collection.insert_many(mongo_docs, ordered=False)
                     
                     success_count += len(batch)
                     logger.info(f"Successfully added batch of {len(batch)} documents with Infinity embeddings.")
